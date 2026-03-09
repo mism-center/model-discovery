@@ -6,9 +6,31 @@ on:
   pull_request:
 
 jobs:
-  build:
+  test-and-lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Echo test
-        run: echo "CI pipeline is running"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Run tests
+        run: uv run pytest
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Run Ruff lint checks
+        run: uv run ruff check .
+
+      - name: Run mypy
+        run: uv run mypy src tests
