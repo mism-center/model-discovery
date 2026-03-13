@@ -1,19 +1,25 @@
-name: CI
+# CI for the Gateway API service: tests, formatting (ruff), linting (ruff), and type checking (mypy).
+name: CI (API)
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
 
 jobs:
   test-and-lint:
+    name: Test and lint API
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
