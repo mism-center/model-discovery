@@ -2,7 +2,11 @@ from fastapi import APIRouter, Request
 
 from mism_api.clients.upload_client import UploadServiceClient
 from mism_api.core.errors import APIError
-from mism_api.schemas.upload import ModelMetadataUpsertRequest, ModelMetadataUpsertResponse
+from mism_api.schemas.upload import (
+    ModelCreatePayload,
+    ModelMetadataUpsertResponse,
+    ModelUpdatePayload,
+)
 
 router = APIRouter()
 
@@ -10,7 +14,7 @@ router = APIRouter()
 @router.post("/models", response_model=ModelMetadataUpsertResponse)
 async def create_model(
     request: Request,
-    payload: ModelMetadataUpsertRequest,
+    payload: ModelCreatePayload,
 ) -> ModelMetadataUpsertResponse:
     upload_client: UploadServiceClient = request.app.state.upload_client
     created = await upload_client.create_model(
@@ -25,9 +29,9 @@ async def create_model(
 @router.put("/models", response_model=ModelMetadataUpsertResponse)
 async def update_model(
     request: Request,
-    payload: ModelMetadataUpsertRequest,
+    payload: ModelUpdatePayload,
 ) -> ModelMetadataUpsertResponse:
-    model_id = (payload.model_id or "").strip()
+    model_id = payload.model_id.strip()
     if not model_id:
         raise APIError(
             status_code=422,

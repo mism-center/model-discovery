@@ -248,4 +248,5 @@ def test_update_model_metadata_requires_model_id() -> None:
 
         assert response.status_code == 422
         payload = response.json()
-        assert payload["error"]["code"] == "model_id_required"
+        assert payload["detail"][0]["loc"][-1] == "model_id"
+        assert payload["detail"][0]["type"] == "missing"
