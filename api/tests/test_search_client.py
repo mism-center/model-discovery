@@ -1,6 +1,6 @@
 import httpx
 
-from src.clients.search_client import SearchServiceClient
+from clients.search_client import SearchServiceClient
 
 
 def _build_search_client_with_handler(handler: httpx.MockTransport) -> SearchServiceClient:

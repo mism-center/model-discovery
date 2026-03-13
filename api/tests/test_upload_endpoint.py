@@ -1,9 +1,9 @@
 import httpx
 from fastapi.testclient import TestClient
 
-from src.auth.base import AuthenticatedPrincipal, require_principal
-from src.clients.upload_client import ModelMetadataUpsertResult, UploadSession
-from src.main import create_app
+from auth.base import AuthenticatedPrincipal, require_principal
+from clients.upload_client import ModelMetadataUpsertResult, UploadSession
+from main import create_app
 
 
 class FakeUploadClient:
