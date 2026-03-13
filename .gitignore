@@ -1,11 +1,3 @@
-# Environment
-.env
-.venv/
+# Editor settings
+.vscode/
 
-# Python
-**/__pycache__/
-
-# cache
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/

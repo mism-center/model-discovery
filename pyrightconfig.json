@@ -1,0 +1,4 @@
+{
+  "include": ["api"],
+  "extraPaths": ["api/src"]
+}
