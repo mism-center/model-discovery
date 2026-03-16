@@ -7,6 +7,7 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from core.errors import APIError
+from core.http_client import error_from_downstream_response
 from schemas.common import CustomMetadata
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,13 @@ class UploadServiceClient:
                 code="model_upsert_timeout",
                 detail="Model metadata upsert timed out.",
             ) from exc
+        except httpx.HTTPStatusError as exc:
+            status, code, detail = error_from_downstream_response(
+                exc.response,
+                fallback_code="model_upsert_failed",
+                fallback_detail="Model metadata upsert failed.",
+            )
+            raise APIError(status_code=status, code=code, detail=detail) from exc
         except httpx.HTTPError as exc:
             raise APIError(
                 status_code=502,
@@ -172,6 +180,13 @@ class UploadServiceClient:
                 code="upload_init_timeout",
                 detail="Upload service initialization timed out.",
             ) from exc
+        except httpx.HTTPStatusError as exc:
+            status, code, detail = error_from_downstream_response(
+                exc.response,
+                fallback_code="upload_init_failed",
+                fallback_detail="Upload service initialization failed.",
+            )
+            raise APIError(status_code=status, code=code, detail=detail) from exc
         except httpx.HTTPError as exc:
             raise APIError(
                 status_code=502,
@@ -229,8 +244,30 @@ class UploadServiceClient:
 
         files = {"chunk": ("chunk.bin", chunk, "application/octet-stream")}
         data = {"part_number": str(part_number)}
-        response = await self._client.post(f"/uploads/{upload_id}/parts", data=data, files=files)
-        response.raise_for_status()
+        try:
+            response = await self._client.post(
+                f"/uploads/{upload_id}/parts", data=data, files=files
+            )
+            response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise APIError(
+                status_code=504,
+                code="upload_part_timeout",
+                detail="Upload part timed out.",
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            status, code, detail = error_from_downstream_response(
+                exc.response,
+                fallback_code="upload_part_failed",
+                fallback_detail="Upload part failed.",
+            )
+            raise APIError(status_code=status, code=code, detail=detail) from exc
+        except httpx.HTTPError as exc:
+            raise APIError(
+                status_code=502,
+                code="upload_part_failed",
+                detail="Upload part failed.",
+            ) from exc
 
     async def complete_upload(self, upload_id: str, total_bytes: int, total_parts: int) -> None:
         if self._stub_upstream:
@@ -255,6 +292,13 @@ class UploadServiceClient:
                 code="upload_complete_timeout",
                 detail="Upload completion timed out.",
             ) from exc
+        except httpx.HTTPStatusError as exc:
+            status, code, detail = error_from_downstream_response(
+                exc.response,
+                fallback_code="upload_complete_failed",
+                fallback_detail="Upload completion failed.",
+            )
+            raise APIError(status_code=status, code=code, detail=detail) from exc
         except httpx.HTTPError as exc:
             raise APIError(
                 status_code=502,

@@ -4,6 +4,7 @@ import httpx
 from pydantic import ValidationError
 
 from core.errors import APIError
+from core.http_client import error_from_downstream_response
 from schemas.search import SearchResponse, SearchResultItem
 
 logger = logging.getLogger(__name__)
@@ -108,11 +109,12 @@ class SearchServiceClient:
             ) from exc
         except httpx.HTTPStatusError as exc:
             logger.warning("search_service_http_error status_code=%s", exc.response.status_code)
-            raise APIError(
-                status_code=502,
-                code="search_upstream_error",
-                detail="Search service returned an error.",
-            ) from exc
+            status, code, detail = error_from_downstream_response(
+                exc.response,
+                fallback_code="search_upstream_error",
+                fallback_detail="Search service returned an error.",
+            )
+            raise APIError(status_code=status, code=code, detail=detail) from exc
         except httpx.HTTPError as exc:
             raise APIError(
                 status_code=502,

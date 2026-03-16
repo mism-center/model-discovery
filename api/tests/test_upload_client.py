@@ -76,6 +76,57 @@ async def test_init_upload_rejects_non_string_identifier_types() -> None:
         await client.close()
 
 
+async def test_create_model_passthrough_409_conflict() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            409,
+            json={
+                "error": {
+                    "code": "model_already_exists",
+                    "detail": "Model with this ID already exists.",
+                }
+            },
+        )
+
+    client = _build_client_with_handler(httpx.MockTransport(handler))
+    try:
+        try:
+            await client.create_model(
+                name="test-model",
+                description=None,
+                version=None,
+                metadata={},
+            )
+            raise AssertionError("Expected APIError for 409 conflict.")
+        except APIError as exc:
+            assert exc.status_code == 409
+            assert exc.code == "model_already_exists"
+            assert exc.detail == "Model with this ID already exists."
+    finally:
+        await client.close()
+
+
+async def test_create_model_passthrough_5xx_as_502() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, json={"error": {"detail": "Service unavailable"}})
+
+    client = _build_client_with_handler(httpx.MockTransport(handler))
+    try:
+        try:
+            await client.create_model(
+                name="test-model",
+                description=None,
+                version=None,
+                metadata={},
+            )
+            raise AssertionError("Expected APIError for 5xx.")
+        except APIError as exc:
+            assert exc.status_code == 502
+            assert exc.code == "model_upsert_failed"
+    finally:
+        await client.close()
+
+
 async def test_init_upload_rejects_malformed_json_shape() -> None:
     async def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=["upload-1", "track-1"])
