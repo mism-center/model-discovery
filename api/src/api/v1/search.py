@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query, Request
 
-from clients.search_client import SearchServiceClient
-from schemas.search import SearchResponse
+from src.clients.search_client import SearchServiceClient
+from src.schemas.search import SearchResponse
 
 router = APIRouter()
 

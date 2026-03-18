@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Protocol
 
-from core.settings import Settings
+from src.core.settings import Settings
 
 
 class ServiceResolver(Protocol):

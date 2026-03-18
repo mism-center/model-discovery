@@ -1,10 +1,10 @@
 from pydantic import BaseModel, Field
 
-from schemas.common import CustomMetadata, ModelId
+from src.schemas.common import CustomMetadata, ModelId
 
 
 class ModelMetadataPayload(BaseModel):
-    name: str = Field(min_length=1)
+    name: str
     description: str | None = None
     version: str | None = None
     metadata: CustomMetadata = Field(default_factory=dict)

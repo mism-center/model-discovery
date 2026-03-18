@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Request
 
-from clients.upload_client import UploadServiceClient
-from schemas.common import ModelId
-from schemas.upload import (
+from src.clients.upload_client import UploadServiceClient
+from src.schemas.common import ModelId
+from src.schemas.upload import (
     ModelMetadataPayload,
     ModelMetadataUpsertResponse,
 )

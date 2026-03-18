@@ -3,15 +3,15 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from api.router import build_api_router
-from auth.base import build_auth_validator
-from clients.search_client import SearchServiceClient
-from clients.upload_client import UploadServiceClient
-from core.errors import register_exception_handlers
-from core.logging import configure_root_logger
-from core.service_resolver import EnvServiceResolver
-from core.settings import get_settings
-from middleware.request_context import RequestContextMiddleware
+from src.api.router import build_api_router
+from src.auth.base import build_auth_validator
+from src.clients.search_client import SearchServiceClient
+from src.clients.upload_client import UploadServiceClient
+from src.core.errors import register_exception_handlers
+from src.core.logging import configure_root_logger
+from src.core.service_resolver import EnvServiceResolver
+from src.core.settings import get_settings
+from src.middleware.request_context import RequestContextMiddleware
 
 
 @asynccontextmanager

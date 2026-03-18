@@ -1,7 +1,7 @@
 import httpx
 
-from clients.upload_client import UploadServiceClient
-from core.errors import APIError
+from src.clients.upload_client import UploadServiceClient
+from src.core.errors import APIError
 
 
 def _build_client_with_handler(

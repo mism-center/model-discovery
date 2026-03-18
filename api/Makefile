@@ -1,6 +1,6 @@
 PYTHON ?= 3.12
 UV ?= uv
-APP ?= main:app
+APP ?= src.main:app
 
 .PHONY: install lock run dev test lint format typecheck clean
 

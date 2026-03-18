@@ -6,11 +6,11 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 from jwt.algorithms import RSAAlgorithm
 
-from auth.base import build_auth_validator
-from auth.jwt import JWTAuthValidator
-from auth.oidc import OIDCAuthValidator
-from core.settings import Settings
-from main import create_app
+from src.auth.base import build_auth_validator
+from src.auth.jwt import JWTAuthValidator
+from src.auth.oidc import OIDCAuthValidator
+from src.core.settings import Settings
+from src.main import create_app
 
 
 def _settings_with_env(env_overrides: dict[str, str]) -> Settings:

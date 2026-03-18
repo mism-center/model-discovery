@@ -3,7 +3,7 @@ from typing import Any, Self
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from core.errors import APIError
+from src.core.errors import APIError
 
 
 # TODO: Intentionally retained for future standardization of API response

@@ -1,10 +1,10 @@
 from pydantic import BaseModel, Field
 
-from schemas.common import CustomMetadata
+from src.schemas.common import CustomMetadata
 
 
 class SearchRequestParams(BaseModel):
-    q: str = Field(min_length=1)
+    q: str
     limit: int = Field(default=25, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
 

@@ -6,9 +6,9 @@ from uuid import uuid4
 import httpx
 from pydantic import BaseModel, StringConstraints, ValidationError
 
-from core.errors import APIError
-from core.http_client import error_from_downstream_response
-from schemas.common import CustomMetadata, ModelId, generate_model_id
+from src.core.errors import APIError
+from src.core.http_client import error_from_downstream_response
+from src.schemas.common import CustomMetadata, ModelId, generate_model_id
 
 logger = logging.getLogger(__name__)
 

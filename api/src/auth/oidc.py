@@ -6,10 +6,11 @@ from typing import Any
 
 import httpx
 import jwt
+from jwt.algorithms import RSAAlgorithm
 
-from auth.base import AuthenticatedPrincipal
-from core.errors import APIError
-from core.settings import Settings
+from src.auth.base import AuthenticatedPrincipal
+from src.core.errors import APIError
+from src.core.settings import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +110,7 @@ class OIDCAuthValidator:
                 detail="Unrecognized token key id.",
             )
 
-        return jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(jwk_payload))
+        return RSAAlgorithm.from_jwk(json.dumps(jwk_payload))
 
     async def _load_jwks_keys(self) -> dict[str, dict[str, object]]:
         now = time.time()
