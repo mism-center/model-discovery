@@ -1,9 +1,9 @@
 from fastapi.testclient import TestClient
 
-from src.auth.base import AuthenticatedPrincipal, require_principal
-from src.core.errors import APIError
-from src.main import create_app
-from src.schemas.search import SearchResponse, SearchResultItem
+from mismapi.auth.base import AuthenticatedPrincipal, require_principal
+from mismapi.core.errors import APIError
+from mismapi.main import create_app
+from mismapi.schemas.search import SearchResponse, SearchResultItem
 
 
 class FakeSearchClient:

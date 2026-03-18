@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends
 
-from src.api.v1.create import router as create_router
-from src.api.v1.search import router as search_router
-from src.api.v1.upload_files import router as upload_files_router
-from src.auth.base import require_principal
+from mismapi.api.v1.create import router as create_router
+from mismapi.api.v1.search import router as search_router
+from mismapi.api.v1.upload_files import router as upload_files_router
+from mismapi.auth.base import require_principal
 
 
 def build_api_router() -> APIRouter:

@@ -4,11 +4,11 @@ import logging
 import httpx
 from fastapi import APIRouter, File, Request, UploadFile
 
-from src.clients.upload_client import UploadServiceClient
-from src.core.errors import APIError
-from src.core.settings import Settings
-from src.schemas.common import ModelId
-from src.schemas.upload import UploadAcceptedResponse
+from mismapi.clients.upload_client import UploadServiceClient
+from mismapi.core.errors import APIError
+from mismapi.core.settings import Settings
+from mismapi.schemas.common import ModelId
+from mismapi.schemas.upload import UploadAcceptedResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

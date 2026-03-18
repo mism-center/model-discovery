@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-from src.schemas.common import CustomMetadata, ModelId
+from mismapi.schemas.common import CustomMetadata, ModelId
 
 
 class ModelMetadataPayload(BaseModel):

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Protocol
 
-from src.core.settings import Settings
+from mismapi.core.settings import Settings
 
 
 class ServiceResolver(Protocol):

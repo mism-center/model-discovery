@@ -8,9 +8,9 @@ import httpx
 import jwt
 from jwt.algorithms import RSAAlgorithm
 
-from src.auth.base import AuthenticatedPrincipal
-from src.core.errors import APIError
-from src.core.settings import Settings
+from mismapi.auth.base import AuthenticatedPrincipal
+from mismapi.core.errors import APIError
+from mismapi.core.settings import Settings
 
 logger = logging.getLogger(__name__)
 

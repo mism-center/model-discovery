@@ -3,9 +3,9 @@ import logging
 import httpx
 from pydantic import ValidationError
 
-from src.core.errors import APIError
-from src.core.http_client import error_from_downstream_response
-from src.schemas.search import SearchResponse, SearchResultItem
+from mismapi.core.errors import APIError
+from mismapi.core.http_client import error_from_downstream_response
+from mismapi.schemas.search import SearchResponse, SearchResultItem
 
 logger = logging.getLogger(__name__)
 

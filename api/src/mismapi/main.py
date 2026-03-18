@@ -3,15 +3,15 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from src.api.router import build_api_router
-from src.auth.base import build_auth_validator
-from src.clients.search_client import SearchServiceClient
-from src.clients.upload_client import UploadServiceClient
-from src.core.errors import register_exception_handlers
-from src.core.logging import configure_root_logger
-from src.core.service_resolver import EnvServiceResolver
-from src.core.settings import get_settings
-from src.middleware.request_context import RequestContextMiddleware
+from mismapi.api.router import build_api_router
+from mismapi.auth.base import build_auth_validator
+from mismapi.clients.search_client import SearchServiceClient
+from mismapi.clients.upload_client import UploadServiceClient
+from mismapi.core.errors import register_exception_handlers
+from mismapi.core.logging import configure_root_logger
+from mismapi.core.service_resolver import EnvServiceResolver
+from mismapi.core.settings import get_settings
+from mismapi.middleware.request_context import RequestContextMiddleware
 
 
 @asynccontextmanager

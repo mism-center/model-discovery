@@ -4,8 +4,8 @@ from typing import Protocol
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from src.core.errors import APIError
-from src.core.settings import Settings
+from mismapi.core.errors import APIError
+from mismapi.core.settings import Settings
 
 bearer_scheme = HTTPBearer(auto_error=False)
 bearer_dependency = Depends(bearer_scheme)
@@ -26,11 +26,11 @@ class AuthValidator(Protocol):
 
 def build_auth_validator(settings: Settings) -> AuthValidator:
     if settings.auth_mode == "oidc":
-        from src.auth.oidc import OIDCAuthValidator
+        from mismapi.auth.oidc import OIDCAuthValidator
 
         return OIDCAuthValidator(settings=settings)
 
-    from src.auth.jwt import JWTAuthValidator
+    from mismapi.auth.jwt import JWTAuthValidator
 
     return JWTAuthValidator(settings=settings)
 

@@ -1,6 +1,6 @@
 PYTHON ?= 3.12
 UV ?= uv
-APP ?= src.main:app
+APP ?= mismapi.main:app
 
 .PHONY: install lock run dev test lint format typecheck clean
 
@@ -11,10 +11,10 @@ lock:
 	$(UV) lock
 
 run:
-	$(UV) run uvicorn $(APP) --host 0.0.0.0 --port 8000
+	$(UV) run uvicorn --app-dir src $(APP) --host 0.0.0.0 --port 8000
 
 dev:
-	$(UV) run uvicorn $(APP) --host 0.0.0.0 --port 8000 --reload
+	$(UV) run uvicorn --app-dir src $(APP) --host 0.0.0.0 --port 8000 --reload
 
 test:
 	$(UV) run python -m pytest
