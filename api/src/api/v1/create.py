@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request
 
 from clients.upload_client import UploadServiceClient
+from schemas.common import ModelId
 from schemas.upload import (
     ModelMetadataPayload,
     ModelMetadataUpsertResponse,
@@ -27,12 +28,12 @@ async def create_model(
 @router.put("/models/{model_id}", response_model=ModelMetadataUpsertResponse)
 async def update_model(
     request: Request,
-    model_id: str,
+    model_id: ModelId,
     payload: ModelMetadataPayload,
 ) -> ModelMetadataUpsertResponse:
     upload_client: UploadServiceClient = request.app.state.upload_client
     updated = await upload_client.update_model(
-        model_id=model_id.strip(),
+        model_id=model_id,
         name=payload.name,
         description=payload.description,
         version=payload.version,

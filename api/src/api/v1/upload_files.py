@@ -7,6 +7,7 @@ from fastapi import APIRouter, File, Request, UploadFile
 from clients.upload_client import UploadServiceClient
 from core.errors import APIError
 from core.settings import Settings
+from schemas.common import ModelId
 from schemas.upload import UploadAcceptedResponse
 
 logger = logging.getLogger(__name__)
@@ -17,7 +18,7 @@ upload_file_body = File(...)
 @router.post("/models/{model_id}/files", response_model=UploadAcceptedResponse)
 async def upload_model_file(
     request: Request,
-    model_id: str,
+    model_id: ModelId,
     file: UploadFile = upload_file_body,
 ) -> UploadAcceptedResponse:
     settings: Settings = request.app.state.settings

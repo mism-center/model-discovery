@@ -5,6 +5,9 @@ from auth.base import AuthenticatedPrincipal, require_principal
 from clients.upload_client import ModelMetadataUpsertResult, UploadSession
 from main import create_app
 
+TEST_MODEL_ID = 'AbC123xYz890'
+CREATED_MODEL_ID = 'Cr8ModelID12'
+
 
 class FakeUploadClient:
     def __init__(self) -> None:
@@ -27,7 +30,7 @@ class FakeUploadClient:
             "version": version,
             "metadata": metadata,
         }
-        return ModelMetadataUpsertResult(model_id="model-created-1", tracking_id="track-created-1")
+        return ModelMetadataUpsertResult(model_id=CREATED_MODEL_ID, tracking_id="track-created-1")
 
     async def update_model(
         self,
@@ -52,7 +55,7 @@ class FakeUploadClient:
         filename: str,
         content_type: str | None,
     ) -> UploadSession:
-        assert model_id == "model-123"
+        assert model_id == TEST_MODEL_ID
         assert filename == "dataset.bin"
         assert content_type == "application/octet-stream"
         return UploadSession(upload_id="upload-123", tracking_id="track-123")
@@ -88,7 +91,7 @@ class MultiPartRetryUploadClient:
         filename: str,
         content_type: str | None,
     ) -> UploadSession:
-        assert model_id == "model-123"
+        assert model_id == TEST_MODEL_ID
         assert filename == "dataset.bin"
         assert content_type == "application/octet-stream"
         return UploadSession(upload_id="upload-123", tracking_id="track-123")
@@ -129,7 +132,7 @@ def test_upload_retries_chunk_after_transient_error() -> None:
     with TestClient(app) as client:
         app.state.upload_client = fake_upload_client
         response = client.post(
-            "/api/v1/models/model-123/files",
+            f"/api/v1/models/{TEST_MODEL_ID}/files",
             files={
                 "file": (
                     "dataset.bin",
@@ -142,7 +145,7 @@ def test_upload_retries_chunk_after_transient_error() -> None:
         assert response.status_code == 200
         payload = response.json()
         assert payload["status"] == "accepted"
-        assert payload["model_id"] == "model-123"
+        assert payload["model_id"] == TEST_MODEL_ID
         assert payload["upload_id"] == "upload-123"
         assert payload["tracking_id"] == "track-123"
         assert payload["parts_uploaded"] == 1
@@ -159,7 +162,7 @@ def test_upload_retry_retries_only_failing_part() -> None:
         app.state.upload_client = fake_upload_client
         app.state.settings.upload_chunk_size_bytes = 4
         response = client.post(
-            "/api/v1/models/model-123/files",
+            f"/api/v1/models/{TEST_MODEL_ID}/files",
             files={
                 "file": (
                     "dataset.bin",
@@ -198,7 +201,7 @@ def test_create_model_metadata() -> None:
         assert response.status_code == 200
         payload = response.json()
         assert payload["status"] == "accepted"
-        assert payload["model_id"] == "model-created-1"
+        assert payload["model_id"] == CREATED_MODEL_ID
         assert payload["tracking_id"] == "track-created-1"
         assert fake_upload_client.created_payload is not None
 
@@ -211,7 +214,7 @@ def test_update_model_metadata() -> None:
     with TestClient(app) as client:
         app.state.upload_client = fake_upload_client
         response = client.put(
-            "/api/v1/models/model-123",
+            f"/api/v1/models/{TEST_MODEL_ID}",
             json={
                 "name": "example-model",
                 "description": "An updated model",
@@ -223,6 +226,6 @@ def test_update_model_metadata() -> None:
         assert response.status_code == 200
         payload = response.json()
         assert payload["status"] == "accepted"
-        assert payload["model_id"] == "model-123"
+        assert payload["model_id"] == TEST_MODEL_ID
         assert payload["tracking_id"] == "track-updated-1"
         assert fake_upload_client.updated_payload is not None

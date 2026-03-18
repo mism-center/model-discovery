@@ -1,14 +1,14 @@
 import logging
 from dataclasses import dataclass
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import uuid4
 
 import httpx
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, StringConstraints, ValidationError
 
 from core.errors import APIError
 from core.http_client import error_from_downstream_response
-from schemas.common import CustomMetadata
+from schemas.common import CustomMetadata, ModelId, generate_model_id
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +35,16 @@ class ModelUpsertPayload:
 
 
 class ModelUpsertResponse(BaseModel):
-    model_id: str
+    model_id: ModelId
     tracking_id: str | None = None
+
+
+type NonEmptyTrimmedString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+class UploadInitResponse(BaseModel):
+    upload_id: NonEmptyTrimmedString
+    tracking_id: NonEmptyTrimmedString
 
 
 class UploadServiceClient:
@@ -86,7 +94,7 @@ class UploadServiceClient:
             model_id = (
                 payload.model_id
                 if payload.model_id is not None
-                else f"stub-model-{uuid4().hex[:8]}"
+                else generate_model_id()
             )
             tracking_id = f"stub-track-{uuid4().hex[:8]}"
             return ModelMetadataUpsertResult(model_id=model_id, tracking_id=tracking_id)
@@ -144,13 +152,6 @@ class UploadServiceClient:
                 code="model_upsert_invalid",
                 detail="Model metadata upsert response is invalid.",
             ) from exc
-
-        if not parsed.model_id:
-            raise APIError(
-                status_code=502,
-                code="model_upsert_invalid",
-                detail="Model metadata upsert response is invalid.",
-            )
         return ModelMetadataUpsertResult(model_id=parsed.model_id, tracking_id=parsed.tracking_id)
 
     async def init_upload(
@@ -203,30 +204,17 @@ class UploadServiceClient:
                 detail="Upload service init response is invalid.",
             ) from exc
 
-        if not isinstance(payload, dict):
+        try:
+            parsed = UploadInitResponse.model_validate(payload)
+        except ValidationError as exc:
             raise APIError(
                 status_code=502,
                 code="upload_init_invalid",
                 detail="Upload service init response is invalid.",
-            )
-
-        upload_id_raw = payload.get("upload_id")
-        tracking_id_raw = payload.get("tracking_id")
-        if not isinstance(upload_id_raw, str) or not upload_id_raw.strip():
-            raise APIError(
-                status_code=502,
-                code="upload_init_invalid",
-                detail="Upload service init response is invalid.",
-            )
-        if not isinstance(tracking_id_raw, str) or not tracking_id_raw.strip():
-            raise APIError(
-                status_code=502,
-                code="upload_init_invalid",
-                detail="Upload service init response is invalid.",
-            )
+            ) from exc
         return UploadSession(
-            upload_id=upload_id_raw.strip(),
-            tracking_id=tracking_id_raw.strip(),
+            upload_id=parsed.upload_id,
+            tracking_id=parsed.tracking_id,
         )
 
     async def upload_part(self, upload_id: str, part_number: int, chunk: bytes) -> None:

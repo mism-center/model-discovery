@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-from schemas.common import CustomMetadata
+from schemas.common import CustomMetadata, ModelId
 
 
 class ModelMetadataPayload(BaseModel):
@@ -13,13 +13,13 @@ class ModelMetadataPayload(BaseModel):
 # This model is used for both create and update responses
 class ModelMetadataUpsertResponse(BaseModel):
     status: str = Field(default="accepted")
-    model_id: str
+    model_id: ModelId
     tracking_id: str | None = None
 
 
 class UploadAcceptedResponse(BaseModel):
     status: str = Field(default="accepted")
-    model_id: str
+    model_id: ModelId
     upload_id: str
     tracking_id: str
     filename: str
