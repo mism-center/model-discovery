@@ -1,11 +1,9 @@
 from fastapi import APIRouter, Request
 
 from clients.upload_client import UploadServiceClient
-from core.errors import APIError
 from schemas.upload import (
-    ModelCreatePayload,
+    ModelMetadataPayload,
     ModelMetadataUpsertResponse,
-    ModelUpdatePayload,
 )
 
 router = APIRouter()
@@ -14,7 +12,7 @@ router = APIRouter()
 @router.post("/models", response_model=ModelMetadataUpsertResponse)
 async def create_model(
     request: Request,
-    payload: ModelCreatePayload,
+    payload: ModelMetadataPayload,
 ) -> ModelMetadataUpsertResponse:
     upload_client: UploadServiceClient = request.app.state.upload_client
     created = await upload_client.create_model(
@@ -26,22 +24,15 @@ async def create_model(
     return ModelMetadataUpsertResponse(model_id=created.model_id, tracking_id=created.tracking_id)
 
 
-@router.put("/models", response_model=ModelMetadataUpsertResponse)
+@router.put("/models/{model_id}", response_model=ModelMetadataUpsertResponse)
 async def update_model(
     request: Request,
-    payload: ModelUpdatePayload,
+    model_id: str,
+    payload: ModelMetadataPayload,
 ) -> ModelMetadataUpsertResponse:
-    model_id = payload.model_id.strip()
-    if not model_id:
-        raise APIError(
-            status_code=422,
-            code="model_id_required",
-            detail="model_id is required for PUT /models metadata updates.",
-        )
-
     upload_client: UploadServiceClient = request.app.state.upload_client
     updated = await upload_client.update_model(
-        model_id=model_id,
+        model_id=model_id.strip(),
         name=payload.name,
         description=payload.description,
         version=payload.version,

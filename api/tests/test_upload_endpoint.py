@@ -211,9 +211,8 @@ def test_update_model_metadata() -> None:
     with TestClient(app) as client:
         app.state.upload_client = fake_upload_client
         response = client.put(
-            "/api/v1/models",
+            "/api/v1/models/model-123",
             json={
-                "model_id": "model-123",
                 "name": "example-model",
                 "description": "An updated model",
                 "version": "1.0.1",
@@ -227,26 +226,3 @@ def test_update_model_metadata() -> None:
         assert payload["model_id"] == "model-123"
         assert payload["tracking_id"] == "track-updated-1"
         assert fake_upload_client.updated_payload is not None
-
-
-def test_update_model_metadata_requires_model_id() -> None:
-    app = create_app()
-    app.dependency_overrides[require_principal] = allow_principal
-    fake_upload_client = FakeUploadClient()
-
-    with TestClient(app) as client:
-        app.state.upload_client = fake_upload_client
-        response = client.put(
-            "/api/v1/models",
-            json={
-                "name": "example-model",
-                "description": "An updated model",
-                "version": "1.0.1",
-                "metadata": {"framework": "pytorch"},
-            },
-        )
-
-        assert response.status_code == 422
-        payload = response.json()
-        assert payload["detail"][0]["loc"][-1] == "model_id"
-        assert payload["detail"][0]["type"] == "missing"

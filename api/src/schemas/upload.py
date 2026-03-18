@@ -3,15 +3,7 @@ from pydantic import BaseModel, Field
 from schemas.common import CustomMetadata
 
 
-class ModelCreatePayload(BaseModel):
-    name: str = Field(min_length=1)
-    description: str | None = None
-    version: str | None = None
-    metadata: CustomMetadata = Field(default_factory=dict)
-
-
-class ModelUpdatePayload(BaseModel):
-    model_id: str = Field(min_length=1)
+class ModelMetadataPayload(BaseModel):
     name: str = Field(min_length=1)
     description: str | None = None
     version: str | None = None
