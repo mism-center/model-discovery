@@ -91,11 +91,7 @@ class UploadServiceClient:
     ) -> ModelMetadataUpsertResult:
         if self._stub_upstream:
             logger.info("Called upload service (stub) method=%s endpoint=/models", method)
-            model_id = (
-                payload.model_id
-                if payload.model_id is not None
-                else generate_model_id()
-            )
+            model_id = payload.model_id if payload.model_id is not None else generate_model_id()
             tracking_id = f"stub-track-{uuid4().hex[:8]}"
             return ModelMetadataUpsertResult(model_id=model_id, tracking_id=tracking_id)
 

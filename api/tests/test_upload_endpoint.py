@@ -5,8 +5,8 @@ from auth.base import AuthenticatedPrincipal, require_principal
 from clients.upload_client import ModelMetadataUpsertResult, UploadSession
 from main import create_app
 
-TEST_MODEL_ID = 'AbC123xYz890'
-CREATED_MODEL_ID = 'Cr8ModelID12'
+TEST_MODEL_ID = "AbC123xYz890"
+CREATED_MODEL_ID = "Cr8ModelID12"
 
 
 class FakeUploadClient:
