@@ -2,7 +2,10 @@
 name = "mism-api"
 version = "0.1.0"
 description = "MISM gateway API built with FastAPI."
-readme = "README.md"
+readme = { content-type = "text/markdown", text = """# MISM Gateway API
+
+Gateway REST API for MISM, built with FastAPI. It fronts internal microservices for search and uploads, and supports configurable bearer-token auth (JWT or OIDC).
+""" }
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.116.1",
