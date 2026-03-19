@@ -8,7 +8,7 @@ on:
 
 jobs:
   test-and-lint:
-    name: Test and lint API
+    name: Test, lint, and build API image
     runs-on: ubuntu-latest
     defaults:
       run:
