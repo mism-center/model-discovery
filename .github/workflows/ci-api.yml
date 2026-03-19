@@ -1,4 +1,4 @@
-# CI for the Gateway API service: tests, formatting (ruff), linting (ruff), and type checking (mypy).
+# CI for the Gateway API service: tests, formatting (ruff), linting (ruff), type checking (mypy), and Docker image build.
 name: CI (API)
 
 on:
@@ -40,3 +40,6 @@ jobs:
 
       - name: Run mypy
         run: uv run mypy src tests
+
+      - name: Build Docker image
+        run: docker build -t mismapi:ci .
