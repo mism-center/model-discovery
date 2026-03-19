@@ -1,0 +1,42 @@
+# CI for the Gateway API service: tests, formatting (ruff), linting (ruff), and type checking (mypy).
+name: CI (API)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test-and-lint:
+    name: Test and lint API
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Run tests
+        run: uv run pytest
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Run Ruff lint checks
+        run: uv run ruff check .
+
+      - name: Run mypy
+        run: uv run mypy src tests

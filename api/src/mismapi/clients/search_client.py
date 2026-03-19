@@ -1,0 +1,151 @@
+import logging
+
+import httpx
+from pydantic import ValidationError
+
+from mismapi.core.errors import APIError
+from mismapi.core.http_client import error_from_downstream_response
+from mismapi.schemas.search import JsonObject, SearchResponse, SearchResultItem
+
+logger = logging.getLogger(__name__)
+
+
+class SearchServiceClient:
+    def __init__(self, base_url: str, timeout_seconds: float, stub_upstream: bool = False) -> None:
+        self._client = httpx.AsyncClient(base_url=base_url, timeout=timeout_seconds)
+        self._stub_upstream = stub_upstream
+
+    async def search(
+        self,
+        query: str,
+        limit: int,
+        offset: int,
+    ) -> SearchResponse:
+        if self._stub_upstream:
+            logger.info(
+                "Called search service (stub) query=%s limit=%s offset=%s",
+                query,
+                limit,
+                offset,
+            )
+            stub_data: JsonObject = {
+                "name": "Stub Model Result",
+                "description": "Stubbed search result from gateway.",
+                "metadata": {
+                    "query": query,
+                    "limit": limit,
+                    "offset": offset,
+                    "stubbed": True,
+                },
+            }
+
+            return SearchResponse(
+                total=1,
+                results=[
+                    SearchResultItem(
+                        data=stub_data,
+                        score=1.0,
+                    )
+                ],
+            )
+
+        # Stub mode is intentionally off below. Keep this for real upstream calls.
+        # try:
+        #     response = await self._client.get(
+        #         "/search",
+        #         params={
+        #             "q": query,
+        #             "limit": limit,
+        #             "offset": offset,
+        #         },
+        #     )
+        #     response.raise_for_status()
+        # except httpx.TimeoutException as exc:
+        #     raise APIError(
+        #         status_code=504,
+        #         code="search_timeout",
+        #         detail="Search service request timed out.",
+        #     ) from exc
+        # except httpx.HTTPStatusError as exc:
+        #     logger.warning("search_service_http_error status_code=%s", exc.response.status_code)
+        #     raise APIError(
+        #         status_code=502,
+        #         code="search_upstream_error",
+        #         detail="Search service returned an error.",
+        #     ) from exc
+        # except httpx.HTTPError as exc:
+        #     raise APIError(
+        #         status_code=502,
+        #         code="search_unavailable",
+        #         detail="Search service is unavailable.",
+        #     ) from exc
+        #
+        # try:
+        #     payload = response.json()
+        # except ValueError as exc:
+        #     raise APIError(
+        #         status_code=502,
+        #         code='search_invalid_payload',
+        #         detail='Search service response payload is invalid.',
+        #     ) from exc
+        #
+        # try:
+        #     return SearchResponse.model_validate(payload)
+        # except ValidationError as exc:
+        #     raise APIError(
+        #         status_code=502,
+        #         code='search_invalid_payload',
+        #         detail='Search service response payload is invalid.',
+        #     ) from exc
+
+        try:
+            response = await self._client.get(
+                "/search",
+                params={
+                    "q": query,
+                    "limit": limit,
+                    "offset": offset,
+                },
+            )
+            response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise APIError(
+                status_code=504,
+                code="search_timeout",
+                detail="Search service request timed out.",
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            logger.warning("search_service_http_error status_code=%s", exc.response.status_code)
+            status, code, detail = error_from_downstream_response(
+                exc.response,
+                fallback_code="search_upstream_error",
+                fallback_detail="Search service returned an error.",
+            )
+            raise APIError(status_code=status, code=code, detail=detail) from exc
+        except httpx.HTTPError as exc:
+            raise APIError(
+                status_code=502,
+                code="search_unavailable",
+                detail="Search service is unavailable.",
+            ) from exc
+
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise APIError(
+                status_code=502,
+                code="search_invalid_payload",
+                detail="Search service response payload is invalid.",
+            ) from exc
+
+        try:
+            return SearchResponse.model_validate(payload)
+        except ValidationError as exc:
+            raise APIError(
+                status_code=502,
+                code="search_invalid_payload",
+                detail="Search service response payload is invalid.",
+            ) from exc
+
+    async def close(self) -> None:
+        await self._client.aclose()
