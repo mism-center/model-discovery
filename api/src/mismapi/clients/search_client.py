@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from mismapi.core.errors import APIError
 from mismapi.core.http_client import error_from_downstream_response
-from mismapi.schemas.search import SearchResponse, SearchResultItem
+from mismapi.schemas.search import JsonObject, SearchResponse, SearchResultItem
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,12 @@ class SearchServiceClient:
         self._client = httpx.AsyncClient(base_url=base_url, timeout=timeout_seconds)
         self._stub_upstream = stub_upstream
 
-    async def search(self, query: str, limit: int, offset: int) -> SearchResponse:
+    async def search(
+        self,
+        query: str,
+        limit: int,
+        offset: int,
+    ) -> SearchResponse:
         if self._stub_upstream:
             logger.info(
                 "Called search service (stub) query=%s limit=%s offset=%s",
@@ -23,21 +28,23 @@ class SearchServiceClient:
                 limit,
                 offset,
             )
+            stub_data: JsonObject = {
+                "name": "Stub Model Result",
+                "description": "Stubbed search result from gateway.",
+                "metadata": {
+                    "query": query,
+                    "limit": limit,
+                    "offset": offset,
+                    "stubbed": True,
+                },
+            }
+
             return SearchResponse(
                 total=1,
                 results=[
                     SearchResultItem(
-                        id="stub-model-1",
-                        type="model",
-                        name="Stub Model Result",
-                        description="Stubbed search result from gateway.",
+                        data=stub_data,
                         score=1.0,
-                        metadata={
-                            "query": query,
-                            "limit": limit,
-                            "offset": offset,
-                            "stubbed": True,
-                        },
                     )
                 ],
             )

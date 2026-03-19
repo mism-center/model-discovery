@@ -21,18 +21,18 @@ async def test_search_accepts_mixed_metadata_value_types() -> None:
                 "total": 1,
                 "results": [
                     {
-                        "id": "model-1",
-                        "type": "model",
-                        "name": "Example",
-                        "description": "Mixed metadata",
-                        "score": 0.8,
-                        "metadata": {
-                            "framework": "pytorch",
-                            "version": 3,
-                            "quantized": False,
-                            "threshold": 0.42,
-                            "notes": None,
+                        "data": {
+                            "name": "Example",
+                            "description": "Mixed metadata",
+                            "metadata": {
+                                "framework": "pytorch",
+                                "version": 3,
+                                "quantized": False,
+                                "threshold": 0.42,
+                                "notes": None,
+                            },
                         },
+                        "score": 0.8,
                     }
                 ],
             },
@@ -40,11 +40,17 @@ async def test_search_accepts_mixed_metadata_value_types() -> None:
 
     client = _build_search_client_with_handler(httpx.MockTransport(handler))
     try:
-        response = await client.search(query="example", limit=25, offset=0)
+        response = await client.search(
+            query="example",
+            limit=25,
+            offset=0,
+        )
         assert response.total == 1
-        assert response.results[0].metadata["version"] == 3
-        assert response.results[0].metadata["quantized"] is False
-        assert response.results[0].metadata["threshold"] == 0.42
-        assert response.results[0].metadata["notes"] is None
+        metadata = response.results[0].data["metadata"]
+        assert isinstance(metadata, dict)
+        assert metadata["version"] == 3
+        assert metadata["quantized"] is False
+        assert metadata["threshold"] == 0.42
+        assert metadata["notes"] is None
     finally:
         await client.close()

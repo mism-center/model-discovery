@@ -7,7 +7,12 @@ from mismapi.schemas.search import SearchResponse, SearchResultItem
 
 
 class FakeSearchClient:
-    async def search(self, query: str, limit: int, offset: int) -> SearchResponse:
+    async def search(
+        self,
+        query: str,
+        limit: int,
+        offset: int,
+    ) -> SearchResponse:
         assert query == "llm"
         assert limit == 10
         assert offset == 2
@@ -15,12 +20,12 @@ class FakeSearchClient:
             total=1,
             results=[
                 SearchResultItem(
-                    id="model-1",
-                    type="model",
-                    name="Example Model",
-                    description="A test model",
+                    data={
+                        "name": "Example Model",
+                        "description": "A test model",
+                        "metadata": {"framework": "pytorch"},
+                    },
                     score=0.91,
-                    metadata={"framework": "pytorch"},
                 )
             ],
         )
@@ -30,7 +35,12 @@ class FakeSearchClient:
 
 
 class FailingSearchClient:
-    async def search(self, query: str, limit: int, offset: int) -> SearchResponse:
+    async def search(
+        self,
+        query: str,
+        limit: int,
+        offset: int,
+    ) -> SearchResponse:
         raise APIError(status_code=502, code="search_upstream_error", detail="Upstream failed")
 
     async def close(self) -> None:
@@ -55,7 +65,7 @@ def test_search_success() -> None:
         assert response.status_code == 200
         payload = response.json()
         assert payload["total"] == 1
-        assert payload["results"][0]["id"] == "model-1"
+        assert payload["results"][0]["data"]["name"] == "Example Model"
 
 
 def test_search_upstream_error_translated() -> None:

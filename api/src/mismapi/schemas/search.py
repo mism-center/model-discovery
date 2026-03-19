@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
 
-from mismapi.schemas.common import CustomMetadata
+type JsonPrimitive = str | int | float | bool | None
+type JsonValue = JsonPrimitive | dict[str, "JsonValue"] | list["JsonValue"]
+type JsonObject = dict[str, JsonValue]
 
 
 class SearchRequestParams(BaseModel):
@@ -10,12 +12,8 @@ class SearchRequestParams(BaseModel):
 
 
 class SearchResultItem(BaseModel):
-    id: str
-    type: str
-    name: str
-    description: str | None = None
-    score: float | None = None
-    metadata: CustomMetadata = Field(default_factory=dict)
+    data: JsonObject
+    score: float
 
 
 class SearchResponse(BaseModel):
