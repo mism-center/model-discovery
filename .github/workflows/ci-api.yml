@@ -10,6 +10,8 @@ jobs:
   test-and-lint:
     name: Test, lint, and build API image
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     defaults:
       run:
         working-directory: api
