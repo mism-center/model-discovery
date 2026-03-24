@@ -1,0 +1,189 @@
+{{/*
+  hpa.yaml
+  ─────────────────────────────────────────────────────────────────────────────
+  HorizontalPodAutoscalers for the three user-facing / latency-sensitive
+  stateless services:
+    • Discovery Gateway REST API
+    • Search Service
+    • Upload Service
+
+  Each HPA scales on CPU utilisation by default.  Memory and custom metrics
+  (e.g. RPS via KEDA / Prometheus adapter) can be enabled independently per
+  service in values.yaml under hpa.<service>.additionalMetrics.
+
+  Requires: metrics-server installed in the cluster.
+  For custom/external metrics also install the Prometheus adapter or KEDA.
+  ─────────────────────────────────────────────────────────────────────────────
+*/}}
+
+# ── Discovery Gateway REST API ────────────────────────────────────────────────
+{{- if and .Values.gateway.enabled .Values.hpa.gateway.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: discovery-gateway-hpa
+  labels:
+    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: discovery-gateway
+  minReplicas: {{ .Values.hpa.gateway.minReplicas }}
+  maxReplicas: {{ .Values.hpa.gateway.maxReplicas }}
+  metrics:
+    # CPU – scale up when average utilisation exceeds the target
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.hpa.gateway.targetCPUUtilizationPercentage }}
+    {{- if .Values.hpa.gateway.targetMemoryUtilizationPercentage }}
+    # Memory – optional, useful when the gateway caches JWTs / route configs
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.hpa.gateway.targetMemoryUtilizationPercentage }}
+    {{- end }}
+    {{- with .Values.hpa.gateway.additionalMetrics }}
+    # Additional custom / external metrics (Prometheus adapter, KEDA, etc.)
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: {{ .Values.hpa.gateway.scaleUpStabilizationWindowSeconds | default 60 }}
+      policies:
+        # Allow adding up to 2 pods every 30 s to absorb traffic spikes quickly
+        - type: Pods
+          value: 2
+          periodSeconds: 30
+        # Cap at 50 % of current replicas per minute to avoid over-provisioning
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.hpa.gateway.scaleDownStabilizationWindowSeconds | default 300 }}
+      policies:
+        # Remove at most 1 pod every 60 s to keep the gateway stable during dips
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+      selectPolicy: Min
+{{- end }}
+
+---
+# ── Search Service ────────────────────────────────────────────────────────────
+{{- if and .Values.searchService.enabled .Values.hpa.searchService.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: search-service-hpa
+  labels:
+    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: search-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: search-service
+  minReplicas: {{ .Values.hpa.searchService.minReplicas }}
+  maxReplicas: {{ .Values.hpa.searchService.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.hpa.searchService.targetCPUUtilizationPercentage }}
+    {{- if .Values.hpa.searchService.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.hpa.searchService.targetMemoryUtilizationPercentage }}
+    {{- end }}
+    {{- with .Values.hpa.searchService.additionalMetrics }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: {{ .Values.hpa.searchService.scaleUpStabilizationWindowSeconds | default 60 }}
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 30
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.hpa.searchService.scaleDownStabilizationWindowSeconds | default 300 }}
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+      selectPolicy: Min
+{{- end }}
+
+---
+# ── Upload Service ────────────────────────────────────────────────────────────
+{{- if and .Values.uploadService.enabled .Values.hpa.uploadService.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: upload-service-hpa
+  labels:
+    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: upload-service
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: upload-service
+  minReplicas: {{ .Values.hpa.uploadService.minReplicas }}
+  maxReplicas: {{ .Values.hpa.uploadService.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.hpa.uploadService.targetCPUUtilizationPercentage }}
+    {{- if .Values.hpa.uploadService.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.hpa.uploadService.targetMemoryUtilizationPercentage }}
+    {{- end }}
+    {{- with .Values.hpa.uploadService.additionalMetrics }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  behavior:
+    scaleUp:
+      # Upload is I/O-bound; allow faster scale-up than search/gateway
+      stabilizationWindowSeconds: {{ .Values.hpa.uploadService.scaleUpStabilizationWindowSeconds | default 30 }}
+      policies:
+        - type: Pods
+          value: 3
+          periodSeconds: 30
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+      selectPolicy: Max
+    scaleDown:
+      # Keep extra upload pods longer – large file transfers may be in-flight
+      stabilizationWindowSeconds: {{ .Values.hpa.uploadService.scaleDownStabilizationWindowSeconds | default 600 }}
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+      selectPolicy: Min
+{{- end }}

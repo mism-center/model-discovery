@@ -1,0 +1,57 @@
+{{- if .Values.searchService.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search-service
+  labels:
+    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: search-service
+spec:
+  replicas: {{ .Values.searchService.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "mism-gateway-api.selectorLabels" (dict "component" "search-service" "context" $) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mism-gateway-api.selectorLabels" (dict "component" "search-service" "context" $) | nindent 8 }}
+    spec:
+      {{- include "mism-gateway-api.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: search-service
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.searchService.image.repository }}:{{ .Values.searchService.image.tag }}"
+          imagePullPolicy: {{ .Values.searchService.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.searchService.service.port }}
+              protocol: TCP
+          env:
+            {{- range $key, $val := .Values.searchService.env }}
+            - name: {{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+            - name: MONGO_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: mism-gateway-api-secrets
+                  key: mongoRootUsername
+            - name: MONGO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mism-gateway-api-secrets
+                  key: mongoRootPassword
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.searchService.resources | nindent 12 }}
+{{- end }}

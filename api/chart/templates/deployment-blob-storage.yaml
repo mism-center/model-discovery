@@ -1,0 +1,77 @@
+{{- if .Values.blobStorage.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: blob-storage
+  labels:
+    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: blob-storage
+spec:
+  serviceName: blob-storage
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "mism-gateway-api.selectorLabels" (dict "component" "blob-storage" "context" $) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mism-gateway-api.selectorLabels" (dict "component" "blob-storage" "context" $) | nindent 8 }}
+    spec:
+      {{- include "mism-gateway-api.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: minio
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.blobStorage.image.repository }}:{{ .Values.blobStorage.image.tag }}"
+          imagePullPolicy: {{ .Values.blobStorage.image.pullPolicy }}
+          args:
+            - server
+            - /data
+            - --console-address
+            - ":{{ .Values.blobStorage.service.consolePort }}"
+          ports:
+            - name: api
+              containerPort: {{ .Values.blobStorage.service.apiPort }}
+              protocol: TCP
+            - name: console
+              containerPort: {{ .Values.blobStorage.service.consolePort }}
+              protocol: TCP
+          env:
+            - name: MINIO_ROOT_USER
+              value: {{ .Values.blobStorage.env.MINIO_ROOT_USER | quote }}
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mism-gateway-api-secrets
+                  key: minioRootPassword
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: api
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: api
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.blobStorage.resources | nindent 12 }}
+          volumeMounts:
+            - name: minio-data
+              mountPath: /data
+  {{- if .Values.blobStorage.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: minio-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.blobStorage.persistence.storageClass }}
+        storageClassName: {{ .Values.blobStorage.persistence.storageClass }}
+        {{- else if .Values.global.storageClass }}
+        storageClassName: {{ .Values.global.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.blobStorage.persistence.size }}
+  {{- end }}
+{{- end }}
