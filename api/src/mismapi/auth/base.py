@@ -39,6 +39,15 @@ async def require_principal(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = bearer_dependency,
 ) -> AuthenticatedPrincipal:
+    settings = request.app.state.settings
+    if settings.disable_auth:
+        return AuthenticatedPrincipal(
+            subject="anonymous",
+            issuer="local",
+            audience="local",
+            scopes=set(),
+        )
+
     if credentials is None:
         raise APIError(status_code=401, code="auth_missing", detail="Missing bearer token.")
 

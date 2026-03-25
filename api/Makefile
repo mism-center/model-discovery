@@ -2,7 +2,7 @@ PYTHON ?= 3.12
 UV ?= uv
 APP ?= mismapi.main:app
 
-.PHONY: install lock run dev test lint format typecheck clean
+.PHONY: install lock run dev test lint format typecheck clean integration-up integration-test integration-down
 
 install:
 	$(UV) sync --python $(PYTHON) --all-groups
@@ -30,3 +30,12 @@ typecheck:
 
 clean:
 	rm -rf .pytest_cache .ruff_cache .mypy_cache
+
+integration-up:
+	docker compose -f ../docker-compose.test.yaml up -d --build --wait
+
+integration-test: integration-up
+	$(UV) run pytest tests/test_integration.py -m integration -v
+
+integration-down:
+	docker compose -f ../docker-compose.test.yaml down -v

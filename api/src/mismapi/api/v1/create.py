@@ -1,42 +1,113 @@
-from fastapi import APIRouter, Request
+import logging
 
-from mismapi.clients.upload_client import UploadServiceClient
-from mismapi.schemas.common import ModelId
-from mismapi.schemas.upload import (
-    ModelMetadataPayload,
-    ModelMetadataUpsertResponse,
+from fastapi import APIRouter, Depends, Request
+
+from mismapi.auth.base import AuthenticatedPrincipal, require_principal
+from mismapi.schemas.registry import (
+    CreateRunRequest,
+    CreateRunResponse,
+    RegisterModelRequest,
+    RegisterModelResponse,
+    UpdateModelRequest,
 )
+from mismapi.services.registry_service import RegistryService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-@router.post("/models", response_model=ModelMetadataUpsertResponse)
+@router.post("/models", response_model=RegisterModelResponse, status_code=201)
 async def create_model(
     request: Request,
-    payload: ModelMetadataPayload,
-) -> ModelMetadataUpsertResponse:
-    upload_client: UploadServiceClient = request.app.state.upload_client
-    created = await upload_client.create_model(
+    payload: RegisterModelRequest,
+    principal: AuthenticatedPrincipal = Depends(require_principal),
+) -> RegisterModelResponse:
+    service: RegistryService = request.app.state.registry_service
+
+    resource = service.create_model(
+        principal,
         name=payload.name,
+        location_uri=payload.location_uri,
+        execution_type=payload.execution_type,
         description=payload.description,
         version=payload.version,
+        owner=payload.owner,
         metadata=payload.metadata,
     )
-    return ModelMetadataUpsertResponse(model_id=created.model_id, tracking_id=created.tracking_id)
+
+    return RegisterModelResponse(
+        id=resource.id,
+        name=resource.name,
+        resource_type=resource.resource_type.value,
+        location_uri=resource.location_uri,
+        execution_type=resource.execution_type.value if resource.execution_type else None,
+        version=resource.version,
+        status=resource.status.value,
+        created_at=resource.created_at,
+    )
 
 
-@router.put("/models/{model_id}", response_model=ModelMetadataUpsertResponse)
+@router.put("/models/{model_id}", response_model=RegisterModelResponse)
 async def update_model(
     request: Request,
-    model_id: ModelId,
-    payload: ModelMetadataPayload,
-) -> ModelMetadataUpsertResponse:
-    upload_client: UploadServiceClient = request.app.state.upload_client
-    updated = await upload_client.update_model(
+    model_id: str,
+    payload: UpdateModelRequest,
+    principal: AuthenticatedPrincipal = Depends(require_principal),
+) -> RegisterModelResponse:
+    service: RegistryService = request.app.state.registry_service
+
+    resource = service.update_model(
+        principal,
         model_id=model_id,
         name=payload.name,
         description=payload.description,
         version=payload.version,
+        owner=payload.owner,
+        location_uri=payload.location_uri,
+        execution_type=payload.execution_type,
         metadata=payload.metadata,
     )
-    return ModelMetadataUpsertResponse(model_id=updated.model_id, tracking_id=updated.tracking_id)
+
+    return RegisterModelResponse(
+        id=resource.id,
+        name=resource.name,
+        resource_type=resource.resource_type.value,
+        location_uri=resource.location_uri,
+        execution_type=resource.execution_type.value if resource.execution_type else None,
+        version=resource.version,
+        status=resource.status.value,
+        created_at=resource.created_at,
+    )
+
+
+@router.post(
+    "/models/{model_id}/runs",
+    response_model=CreateRunResponse,
+    status_code=201,
+)
+async def create_run(
+    request: Request,
+    model_id: str,
+    payload: CreateRunRequest,
+    principal: AuthenticatedPrincipal = Depends(require_principal),
+) -> CreateRunResponse:
+    service: RegistryService = request.app.state.registry_service
+
+    run = service.create_run(
+        principal,
+        model_id=model_id,
+        input_resource_ids=payload.input_resource_ids,
+        parameters=payload.parameters,
+        triggered_by=payload.triggered_by,
+        notes=payload.notes,
+    )
+
+    return CreateRunResponse(
+        id=run.id,
+        model_id=run.model_id,
+        model_version=run.model_version,
+        status=run.status.value,
+        input_resource_ids=list(run.input_resource_ids),
+        created_at=run.created_at,
+    )
