@@ -147,7 +147,6 @@ def test_upload_retry_retries_only_failing_part() -> None:
         ]
 
 
-
 # NOTE: test_create_model_metadata and test_update_model_metadata were removed.
 # POST /models now uses the registry (tested in test_search_endpoint.py / create endpoint tests).
 # PUT /models/{id} was removed (registry uses immutable versioning).

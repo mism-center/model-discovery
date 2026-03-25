@@ -193,7 +193,9 @@ class RegistryService:
             self._session.rollback()
             raise APIError(status_code=400, code="validation_error", detail=str(exc))
 
-        logger.info("Registered dataset %s (%s) by %s", resource.id, resource.name, principal.subject)
+        logger.info(
+            "Registered dataset %s (%s) by %s", resource.id, resource.name, principal.subject
+        )
         return resource
 
     def update_dataset(

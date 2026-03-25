@@ -14,12 +14,8 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY src ./src
 
-# Allow git to clone private repos during build
-ARG GIT_TOKEN=""
-RUN if [ -n "$GIT_TOKEN" ]; then \
-      git config --global url."https://x-access-token:${GIT_TOKEN}@github.com/".insteadOf "https://github.com/"; \
-    fi \
-    && uv sync --frozen --no-dev \
+
+RUN uv sync --frozen --no-dev \
     && rm -f /root/.gitconfig \
     && groupadd --system app \
     && useradd --system --gid app --no-create-home app \

@@ -29,9 +29,6 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Configure git for private repos
-        run: git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
-
       - name: Install dependencies
         run: uv sync --group dev
 
@@ -48,7 +45,7 @@ jobs:
         run: uv run mypy src tests
 
       - name: Build Docker image
-        run: docker build --build-arg GIT_TOKEN=${{ secrets.GITHUB_TOKEN }} -t mismapi:ci .
+        run: docker build -t mismapi:ci .
 
   integration-test:
     name: Integration tests (Docker Compose)
@@ -66,16 +63,12 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Configure git for private repos
-        run: git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
       - name: Install test dependencies
         working-directory: api
         run: uv sync --group dev
 
       - name: Start services
-        env:
-          GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: docker compose -f docker-compose.test.yaml up -d --build --wait
 
       - name: Run integration tests
