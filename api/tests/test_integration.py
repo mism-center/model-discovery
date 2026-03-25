@@ -8,6 +8,7 @@ Run with:
 
 import os
 import uuid
+from collections.abc import Generator
 
 import httpx
 import pytest
@@ -18,7 +19,7 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.fixture()
-def api() -> httpx.Client:
+def api() -> Generator[httpx.Client, None, None]:
     with httpx.Client(base_url=BASE_URL, timeout=10) as client:
         yield client
 
@@ -46,7 +47,7 @@ def test_create_and_list_model(api: httpx.Client) -> None:
         json={
             "name": name,
             "location_uri": "https://example.com/model",
-            "execution_type": "DOCKER",
+            "execution_type": "docker",
             "description": "integration test model",
         },
     )
@@ -71,7 +72,7 @@ def test_create_model_and_run(api: httpx.Client) -> None:
         json={
             "name": name,
             "location_uri": "https://example.com/model",
-            "execution_type": "DOCKER",
+            "execution_type": "docker",
         },
     )
     assert r.status_code == 201
@@ -92,7 +93,7 @@ def test_update_model(api: httpx.Client) -> None:
         json={
             "name": name,
             "location_uri": "https://example.com/model",
-            "execution_type": "DOCKER",
+            "execution_type": "docker",
         },
     )
     assert r.status_code == 201

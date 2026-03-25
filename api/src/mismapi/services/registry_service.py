@@ -9,6 +9,7 @@ from mism_registry import (
     register_dataset,
     register_model,
 )
+from mism_registry.enums import ExecutionType
 from mism_registry import (
     ValidationError as RegistryValidationError,
 )
@@ -38,7 +39,7 @@ class RegistryService:
         *,
         name: str,
         location_uri: str,
-        execution_type: str,
+        execution_type: ExecutionType,
         description: str = "",
         version: str = "",
         owner: str = "",
@@ -75,7 +76,7 @@ class RegistryService:
         version: str | None = None,
         owner: str | None = None,
         location_uri: str | None = None,
-        execution_type: str | None = None,
+        execution_type: ExecutionType | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> Resource:
         try:
