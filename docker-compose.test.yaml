@@ -16,6 +16,8 @@ services:
   migrate:
     build:
       context: api
+      args:
+        GIT_TOKEN: ${GIT_TOKEN:-}
     depends_on:
       db:
         condition: service_healthy
@@ -36,6 +38,8 @@ print('Migrations complete')
   api:
     build:
       context: api
+      args:
+        GIT_TOKEN: ${GIT_TOKEN:-}
     depends_on:
       db:
         condition: service_healthy
