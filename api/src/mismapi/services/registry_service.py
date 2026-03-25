@@ -9,10 +9,10 @@ from mism_registry import (
     register_dataset,
     register_model,
 )
-from mism_registry.enums import ExecutionType
 from mism_registry import (
     ValidationError as RegistryValidationError,
 )
+from mism_registry.enums import ExecutionType
 from mism_registry.protocol import Registry
 from mism_registry.resource import Resource
 from mism_registry.run import Run
