@@ -1,20 +1,22 @@
 import logging
 from typing import Any
 
-from sqlalchemy.orm import Session
-
 from mism_registry import (
     ResourceNotFoundError,
     ResourceType,
-    ValidationError as RegistryValidationError,
     find_resources,
     prepare_run,
     register_dataset,
     register_model,
 )
+from mism_registry import (
+    ValidationError as RegistryValidationError,
+)
 from mism_registry.protocol import Registry
 from mism_registry.resource import Resource
 from mism_registry.run import Run
+from sqlalchemy.orm import Session
+
 from mismapi.auth.base import AuthenticatedPrincipal
 from mismapi.core.errors import APIError
 
@@ -53,11 +55,12 @@ class RegistryService:
                 owner=owner or principal.subject,
                 metadata=metadata or {},
             )
-            # FUTURE: fga.write_tuple(user=principal.subject, relation="owner", object=f"model:{resource.id}")
+            # FUTURE: fga.write_tuple(user=principal.subject,
+            #   relation="owner", object=f"model:{resource.id}")
             self._session.commit()
         except RegistryValidationError as exc:
             self._session.rollback()
-            raise APIError(status_code=400, code="validation_error", detail=str(exc))
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
 
         logger.info("Registered model %s (%s) by %s", resource.id, resource.name, principal.subject)
         return resource
@@ -78,9 +81,10 @@ class RegistryService:
         try:
             resource = self._registry.get_resource(model_id)
         except ResourceNotFoundError as exc:
-            raise APIError(status_code=404, code="not_found", detail=str(exc))
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
 
-        # FUTURE: fga.check(user=principal.subject, relation="editor", object=f"model:{model_id}")
+        # FUTURE: fga.check(user=principal.subject,
+        #   relation="editor", object=f"model:{model_id}")
 
         if name is not None:
             resource.name = name
@@ -102,7 +106,7 @@ class RegistryService:
             self._session.commit()
         except RegistryValidationError as exc:
             self._session.rollback()
-            raise APIError(status_code=400, code="validation_error", detail=str(exc))
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
 
         logger.info("Updated model %s by %s", model_id, principal.subject)
         return updated
@@ -128,14 +132,15 @@ class RegistryService:
                 triggered_by=triggered_by or principal.subject,
                 notes=notes,
             )
-            # FUTURE: fga.write_tuple(user=principal.subject, relation="owner", object=f"run:{run.id}")
+            # FUTURE: fga.write_tuple(user=principal.subject,
+            #   relation="owner", object=f"run:{run.id}")
             self._session.commit()
         except ResourceNotFoundError as exc:
             self._session.rollback()
-            raise APIError(status_code=404, code="not_found", detail=str(exc))
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
         except RegistryValidationError as exc:
             self._session.rollback()
-            raise APIError(status_code=400, code="validation_error", detail=str(exc))
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
 
         logger.info("Created run %s for model %s by %s", run.id, model_id, principal.subject)
         return run
@@ -187,11 +192,12 @@ class RegistryService:
                 format_tags=format_tags or [],
                 metadata=metadata or {},
             )
-            # FUTURE: fga.write_tuple(user=principal.subject, relation="owner", object=f"dataset:{resource.id}")
+            # FUTURE: fga.write_tuple(user=principal.subject,
+            #   relation="owner", object=f"dataset:{resource.id}")
             self._session.commit()
         except RegistryValidationError as exc:
             self._session.rollback()
-            raise APIError(status_code=400, code="validation_error", detail=str(exc))
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
 
         logger.info(
             "Registered dataset %s (%s) by %s", resource.id, resource.name, principal.subject
@@ -214,9 +220,10 @@ class RegistryService:
         try:
             resource = self._registry.get_resource(dataset_id)
         except ResourceNotFoundError as exc:
-            raise APIError(status_code=404, code="not_found", detail=str(exc))
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
 
-        # FUTURE: fga.check(user=principal.subject, relation="editor", object=f"dataset:{dataset_id}")
+        # FUTURE: fga.check(user=principal.subject,
+        #   relation="editor", object=f"dataset:{dataset_id}")
 
         if name is not None:
             resource.name = name
@@ -238,7 +245,7 @@ class RegistryService:
             self._session.commit()
         except RegistryValidationError as exc:
             self._session.rollback()
-            raise APIError(status_code=400, code="validation_error", detail=str(exc))
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
 
         logger.info("Updated dataset %s by %s", dataset_id, principal.subject)
         return updated

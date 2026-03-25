@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from mism_registry.backends.postgres import create_registry
 
 from mismapi.api.router import build_api_router
 from mismapi.auth.base import build_auth_validator
@@ -12,7 +13,6 @@ from mismapi.core.service_resolver import EnvServiceResolver
 from mismapi.core.settings import get_settings
 from mismapi.middleware.request_context import RequestContextMiddleware
 from mismapi.services.registry_service import RegistryService
-from mism_registry.backends.postgres import create_registry
 
 
 @asynccontextmanager

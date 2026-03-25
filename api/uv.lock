@@ -509,7 +509,7 @@ dev = [
 [[package]]
 name = "mism-registry"
 version = "0.1.0"
-source = { git = "https://github.com/mism-center/metadata-schema.git?rev=feature%2Fmism-81#d31354366c58e68a5bce63ae914199c926ab7712" }
+source = { git = "https://github.com/mism-center/metadata-schema.git?rev=feature%2Fmism-81#d995dcd647beb9bda587e6dedc1bc72d0211dc06" }
 
 [package.optional-dependencies]
 postgres = [

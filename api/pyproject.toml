@@ -49,6 +49,7 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
+ignore = ["B008"]  # Depends() / Query() in FastAPI endpoint defaults is idiomatic
 
 [tool.pyright]
 extraPaths = ["src"]

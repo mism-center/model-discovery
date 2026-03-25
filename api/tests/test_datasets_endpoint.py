@@ -1,10 +1,10 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
-
 from mism_registry.enums import ResourceStatus, ResourceType
 from mism_registry.resource import Resource
+
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
 from mismapi.main import create_app
 from mismapi.services.registry_service import RegistryService
@@ -28,7 +28,7 @@ def _make_dataset(
         status=ResourceStatus.ACTIVE,
         owner=owner,
         format_tags=format_tags or ["csv"],
-        created_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        created_at=datetime(2025, 1, 1, tzinfo=UTC),
     )
 
 

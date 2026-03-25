@@ -1,9 +1,8 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
-
 from mism_registry import ExecutionType
+from pydantic import BaseModel, Field
 
 
 class RegisterModelRequest(BaseModel):

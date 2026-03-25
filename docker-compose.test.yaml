@@ -23,17 +23,7 @@ services:
         condition: service_healthy
     environment:
       MISM_DAL_DATABASE_URL: "postgresql+psycopg://postgres:postgres@db:5432/mism_test"
-    entrypoint: ["python", "-c", "
-from alembic.config import Config;
-from alembic import command;
-import mism_registry.backends.migrations as m;
-import os;
-cfg = Config();
-cfg.set_main_option('script_location', os.path.dirname(m.__file__));
-cfg.set_main_option('sqlalchemy.url', os.environ['MISM_DAL_DATABASE_URL']);
-command.upgrade(cfg, 'head');
-print('Migrations complete')
-      "]
+    entrypoint: ["python", "-c", "from alembic.config import Config; from alembic import command; import mism_registry.backends.migrations as m; import os; cfg = Config(); cfg.set_main_option('script_location', os.path.dirname(m.__file__)); cfg.set_main_option('sqlalchemy.url', os.environ['MISM_DAL_DATABASE_URL']); command.upgrade(cfg, 'head'); print('Migrations complete')"]
 
   api:
     build:
