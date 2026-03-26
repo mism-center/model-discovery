@@ -7,12 +7,12 @@ kind: Service
 metadata:
   name: discovery-gateway
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
     app.kubernetes.io/component: gateway
 spec:
   type: {{ .Values.gateway.service.type }}
   selector:
-    {{- include "mism-gateway-api.selectorLabels" (dict "component" "gateway" "context" $) | nindent 4 }}
+    {{- include "model-discovery.selectorLabels" (dict "component" "gateway" "context" $) | nindent 4 }}
   ports:
     - name: http
       port: {{ .Values.gateway.service.port }}
@@ -29,12 +29,12 @@ kind: Service
 metadata:
   name: search-service
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
     app.kubernetes.io/component: search-service
 spec:
   type: {{ .Values.searchService.service.type }}
   selector:
-    {{- include "mism-gateway-api.selectorLabels" (dict "component" "search-service" "context" $) | nindent 4 }}
+    {{- include "model-discovery.selectorLabels" (dict "component" "search-service" "context" $) | nindent 4 }}
   ports:
     - name: http
       port: {{ .Values.searchService.service.port }}
@@ -51,12 +51,12 @@ kind: Service
 metadata:
   name: upload-service
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
     app.kubernetes.io/component: upload-service
 spec:
   type: {{ .Values.uploadService.service.type }}
   selector:
-    {{- include "mism-gateway-api.selectorLabels" (dict "component" "upload-service" "context" $) | nindent 4 }}
+    {{- include "model-discovery.selectorLabels" (dict "component" "upload-service" "context" $) | nindent 4 }}
   ports:
     - name: http
       port: {{ .Values.uploadService.service.port }}
@@ -73,12 +73,12 @@ kind: Service
 metadata:
   name: acl-server
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
     app.kubernetes.io/component: acl-server
 spec:
   type: {{ .Values.aclServer.service.type }}
   selector:
-    {{- include "mism-gateway-api.selectorLabels" (dict "component" "acl-server" "context" $) | nindent 4 }}
+    {{- include "model-discovery.selectorLabels" (dict "component" "acl-server" "context" $) | nindent 4 }}
   ports:
     - name: http
       port: {{ .Values.aclServer.service.port }}
@@ -95,12 +95,12 @@ kind: Service
 metadata:
   name: oidc-service
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
     app.kubernetes.io/component: oidc-service
 spec:
   type: {{ .Values.oidcService.service.type }}
   selector:
-    {{- include "mism-gateway-api.selectorLabels" (dict "component" "oidc-service" "context" $) | nindent 4 }}
+    {{- include "model-discovery.selectorLabels" (dict "component" "oidc-service" "context" $) | nindent 4 }}
   ports:
     - name: http
       port: {{ .Values.oidcService.service.port }}
@@ -117,12 +117,12 @@ kind: Service
 metadata:
   name: storage-interface
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
     app.kubernetes.io/component: storage-interface
 spec:
   type: {{ .Values.storageInterface.service.type }}
   selector:
-    {{- include "mism-gateway-api.selectorLabels" (dict "component" "storage-interface" "context" $) | nindent 4 }}
+    {{- include "model-discovery.selectorLabels" (dict "component" "storage-interface" "context" $) | nindent 4 }}
   ports:
     - name: http
       port: {{ .Values.storageInterface.service.port }}
@@ -139,12 +139,12 @@ kind: Service
 metadata:
   name: metadata-store
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
     app.kubernetes.io/component: metadata-store
 spec:
   type: {{ .Values.metadataStore.service.type }}
   selector:
-    {{- include "mism-gateway-api.selectorLabels" (dict "component" "metadata-store" "context" $) | nindent 4 }}
+    {{- include "model-discovery.selectorLabels" (dict "component" "metadata-store" "context" $) | nindent 4 }}
   ports:
     - name: mongo
       port: {{ .Values.metadataStore.service.port }}
@@ -161,12 +161,12 @@ kind: Service
 metadata:
   name: acl-db
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
     app.kubernetes.io/component: acl-db
 spec:
   type: {{ .Values.aclDb.service.type }}
   selector:
-    {{- include "mism-gateway-api.selectorLabels" (dict "component" "acl-db" "context" $) | nindent 4 }}
+    {{- include "model-discovery.selectorLabels" (dict "component" "acl-db" "context" $) | nindent 4 }}
   ports:
     - name: postgres
       port: {{ .Values.aclDb.service.port }}
@@ -183,12 +183,12 @@ kind: Service
 metadata:
   name: blob-storage
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
     app.kubernetes.io/component: blob-storage
 spec:
   type: {{ .Values.blobStorage.service.type }}
   selector:
-    {{- include "mism-gateway-api.selectorLabels" (dict "component" "blob-storage" "context" $) | nindent 4 }}
+    {{- include "model-discovery.selectorLabels" (dict "component" "blob-storage" "context" $) | nindent 4 }}
   ports:
     - name: api
       port: {{ .Values.blobStorage.service.apiPort }}

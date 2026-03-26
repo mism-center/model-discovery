@@ -48,7 +48,7 @@ Access
 {{- end }}
 
 IMPORTANT – change default secrets before production use:
-  helm upgrade {{ .Release.Name }} ./mism-gateway-api \
+  helm upgrade {{ .Release.Name }} ./chart \
     --set secrets.mongoRootPassword=<STRONG_PASSWORD> \
     --set secrets.aclDbPassword=<STRONG_PASSWORD> \
     --set secrets.minioRootPassword=<STRONG_PASSWORD> \

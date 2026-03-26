@@ -4,7 +4,7 @@
 
 This session translated the MISM Discovery architecture diagram
 (`mism_discovery_architecture.png`) into a production-ready Helm chart located
-at `Architecture-V2/mism-gateway-api/`.
+at `chart/` in this repository (chart name: `model-discovery`).
 
 ---
 
@@ -31,7 +31,7 @@ The platform is composed of nine components derived from the architecture diagra
 ## Chart Structure
 
 ```
-mism-gateway-api/
+chart/
 ├── Chart.yaml
 ├── values.yaml
 └── templates/
@@ -73,7 +73,7 @@ Two modes, toggled by `externalSecrets.enabled` in `values.yaml`:
 | `false` (default) | Plain `Opaque Secret` from values | Local dev, CI |
 | `true` | `ExternalSecret` CR (ESO v1beta1) | Production — pulls from Vault, AWS SM, GCP SM, Azure KV |
 
-The generated Secret is always named `mism-gateway-api-secrets` so all Deployment
+The generated Secret is always named `model-discovery-secrets` so all Deployment
 references stay the same regardless of mode. The plain Secret carries
 `helm.sh/resource-policy: keep` to prevent accidental deletion on upgrade.
 
@@ -136,7 +136,7 @@ helm install mism . -n <namespace> --create-namespace \
   --set externalSecrets.enabled=true \
   --set externalSecrets.secretStoreName=vault-backend \
   --set externalSecrets.secretPath=prod/mism/discovery \
-  --set ingress.host=mism-gateway-api.your-domain.com \
+  --set ingress.host=model-discovery.your-domain.com \
   --set ingress.tls.enabled=true \
   --set networkPolicy.restrictEgress=true
 ```

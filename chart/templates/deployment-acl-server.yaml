@@ -4,19 +4,19 @@ kind: Deployment
 metadata:
   name: acl-server
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
     app.kubernetes.io/component: acl-server
 spec:
   replicas: {{ .Values.aclServer.replicaCount }}
   selector:
     matchLabels:
-      {{- include "mism-gateway-api.selectorLabels" (dict "component" "acl-server" "context" $) | nindent 6 }}
+      {{- include "model-discovery.selectorLabels" (dict "component" "acl-server" "context" $) | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "mism-gateway-api.selectorLabels" (dict "component" "acl-server" "context" $) | nindent 8 }}
+        {{- include "model-discovery.selectorLabels" (dict "component" "acl-server" "context" $) | nindent 8 }}
     spec:
-      {{- include "mism-gateway-api.imagePullSecrets" . | nindent 6 }}
+      {{- include "model-discovery.imagePullSecrets" . | nindent 6 }}
       containers:
         - name: acl-server
           image: "{{ .Values.global.imageRegistry }}{{ .Values.aclServer.image.repository }}:{{ .Values.aclServer.image.tag }}"
@@ -33,7 +33,7 @@ spec:
             - name: ACL_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: mism-gateway-api-secrets
+                  name: model-discovery-secrets
                   key: aclDbPassword
           livenessProbe:
             httpGet:

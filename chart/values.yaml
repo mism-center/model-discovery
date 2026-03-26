@@ -262,7 +262,7 @@ ingress:
   enabled: true
   className: "nginx"
   annotations: {}
-  host: "mism-gateway-api.example.com"
+  host: "model-discovery.example.com"
   tls:
     enabled: false
     secretName: "mism-tls"

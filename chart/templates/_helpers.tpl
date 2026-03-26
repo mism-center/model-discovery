@@ -1,14 +1,14 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "mism-gateway-api.name" -}}
+{{- define "model-discovery.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Create a default fully qualified app name.
 */}}
-{{- define "mism-gateway-api.fullname" -}}
+{{- define "model-discovery.fullname" -}}
 {{- $name := default .Chart.Name .Values.nameOverride }}
 {{- if contains $name .Release.Name }}
 {{- .Release.Name | trunc 63 | trimSuffix "-" }}
@@ -20,18 +20,18 @@ Create a default fully qualified app name.
 {{/*
 Common labels
 */}}
-{{- define "mism-gateway-api.labels" -}}
-helm.sh/chart: {{ include "mism-gateway-api.name" . }}-{{ .Chart.Version }}
+{{- define "model-discovery.labels" -}}
+helm.sh/chart: {{ include "model-discovery.name" . }}-{{ .Chart.Version }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
 Selector labels for a given component
-Usage: {{ include "mism-gateway-api.selectorLabels" (dict "component" "gateway" "context" $) }}
+Usage: {{ include "model-discovery.selectorLabels" (dict "component" "gateway" "context" $) }}
 */}}
-{{- define "mism-gateway-api.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "mism-gateway-api.name" .context }}
+{{- define "model-discovery.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "model-discovery.name" .context }}
 app.kubernetes.io/component: {{ .component }}
 app.kubernetes.io/instance: {{ .context.Release.Name }}
 {{- end }}
@@ -39,7 +39,7 @@ app.kubernetes.io/instance: {{ .context.Release.Name }}
 {{/*
 Image pull secrets
 */}}
-{{- define "mism-gateway-api.imagePullSecrets" -}}
+{{- define "model-discovery.imagePullSecrets" -}}
 {{- with .Values.global.imagePullSecrets }}
 imagePullSecrets:
   {{- toYaml . | nindent 2 }}

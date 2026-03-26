@@ -30,7 +30,7 @@ kind: NetworkPolicy
 metadata:
   name: default-deny-ingress
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
 spec:
   podSelector: {}        # applies to every pod in the namespace
   policyTypes:
@@ -45,7 +45,7 @@ kind: NetworkPolicy
 metadata:
   name: allow-ingress-to-gateway
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
@@ -75,7 +75,7 @@ kind: NetworkPolicy
 metadata:
   name: allow-gateway-to-search
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
@@ -100,7 +100,7 @@ kind: NetworkPolicy
 metadata:
   name: allow-gateway-to-upload
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
@@ -125,7 +125,7 @@ kind: NetworkPolicy
 metadata:
   name: allow-to-oidc
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
@@ -161,7 +161,7 @@ kind: NetworkPolicy
 metadata:
   name: allow-upload-to-acl-server
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
@@ -186,7 +186,7 @@ kind: NetworkPolicy
 metadata:
   name: allow-upload-to-storage-interface
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
@@ -211,7 +211,7 @@ kind: NetworkPolicy
 metadata:
   name: allow-search-to-metadata-store
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
@@ -236,7 +236,7 @@ kind: NetworkPolicy
 metadata:
   name: allow-acl-server-to-acl-db
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
@@ -261,7 +261,7 @@ kind: NetworkPolicy
 metadata:
   name: allow-to-blob-storage
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
@@ -298,7 +298,7 @@ kind: NetworkPolicy
 metadata:
   name: default-restrict-egress
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
 spec:
   podSelector: {}
   policyTypes:

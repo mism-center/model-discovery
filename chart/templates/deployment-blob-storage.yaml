@@ -4,20 +4,20 @@ kind: StatefulSet
 metadata:
   name: blob-storage
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
     app.kubernetes.io/component: blob-storage
 spec:
   serviceName: blob-storage
   replicas: 1
   selector:
     matchLabels:
-      {{- include "mism-gateway-api.selectorLabels" (dict "component" "blob-storage" "context" $) | nindent 6 }}
+      {{- include "model-discovery.selectorLabels" (dict "component" "blob-storage" "context" $) | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "mism-gateway-api.selectorLabels" (dict "component" "blob-storage" "context" $) | nindent 8 }}
+        {{- include "model-discovery.selectorLabels" (dict "component" "blob-storage" "context" $) | nindent 8 }}
     spec:
-      {{- include "mism-gateway-api.imagePullSecrets" . | nindent 6 }}
+      {{- include "model-discovery.imagePullSecrets" . | nindent 6 }}
       containers:
         - name: minio
           image: "{{ .Values.global.imageRegistry }}{{ .Values.blobStorage.image.repository }}:{{ .Values.blobStorage.image.tag }}"
@@ -40,7 +40,7 @@ spec:
             - name: MINIO_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: mism-gateway-api-secrets
+                  name: model-discovery-secrets
                   key: minioRootPassword
           livenessProbe:
             httpGet:

@@ -4,19 +4,19 @@ kind: Deployment
 metadata:
   name: storage-interface
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
     app.kubernetes.io/component: storage-interface
 spec:
   replicas: {{ .Values.storageInterface.replicaCount }}
   selector:
     matchLabels:
-      {{- include "mism-gateway-api.selectorLabels" (dict "component" "storage-interface" "context" $) | nindent 6 }}
+      {{- include "model-discovery.selectorLabels" (dict "component" "storage-interface" "context" $) | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "mism-gateway-api.selectorLabels" (dict "component" "storage-interface" "context" $) | nindent 8 }}
+        {{- include "model-discovery.selectorLabels" (dict "component" "storage-interface" "context" $) | nindent 8 }}
     spec:
-      {{- include "mism-gateway-api.imagePullSecrets" . | nindent 6 }}
+      {{- include "model-discovery.imagePullSecrets" . | nindent 6 }}
       containers:
         - name: storage-interface
           image: "{{ .Values.global.imageRegistry }}{{ .Values.storageInterface.image.repository }}:{{ .Values.storageInterface.image.tag }}"
@@ -33,7 +33,7 @@ spec:
             - name: MINIO_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: mism-gateway-api-secrets
+                  name: model-discovery-secrets
                   key: minioRootPassword
           livenessProbe:
             httpGet:

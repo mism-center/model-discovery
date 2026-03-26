@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: mism-gateway-api-config
+  name: model-discovery-config
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
 data:
   # ── Gateway ─────────────────────────────────
   GATEWAY_PORT: {{ .Values.gateway.service.port | quote }}

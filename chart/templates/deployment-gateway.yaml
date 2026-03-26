@@ -4,19 +4,19 @@ kind: Deployment
 metadata:
   name: discovery-gateway
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
     app.kubernetes.io/component: gateway
 spec:
   replicas: {{ .Values.gateway.replicaCount }}
   selector:
     matchLabels:
-      {{- include "mism-gateway-api.selectorLabels" (dict "component" "gateway" "context" $) | nindent 6 }}
+      {{- include "model-discovery.selectorLabels" (dict "component" "gateway" "context" $) | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "mism-gateway-api.selectorLabels" (dict "component" "gateway" "context" $) | nindent 8 }}
+        {{- include "model-discovery.selectorLabels" (dict "component" "gateway" "context" $) | nindent 8 }}
     spec:
-      {{- include "mism-gateway-api.imagePullSecrets" . | nindent 6 }}
+      {{- include "model-discovery.imagePullSecrets" . | nindent 6 }}
       containers:
         - name: discovery-gateway
           image: "{{ .Values.global.imageRegistry }}{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag }}"

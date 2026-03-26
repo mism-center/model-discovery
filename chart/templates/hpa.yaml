@@ -23,7 +23,7 @@ kind: HorizontalPodAutoscaler
 metadata:
   name: discovery-gateway-hpa
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
     app.kubernetes.io/component: gateway
 spec:
   scaleTargetRef:
@@ -84,7 +84,7 @@ kind: HorizontalPodAutoscaler
 metadata:
   name: search-service-hpa
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
     app.kubernetes.io/component: search-service
 spec:
   scaleTargetRef:
@@ -139,7 +139,7 @@ kind: HorizontalPodAutoscaler
 metadata:
   name: upload-service-hpa
   labels:
-    {{- include "mism-gateway-api.labels" . | nindent 4 }}
+    {{- include "model-discovery.labels" . | nindent 4 }}
     app.kubernetes.io/component: upload-service
 spec:
   scaleTargetRef:
