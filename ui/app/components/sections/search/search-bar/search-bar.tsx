@@ -81,6 +81,7 @@ export function SearchBar() {
                       'p-1 shadow-lg shadow-glass backdrop-blur-md rounded-lg',
                       'bg-white border border-white/20',
                       'focus-within:ring-2 focus-within:ring-slate-300',
+                      'transition-all duration-200'
                     )}
                   >
                     <Input
