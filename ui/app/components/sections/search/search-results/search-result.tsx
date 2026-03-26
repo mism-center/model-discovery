@@ -155,12 +155,12 @@ export function SearchResult({ result, resultType }: SearchResultProps) {
               <CalendarIcon className="size-3.5" />
               <span>{formatDate(result.published_date)}</span>
             </div>
-            {doi !== undefined && (
+            {/* {doi !== undefined && (
               <div className="flex items-center gap-1.5">
                 <TagIcon className="size-3.5" />
                 <span className="uppercase tracking-wider">DOI: {doi}</span>
               </div>
-            )}
+            )} */}
             {formats?.length && (
               <div className="flex items-center gap-1.5">
                 <DocumentIcon className="size-3.5" />
