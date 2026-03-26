@@ -1,0 +1,287 @@
+[
+  {
+    "id": "mod-001",
+    "doi": "10.1016/j.bpj.2025.06123",
+    "title": "Protein Folding Dynamics in Cardiomyopathy",
+    "scales": ["Molecular", "Cellular"],
+    "types": ["Differential equation", "Stochastic"],
+    "executable": true,
+    "description": "Explores how specific myosin heavy chain mutations alter protein folding, impacting individual cardiomyocyte contractility.",
+    "authors": [
+      { "name": "Dr. Elena Rossi", "affiliation": { "institution": "Stanford University", "department": "School of Medicine" } },
+      { "name": "Dr. Mateo Bianchi", "affiliation": { "institution": "Stanford University", "department": "Dept. of Computer Science" } },
+      { "name": "Dr. Julian Olsen", "affiliation": { "institution": "Stanford University", "department": "School of Medicine" } }
+    ],
+    "citations": 23,
+    "published_date": "2025-06-15",
+    "updated_date": "2026-01-10",
+    "tags": [
+      { "category": "topic", "value": "Cardiology" },
+      { "category": "topic", "value": "Protein dynamics" }
+    ]
+  },
+  {
+    "id": "mod-002",
+    "doi": "10.1109/TBME.2024.3348721",
+    "title": "Cardiac Electrophysiology Model",
+    "scales": ["Molecular", "Cellular", "Tissue", "Organ"],
+    "types": ["Differential equation"],
+    "executable": true,
+    "featured": true,
+    "description": "A comprehensive heart model linking ion channel kinetics (molecular) to full-organ ECG outputs.",
+    "authors": [{ "name": "Dr. Marcus Chen", "affiliation": { "institution": "Johns Hopkins" } }],
+    "citations": 6,
+    "published_date": "2024-11-02",
+    "updated_date": "2025-12-12",
+    "tags": [
+      { "category": "topic", "value": "Cardiology" },
+      { "category": "topic", "value": "Electrophysiology" }
+    ]
+  },
+  {
+    "id": "mod-003",
+    "doi": "10.1371/journal.pcbi.1012456",
+    "title": "Multi-Scale Tumor Angiogenesis",
+    "scales": ["Cellular", "Tissue"],
+    "types": ["Agent-based"],
+    "executable": false,
+    "description": "Models the emergence of vascular networks from individual endothelial cell responses to tumor-secreted factors.",
+    "authors": [{ "name": "Dr. Sarah Jenkins", "affiliation": { "institution": "MIT" } }],
+    "published_date": "2025-03-20",
+    "updated_date": "2026-02-28",
+    "tags": [
+      { "category": "topic", "value": "Oncology" },
+      { "category": "topic", "value": "Angiogenesis" }
+    ]
+  },
+  {
+    "id": "mod-004",
+    "doi": "10.1093/aje/kwad198",
+    "title": "Epidemiological Impact of Vaccination Strategies",
+    "scales": ["Individual", "Population"],
+    "types": ["Agent-based"],
+    "executable": true,
+    "featured": true,
+    "description": "Agent-based model simulating individual contact patterns to predict population-level disease spread and vaccination efficacy.",
+    "authors": [{ "name": "Dr. Hans Muller", "affiliation": { "institution": "TU Munich" } }],
+    "published_date": "2025-08-10",
+    "updated_date": "2026-03-01",
+    "tags": [
+      { "category": "topic", "value": "Epidemiology" },
+      { "category": "topic", "value": "Vaccination" }
+    ]
+  },
+  {
+    "id": "mod-005",
+    "doi": "10.1002/cpt.2897",
+    "title": "Pharmacokinetic Drug Distribution Model",
+    "scales": ["Cellular", "Tissue", "Individual"],
+    "types": ["Differential equation"],
+    "executable": false,
+    "description": "Whole-body PBPK model evaluating drug concentration in liver tissue vs systemic circulation.",
+    "authors": [{ "name": "Dr. Aisha Khan", "affiliation": { "institution": "University of Oxford" } }],
+    "citations": 6,
+    "published_date": "2025-01-15",
+    "updated_date": "2026-03-10",
+    "tags": [
+      { "category": "topic", "value": "Pharmacology" },
+      { "category": "topic", "value": "Drug distribution" }
+    ]
+  },
+  {
+    "id": "mod-006",
+    "doi": "10.1038/s41592-025-02198",
+    "title": "Neural Circuit Dynamics in Epileptic Seizure Propagation",
+    "scales": ["Cellular", "Tissue", "Organ"],
+    "types": ["Differential equation", "Stochastic"],
+    "executable": true,
+    "featured": true,
+    "description": "Models seizure initiation and propagation through cortical neural networks, coupling single-neuron dynamics with tissue-level field potentials.",
+    "authors": [
+      { "name": "Dr. Yuki Tanaka", "affiliation": { "institution": "University of Tokyo", "department": "Dept. of Neuroscience" } },
+      { "name": "Dr. Pierre Dubois", "affiliation": { "institution": "INSERM", "department": "Computational Neurology" } }
+    ],
+    "citations": 42,
+    "published_date": "2025-09-03",
+    "updated_date": "2026-02-15",
+    "tags": [
+      { "category": "topic", "value": "Neurology" },
+      { "category": "topic", "value": "Epilepsy" }
+    ]
+  },
+  {
+    "id": "mod-007",
+    "doi": "10.1016/j.jtbi.2025.111284",
+    "title": "Immune Response to SARS-CoV-2 Variants",
+    "scales": ["Molecular", "Cellular", "Individual"],
+    "types": ["Agent-based", "Differential equation"],
+    "executable": true,
+    "description": "Simulates adaptive immune responses to viral mutations, tracking antibody-antigen binding affinity at the molecular level through to clinical outcomes.",
+    "authors": [
+      { "name": "Dr. Fatima Al-Rashid", "affiliation": { "institution": "King Abdullah University", "department": "Bioscience" } }
+    ],
+    "citations": 18,
+    "published_date": "2025-05-22",
+    "updated_date": "2026-01-30",
+    "tags": [
+      { "category": "topic", "value": "Immunology" },
+      { "category": "topic", "value": "Virology" }
+    ]
+  },
+  {
+    "id": "mod-008",
+    "doi": "10.1371/journal.pone.0298345",
+    "title": "Bone Remodeling Under Mechanical Loading",
+    "scales": ["Cellular", "Tissue"],
+    "types": ["Agent-based"],
+    "executable": false,
+    "description": "Agent-based model of osteoblast-osteoclast interactions capturing bone density adaptation in response to cyclic mechanical stress.",
+    "authors": [
+      { "name": "Dr. Carlos Mendez", "affiliation": { "institution": "ETH Zurich", "department": "Institute for Biomechanics" } },
+      { "name": "Dr. Lisa Hartmann", "affiliation": { "institution": "ETH Zurich", "department": "Institute for Biomechanics" } }
+    ],
+    "published_date": "2025-02-14",
+    "updated_date": "2025-11-05",
+    "tags": [
+      { "category": "topic", "value": "Orthopedics" },
+      { "category": "topic", "value": "Biomechanics" }
+    ]
+  },
+  {
+    "id": "mod-009",
+    "doi": "10.1158/0008-5472.CAN-25-1087",
+    "title": "Tumor-Immune Microenvironment Co-Evolution",
+    "scales": ["Molecular", "Cellular", "Tissue"],
+    "types": ["Agent-based"],
+    "executable": true,
+    "description": "Integrates tumor cell signaling pathways with immune cell infiltration dynamics to predict checkpoint inhibitor response.",
+    "authors": [
+      { "name": "Dr. Sarah Jenkins", "affiliation": { "institution": "MIT" } },
+      { "name": "Dr. Robert Kim", "affiliation": { "institution": "Dana-Farber Cancer Institute" } }
+    ],
+    "citations": 11,
+    "published_date": "2025-07-18",
+    "updated_date": "2026-03-05",
+    "tags": [
+      { "category": "topic", "value": "Oncology" },
+      { "category": "topic", "value": "Immunotherapy" }
+    ]
+  },
+  {
+    "id": "mod-010",
+    "doi": "10.1161/CIRCRESAHA.125.324567",
+    "title": "Atherosclerotic Plaque Growth and Rupture",
+    "scales": ["Molecular", "Cellular", "Tissue"],
+    "types": ["Differential equation"],
+    "executable": false,
+    "description": "Couples lipid accumulation kinetics with inflammatory cell recruitment and fibrous cap mechanics to model plaque vulnerability.",
+    "authors": [
+      { "name": "Dr. Marcus Chen", "affiliation": { "institution": "Johns Hopkins" } }
+    ],
+    "citations": 9,
+    "published_date": "2025-04-01",
+    "updated_date": "2025-12-20",
+    "tags": [
+      { "category": "topic", "value": "Cardiology" },
+      { "category": "topic", "value": "Atherosclerosis" }
+    ]
+  },
+  {
+    "id": "mod-011",
+    "doi": "10.1089/ten.tea.2025.0142",
+    "title": "Wound Healing Cascade in Diabetic Tissue",
+    "scales": ["Cellular", "Tissue"],
+    "types": ["Agent-based", "Stochastic"],
+    "executable": true,
+    "description": "Models impaired wound closure in diabetic patients by simulating fibroblast migration, angiogenesis, and extracellular matrix deposition.",
+    "authors": [
+      { "name": "Dr. Nadia Okonkwo", "affiliation": { "institution": "University of Michigan", "department": "Dept. of Biomedical Engineering" } }
+    ],
+    "citations": 3,
+    "published_date": "2025-10-12",
+    "updated_date": "2026-02-28",
+    "tags": [
+      { "category": "topic", "value": "Wound healing" },
+      { "category": "topic", "value": "Diabetes" }
+    ]
+  },
+  {
+    "id": "mod-012",
+    "doi": "10.1124/jpet.125.001892",
+    "title": "Hepatic Drug Metabolism Pathway Model",
+    "scales": ["Molecular", "Cellular"],
+    "types": ["Differential equation"],
+    "executable": true,
+    "description": "Detailed CYP450 enzyme kinetic model predicting drug-drug interaction risks based on competitive and mechanism-based inhibition.",
+    "authors": [
+      { "name": "Dr. Aisha Khan", "affiliation": { "institution": "University of Oxford" } },
+      { "name": "Dr. Thomas Wright", "affiliation": { "institution": "AstraZeneca", "department": "DMPK" } }
+    ],
+    "citations": 15,
+    "published_date": "2024-12-08",
+    "updated_date": "2025-10-15",
+    "tags": [
+      { "category": "topic", "value": "Pharmacology" },
+      { "category": "topic", "value": "Drug metabolism" }
+    ]
+  },
+  {
+    "id": "mod-013",
+    "doi": "10.1016/j.resp.2025.03912",
+    "title": "Pulmonary Gas Exchange in Fibrotic Lungs",
+    "scales": ["Tissue", "Organ"],
+    "types": ["Differential equation"],
+    "executable": false,
+    "description": "Models oxygen and carbon dioxide transport across alveolar membranes with progressive fibrotic thickening and reduced compliance.",
+    "authors": [
+      { "name": "Dr. James O'Brien", "affiliation": { "institution": "Imperial College London", "department": "National Heart & Lung Institute" } }
+    ],
+    "published_date": "2025-03-30",
+    "updated_date": "2026-01-18",
+    "tags": [
+      { "category": "topic", "value": "Pulmonology" },
+      { "category": "topic", "value": "Pulmonary fibrosis" }
+    ]
+  },
+  {
+    "id": "mod-014",
+    "doi": "10.1016/j.isci.2025.108234",
+    "title": "Glucose-Insulin Feedback in Type 2 Diabetes",
+    "scales": ["Cellular", "Organ", "Individual"],
+    "types": ["Differential equation"],
+    "executable": true,
+    "description": "Whole-body model of glucose homeostasis capturing pancreatic beta-cell dysfunction, hepatic glucose production, and peripheral insulin resistance.",
+    "authors": [
+      { "name": "Dr. Elena Rossi", "affiliation": { "institution": "Stanford University", "department": "School of Medicine" } },
+      { "name": "Dr. Raj Patel", "affiliation": { "institution": "Stanford University", "department": "Dept. of Endocrinology" } }
+    ],
+    "citations": 27,
+    "published_date": "2025-01-05",
+    "updated_date": "2025-09-22",
+    "featured": true,
+    "tags": [
+      { "category": "topic", "value": "Endocrinology" },
+      { "category": "topic", "value": "Diabetes" }
+    ]
+  },
+  {
+    "id": "mod-015",
+    "doi": "10.1126/sciadv.abq4521",
+    "title": "Antimicrobial Resistance Spread in Hospital Networks",
+    "scales": ["Individual", "Population"],
+    "types": ["Agent-based", "Stochastic"],
+    "executable": true,
+    "description": "Stochastic agent-based model of antibiotic-resistant pathogen transmission through patient transfers across hospital wards and facilities.",
+    "authors": [
+      { "name": "Dr. Hans Muller", "affiliation": { "institution": "TU Munich" } },
+      { "name": "Dr. Ingrid Svensson", "affiliation": { "institution": "Karolinska Institute", "department": "Dept. of Microbiology" } }
+    ],
+    "citations": 34,
+    "published_date": "2025-06-28",
+    "updated_date": "2026-03-12",
+    "tags": [
+      { "category": "topic", "value": "Epidemiology" },
+      { "category": "topic", "value": "Antimicrobial resistance" }
+    ]
+  }
+]
