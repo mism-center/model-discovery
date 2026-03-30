@@ -382,7 +382,7 @@ def test_search_aggregations(api: httpx.Client) -> None:
     assert "format_tags" in aggs
 
     # Verify bucket structure
-    for field_name, agg_result in aggs.items():
+    for _field_name, agg_result in aggs.items():
         assert "buckets" in agg_result
         for bucket in agg_result["buckets"]:
             assert "key" in bucket
