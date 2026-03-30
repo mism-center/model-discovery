@@ -29,7 +29,7 @@ export function SuggestedTermsContainer({
             size="sm"
             className={cn(
               'h-7 bg-secondary/40 border-1 border-white/10',
-              'font-medium text-xs text-white',
+              'font-medium text-xs text-white'
             )}
             onPress={() => doSearch(tag)}
           >

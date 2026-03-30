@@ -1,4 +1,11 @@
-import { BreadcrumbItem, Breadcrumbs, Select, SelectItem, Tab, Tabs } from '@heroui/react';
+import {
+  BreadcrumbItem,
+  Breadcrumbs,
+  Select,
+  SelectItem,
+  Tab,
+  Tabs,
+} from '@heroui/react';
 import cn from 'classnames';
 import { useSearch } from '~/contexts/search-context';
 import type { ResultType, SortOrder } from '~/api/services/search';

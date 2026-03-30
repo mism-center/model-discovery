@@ -47,7 +47,7 @@ export function SearchSidebar() {
   return (
     <div
       className={cn(
-        'flex flex-col h-full min-w-[320px]',
+        'flex flex-col h-full min-w-[320px]'
         // 'border-l border-slate-200'
       )}
     >

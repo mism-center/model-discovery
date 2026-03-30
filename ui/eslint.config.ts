@@ -9,6 +9,9 @@ import { defineConfig } from 'eslint/config';
 
 export default defineConfig([
   {
+    ignores: ['.react-router/**'],
+  },
+  {
     files: ['**/*.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     plugins: {
       js,
@@ -27,5 +30,10 @@ export default defineConfig([
       'unicorn/prevent-abbreviations': 'off',
       'unicorn/no-null': 'off',
     },
-  }
+    settings: {
+      react: {
+        version: 'detect',
+      },
+    },
+  },
 ]);

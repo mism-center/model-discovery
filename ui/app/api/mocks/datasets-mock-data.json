@@ -7,8 +7,20 @@
     "formats": ["h5ad", "CSV"],
     "description": "Transcriptomic profiles of 45,000 cardiomyocytes under oxidative stress conditions, annotated with cell-type labels and quality metrics.",
     "authors": [
-      { "name": "Dr. Elena Rossi", "affiliation": { "institution": "Stanford University", "department": "School of Medicine" } },
-      { "name": "Dr. Liang Wei", "affiliation": { "institution": "Stanford University", "department": "Dept. of Bioengineering" } }
+      {
+        "name": "Dr. Elena Rossi",
+        "affiliation": {
+          "institution": "Stanford University",
+          "department": "School of Medicine"
+        }
+      },
+      {
+        "name": "Dr. Liang Wei",
+        "affiliation": {
+          "institution": "Stanford University",
+          "department": "Dept. of Bioengineering"
+        }
+      }
     ],
     "citations": 14,
     "published_date": "2025-04-22",
@@ -49,8 +61,14 @@
     "formats": ["CSV", "Parquet"],
     "description": "Longitudinal dataset of vaccination rates and disease incidence across 180 countries, harmonized from WHO and national health registries.",
     "authors": [
-      { "name": "Dr. Hans Muller", "affiliation": { "institution": "TU Munich" } },
-      { "name": "Dr. Priya Sharma", "affiliation": { "institution": "WHO Collaborating Centre" } }
+      {
+        "name": "Dr. Hans Muller",
+        "affiliation": { "institution": "TU Munich" }
+      },
+      {
+        "name": "Dr. Priya Sharma",
+        "affiliation": { "institution": "WHO Collaborating Centre" }
+      }
     ],
     "citations": 31,
     "published_date": "2025-07-01",
@@ -71,7 +89,10 @@
     "formats": ["JSON", "CSV"],
     "description": "Curated physiological parameters for 14 organs across diverse demographics, suitable for pharmacokinetic model calibration.",
     "authors": [
-      { "name": "Dr. Aisha Khan", "affiliation": { "institution": "University of Oxford" } }
+      {
+        "name": "Dr. Aisha Khan",
+        "affiliation": { "institution": "University of Oxford" }
+      }
     ],
     "published_date": "2025-02-28",
     "updated_date": "2025-12-01",

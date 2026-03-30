@@ -8,9 +8,27 @@
     "executable": true,
     "description": "Explores how specific myosin heavy chain mutations alter protein folding, impacting individual cardiomyocyte contractility.",
     "authors": [
-      { "name": "Dr. Elena Rossi", "affiliation": { "institution": "Stanford University", "department": "School of Medicine" } },
-      { "name": "Dr. Mateo Bianchi", "affiliation": { "institution": "Stanford University", "department": "Dept. of Computer Science" } },
-      { "name": "Dr. Julian Olsen", "affiliation": { "institution": "Stanford University", "department": "School of Medicine" } }
+      {
+        "name": "Dr. Elena Rossi",
+        "affiliation": {
+          "institution": "Stanford University",
+          "department": "School of Medicine"
+        }
+      },
+      {
+        "name": "Dr. Mateo Bianchi",
+        "affiliation": {
+          "institution": "Stanford University",
+          "department": "Dept. of Computer Science"
+        }
+      },
+      {
+        "name": "Dr. Julian Olsen",
+        "affiliation": {
+          "institution": "Stanford University",
+          "department": "School of Medicine"
+        }
+      }
     ],
     "citations": 23,
     "published_date": "2025-06-15",
@@ -29,7 +47,12 @@
     "executable": true,
     "featured": true,
     "description": "A comprehensive heart model linking ion channel kinetics (molecular) to full-organ ECG outputs.",
-    "authors": [{ "name": "Dr. Marcus Chen", "affiliation": { "institution": "Johns Hopkins" } }],
+    "authors": [
+      {
+        "name": "Dr. Marcus Chen",
+        "affiliation": { "institution": "Johns Hopkins" }
+      }
+    ],
     "citations": 6,
     "published_date": "2024-11-02",
     "updated_date": "2025-12-12",
@@ -46,7 +69,9 @@
     "types": ["Agent-based"],
     "executable": false,
     "description": "Models the emergence of vascular networks from individual endothelial cell responses to tumor-secreted factors.",
-    "authors": [{ "name": "Dr. Sarah Jenkins", "affiliation": { "institution": "MIT" } }],
+    "authors": [
+      { "name": "Dr. Sarah Jenkins", "affiliation": { "institution": "MIT" } }
+    ],
     "published_date": "2025-03-20",
     "updated_date": "2026-02-28",
     "tags": [
@@ -63,7 +88,12 @@
     "executable": true,
     "featured": true,
     "description": "Agent-based model simulating individual contact patterns to predict population-level disease spread and vaccination efficacy.",
-    "authors": [{ "name": "Dr. Hans Muller", "affiliation": { "institution": "TU Munich" } }],
+    "authors": [
+      {
+        "name": "Dr. Hans Muller",
+        "affiliation": { "institution": "TU Munich" }
+      }
+    ],
     "published_date": "2025-08-10",
     "updated_date": "2026-03-01",
     "tags": [
@@ -79,7 +109,12 @@
     "types": ["Differential equation"],
     "executable": false,
     "description": "Whole-body PBPK model evaluating drug concentration in liver tissue vs systemic circulation.",
-    "authors": [{ "name": "Dr. Aisha Khan", "affiliation": { "institution": "University of Oxford" } }],
+    "authors": [
+      {
+        "name": "Dr. Aisha Khan",
+        "affiliation": { "institution": "University of Oxford" }
+      }
+    ],
     "citations": 6,
     "published_date": "2025-01-15",
     "updated_date": "2026-03-10",
@@ -98,8 +133,20 @@
     "featured": true,
     "description": "Models seizure initiation and propagation through cortical neural networks, coupling single-neuron dynamics with tissue-level field potentials.",
     "authors": [
-      { "name": "Dr. Yuki Tanaka", "affiliation": { "institution": "University of Tokyo", "department": "Dept. of Neuroscience" } },
-      { "name": "Dr. Pierre Dubois", "affiliation": { "institution": "INSERM", "department": "Computational Neurology" } }
+      {
+        "name": "Dr. Yuki Tanaka",
+        "affiliation": {
+          "institution": "University of Tokyo",
+          "department": "Dept. of Neuroscience"
+        }
+      },
+      {
+        "name": "Dr. Pierre Dubois",
+        "affiliation": {
+          "institution": "INSERM",
+          "department": "Computational Neurology"
+        }
+      }
     ],
     "citations": 42,
     "published_date": "2025-09-03",
@@ -118,7 +165,13 @@
     "executable": true,
     "description": "Simulates adaptive immune responses to viral mutations, tracking antibody-antigen binding affinity at the molecular level through to clinical outcomes.",
     "authors": [
-      { "name": "Dr. Fatima Al-Rashid", "affiliation": { "institution": "King Abdullah University", "department": "Bioscience" } }
+      {
+        "name": "Dr. Fatima Al-Rashid",
+        "affiliation": {
+          "institution": "King Abdullah University",
+          "department": "Bioscience"
+        }
+      }
     ],
     "citations": 18,
     "published_date": "2025-05-22",
@@ -137,8 +190,20 @@
     "executable": false,
     "description": "Agent-based model of osteoblast-osteoclast interactions capturing bone density adaptation in response to cyclic mechanical stress.",
     "authors": [
-      { "name": "Dr. Carlos Mendez", "affiliation": { "institution": "ETH Zurich", "department": "Institute for Biomechanics" } },
-      { "name": "Dr. Lisa Hartmann", "affiliation": { "institution": "ETH Zurich", "department": "Institute for Biomechanics" } }
+      {
+        "name": "Dr. Carlos Mendez",
+        "affiliation": {
+          "institution": "ETH Zurich",
+          "department": "Institute for Biomechanics"
+        }
+      },
+      {
+        "name": "Dr. Lisa Hartmann",
+        "affiliation": {
+          "institution": "ETH Zurich",
+          "department": "Institute for Biomechanics"
+        }
+      }
     ],
     "published_date": "2025-02-14",
     "updated_date": "2025-11-05",
@@ -157,7 +222,10 @@
     "description": "Integrates tumor cell signaling pathways with immune cell infiltration dynamics to predict checkpoint inhibitor response.",
     "authors": [
       { "name": "Dr. Sarah Jenkins", "affiliation": { "institution": "MIT" } },
-      { "name": "Dr. Robert Kim", "affiliation": { "institution": "Dana-Farber Cancer Institute" } }
+      {
+        "name": "Dr. Robert Kim",
+        "affiliation": { "institution": "Dana-Farber Cancer Institute" }
+      }
     ],
     "citations": 11,
     "published_date": "2025-07-18",
@@ -176,7 +244,10 @@
     "executable": false,
     "description": "Couples lipid accumulation kinetics with inflammatory cell recruitment and fibrous cap mechanics to model plaque vulnerability.",
     "authors": [
-      { "name": "Dr. Marcus Chen", "affiliation": { "institution": "Johns Hopkins" } }
+      {
+        "name": "Dr. Marcus Chen",
+        "affiliation": { "institution": "Johns Hopkins" }
+      }
     ],
     "citations": 9,
     "published_date": "2025-04-01",
@@ -195,7 +266,13 @@
     "executable": true,
     "description": "Models impaired wound closure in diabetic patients by simulating fibroblast migration, angiogenesis, and extracellular matrix deposition.",
     "authors": [
-      { "name": "Dr. Nadia Okonkwo", "affiliation": { "institution": "University of Michigan", "department": "Dept. of Biomedical Engineering" } }
+      {
+        "name": "Dr. Nadia Okonkwo",
+        "affiliation": {
+          "institution": "University of Michigan",
+          "department": "Dept. of Biomedical Engineering"
+        }
+      }
     ],
     "citations": 3,
     "published_date": "2025-10-12",
@@ -214,8 +291,14 @@
     "executable": true,
     "description": "Detailed CYP450 enzyme kinetic model predicting drug-drug interaction risks based on competitive and mechanism-based inhibition.",
     "authors": [
-      { "name": "Dr. Aisha Khan", "affiliation": { "institution": "University of Oxford" } },
-      { "name": "Dr. Thomas Wright", "affiliation": { "institution": "AstraZeneca", "department": "DMPK" } }
+      {
+        "name": "Dr. Aisha Khan",
+        "affiliation": { "institution": "University of Oxford" }
+      },
+      {
+        "name": "Dr. Thomas Wright",
+        "affiliation": { "institution": "AstraZeneca", "department": "DMPK" }
+      }
     ],
     "citations": 15,
     "published_date": "2024-12-08",
@@ -234,7 +317,13 @@
     "executable": false,
     "description": "Models oxygen and carbon dioxide transport across alveolar membranes with progressive fibrotic thickening and reduced compliance.",
     "authors": [
-      { "name": "Dr. James O'Brien", "affiliation": { "institution": "Imperial College London", "department": "National Heart & Lung Institute" } }
+      {
+        "name": "Dr. James O'Brien",
+        "affiliation": {
+          "institution": "Imperial College London",
+          "department": "National Heart & Lung Institute"
+        }
+      }
     ],
     "published_date": "2025-03-30",
     "updated_date": "2026-01-18",
@@ -252,8 +341,20 @@
     "executable": true,
     "description": "Whole-body model of glucose homeostasis capturing pancreatic beta-cell dysfunction, hepatic glucose production, and peripheral insulin resistance.",
     "authors": [
-      { "name": "Dr. Elena Rossi", "affiliation": { "institution": "Stanford University", "department": "School of Medicine" } },
-      { "name": "Dr. Raj Patel", "affiliation": { "institution": "Stanford University", "department": "Dept. of Endocrinology" } }
+      {
+        "name": "Dr. Elena Rossi",
+        "affiliation": {
+          "institution": "Stanford University",
+          "department": "School of Medicine"
+        }
+      },
+      {
+        "name": "Dr. Raj Patel",
+        "affiliation": {
+          "institution": "Stanford University",
+          "department": "Dept. of Endocrinology"
+        }
+      }
     ],
     "citations": 27,
     "published_date": "2025-01-05",
@@ -273,8 +374,17 @@
     "executable": true,
     "description": "Stochastic agent-based model of antibiotic-resistant pathogen transmission through patient transfers across hospital wards and facilities.",
     "authors": [
-      { "name": "Dr. Hans Muller", "affiliation": { "institution": "TU Munich" } },
-      { "name": "Dr. Ingrid Svensson", "affiliation": { "institution": "Karolinska Institute", "department": "Dept. of Microbiology" } }
+      {
+        "name": "Dr. Hans Muller",
+        "affiliation": { "institution": "TU Munich" }
+      },
+      {
+        "name": "Dr. Ingrid Svensson",
+        "affiliation": {
+          "institution": "Karolinska Institute",
+          "department": "Dept. of Microbiology"
+        }
+      }
     ],
     "citations": 34,
     "published_date": "2025-06-28",

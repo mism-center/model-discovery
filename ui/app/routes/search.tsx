@@ -1,4 +1,3 @@
-import type { Route } from './+types/home';
 import SearchSection from '../components/sections/search/search';
 
 export function meta() {

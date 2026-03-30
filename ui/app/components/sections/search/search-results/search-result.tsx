@@ -9,7 +9,11 @@ import { Button } from '@heroui/react';
 import { QuotationMarkIcon } from '@sidekickicons/react/16/solid';
 import { BookmarkIcon } from '@heroicons/react/24/outline';
 import { AuthorListTooltip } from './author-list-tooltip';
-import { CalendarIcon, CircleStackIcon, StarIcon, TagIcon } from '@heroicons/react/16/solid';
+import {
+  CalendarIcon,
+  CircleStackIcon,
+  StarIcon,
+} from '@heroicons/react/16/solid';
 import { Link } from 'react-router';
 import { DocumentIcon } from '@heroicons/react/24/solid';
 
@@ -35,7 +39,6 @@ interface SearchResultProps {
 }
 
 export function SearchResult({ result, resultType }: SearchResultProps) {
-  const doi = resultType === 'models' ? (result as ModelResult).doi : undefined;
   const executable =
     resultType === 'models' ? (result as ModelResult).executable : false;
   const types =
@@ -44,7 +47,8 @@ export function SearchResult({ result, resultType }: SearchResultProps) {
     resultType === 'datasets'
       ? (result as DatasetResult).size_bytes
       : undefined;
-  const formats = resultType === 'datasets' ? (result as DatasetResult).formats : undefined
+  const formats =
+    resultType === 'datasets' ? (result as DatasetResult).formats : undefined;
 
   const linkPath =
     resultType === 'models'
@@ -105,7 +109,7 @@ export function SearchResult({ result, resultType }: SearchResultProps) {
             'after:bg-primary after:content-[""]',
             'after:scale-x-0 after:origin-right after:transition-transform after:duration-150 after:ease-in-out',
             'group-hover:after:scale-x-100 group-hover:after:origin-left',
-            'after:delay-0 group-hover:after:delay-150',
+            'after:delay-0 group-hover:after:delay-150'
           )}
         >
           {result.title}

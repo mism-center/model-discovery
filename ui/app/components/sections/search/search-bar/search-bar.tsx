@@ -69,9 +69,7 @@ export function SearchBar() {
                     models
                   </span>{' '}
                   &{' '}
-                  <span className="text-gradient-success-secondary">
-                    data
-                  </span>{' '}
+                  <span className="text-gradient-success-secondary">data</span>{' '}
                   across scales
                 </h1>
                 <div className="relative w-full flex items-center group">
@@ -111,7 +109,7 @@ export function SearchBar() {
               <div
                 className={cn(
                   'shrink-0 w-full lg:w-[400px]',
-                  'mt-12 lg:mt-0 lg:ml-12',
+                  'mt-12 lg:mt-0 lg:ml-12'
                 )}
               >
                 <AIModeCard />

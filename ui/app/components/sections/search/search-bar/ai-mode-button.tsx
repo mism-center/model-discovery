@@ -10,7 +10,7 @@ export function AIModeButton() {
     <Button
       className={cn(
         'font-semibold text-[13px] transition-all duration-500',
-        'h-8 px-3 rounded-full border border-secondary/20',
+        'h-8 px-3 rounded-full border border-secondary/20'
         // 'bg-linear-to-r from-secondary-100/20 to-success-100/50'
       )}
       color="secondary"

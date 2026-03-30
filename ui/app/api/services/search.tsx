@@ -404,25 +404,25 @@ function applySorting<T extends BaseResult>(items: T[], sort: SortOrder): T[] {
 // Text search (mock)
 // ====================
 
-function applyTextSearch<T extends BaseResult>(
-  items: T[],
-  query: string | undefined
-): T[] {
-  if (!query) return items;
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  return items.filter((item) => {
-    const searchable = [
-      item.title,
-      item.description,
-      ...item.authors.map((a) => a.name),
-      ...(item.tags?.map((t) => t.value) ?? []),
-      ...item.scales,
-    ]
-      .join(' ')
-      .toLowerCase();
-    return terms.some((term) => searchable.includes(term));
-  });
-}
+// function applyTextSearch<T extends BaseResult>(
+//   items: T[],
+//   query: string | undefined
+// ): T[] {
+//   if (!query) return items;
+//   const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+//   return items.filter((item) => {
+//     const searchable = [
+//       item.title,
+//       item.description,
+//       ...item.authors.map((a) => a.name),
+//       ...(item.tags?.map((t) => t.value) ?? []),
+//       ...item.scales,
+//     ]
+//       .join(' ')
+//       .toLowerCase();
+//     return terms.some((term) => searchable.includes(term));
+//   });
+// }
 
 // ====================
 // Main search function
@@ -435,7 +435,7 @@ export async function fetchSearchResults(
   await new Promise((resolve) => setTimeout(resolve, 750));
 
   const {
-    query,
+    // query,
     resultType,
     sort,
     filters,

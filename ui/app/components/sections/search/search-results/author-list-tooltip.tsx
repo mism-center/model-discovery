@@ -1,6 +1,5 @@
 import { Divider, Tooltip } from '@heroui/react';
 import type { DatasetResult, ModelResult } from '~/api/services/search';
-import cn from 'classnames';
 import { UserIcon } from '@heroicons/react/16/solid';
 import pluralize from 'pluralize';
 

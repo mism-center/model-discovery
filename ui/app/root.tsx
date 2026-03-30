@@ -11,7 +11,6 @@ import {
 import { HeroUIProvider } from '@heroui/react';
 import type { Route } from './+types/root';
 import { Header } from './components/layout/header';
-import { Footer } from './components/layout/footer';
 import './styles/index.css';
 
 export function meta() {

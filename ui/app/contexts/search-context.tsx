@@ -290,9 +290,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     if (activeTotal === undefined || !offset) return;
     if (offset >= activeTotal) {
       const lastPageOffset =
-        activeTotal > 0
-          ? Math.floor((activeTotal - 1) / limit) * limit
-          : 0;
+        activeTotal > 0 ? Math.floor((activeTotal - 1) / limit) * limit : 0;
       const params = new URLSearchParams(searchParams);
       if (lastPageOffset > 0) {
         params.set('offset', lastPageOffset.toString());

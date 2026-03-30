@@ -25,9 +25,7 @@ import {
   BoltIcon,
   ChevronDownIcon,
   MagnifyingGlassIcon,
-  SparklesIcon,
 } from '@heroicons/react/16/solid';
-import HeaderLogo from './MISM icon.svg?react';
 
 interface NavbarDropdownItemProps extends DropdownItemProps {
   isActive?: boolean;
@@ -127,7 +125,7 @@ export function Header() {
       isActive
         ? 'text-white border-b-2 border-success pb-1'
         : 'text-slate-300 hover:text-white transition-colors',
-      'text-[0.9375rem] mx-3 px-1 py-1.5! font-medium tracking-tight',
+      'text-[0.9375rem] mx-3 px-1 py-1.5! font-medium tracking-tight'
     );
 
   const isSearchActive = pathname.toLowerCase().startsWith('/search');
@@ -157,7 +155,7 @@ export function Header() {
               <button
                 className={cn(
                   navLinkClassnames({ isActive: isDiscoverActive }),
-                  'scale-none! opacity-100! flex items-center',
+                  'scale-none! opacity-100! flex items-center'
                 )}
               >
                 Discover
