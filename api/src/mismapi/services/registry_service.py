@@ -12,10 +12,17 @@ from mism_registry import (
 from mism_registry import (
     ValidationError as RegistryValidationError,
 )
+from mism_registry.backends.postgres import PostgresRegistry
 from mism_registry.enums import ExecutionType
 from mism_registry.protocol import Registry
 from mism_registry.resource import Resource
 from mism_registry.run import Run
+from mism_registry.search import (
+    AGGREGATABLE_FIELDS,
+    FILTERABLE_FIELDS,
+    SearchQuery,
+    SearchResult,
+)
 from sqlalchemy.orm import Session
 
 from mismapi.auth.base import AuthenticatedPrincipal
@@ -167,6 +174,46 @@ class RegistryService:
             organisms=organisms,
             scales=scales,
         )
+
+    # ── Search ────────────────────────────────────────────────────────
+
+    def search(self, query: SearchQuery) -> SearchResult:
+        """Validate and execute a full-text search with filters and aggregations."""
+        # Validate filter fields and operators
+        for f in query.filters:
+            meta = FILTERABLE_FIELDS.get(f.field)
+            if meta is None:
+                raise APIError(
+                    status_code=400,
+                    code="invalid_filter",
+                    detail=f"Unknown filter field: {f.field}",
+                )
+            _kind, allowed_ops = meta
+            if f.op not in allowed_ops:
+                raise APIError(
+                    status_code=400,
+                    code="invalid_filter",
+                    detail=f"Operator '{f.op}' is not valid for field '{f.field}'. "
+                    f"Allowed: {', '.join(sorted(allowed_ops))}",
+                )
+
+        # Validate aggregation fields
+        for agg in query.agg_fields:
+            if agg not in AGGREGATABLE_FIELDS:
+                raise APIError(
+                    status_code=400,
+                    code="invalid_aggregation",
+                    detail=f"Unknown aggregation field: {agg}",
+                )
+
+        if not isinstance(self._registry, PostgresRegistry):
+            raise APIError(
+                status_code=500,
+                code="unsupported_backend",
+                detail="Full-text search requires a PostgreSQL backend",
+            )
+
+        return self._registry.search_resources(query)
 
     # ── Dataset operations ─────────────────────────────────────────
 

@@ -1,8 +1,15 @@
 import logging
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Request
+from mism_registry.search import FieldFilter, SearchQuery
 
-from mismapi.schemas.search import ModelListItem, ModelListResponse
+from mismapi.schemas.search import (
+    AggBucketDTO,
+    AggResultDTO,
+    SearchRequest,
+    SearchResponse,
+    SearchResultItem,
+)
 from mismapi.services.registry_service import RegistryService
 
 logger = logging.getLogger(__name__)
@@ -10,44 +17,52 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/models", response_model=ModelListResponse)
-async def list_models(
-    request: Request,
-    name: str | None = Query(default=None, description="Substring match on model name"),
-    owner: str | None = Query(default=None, description="Exact match on owner"),
-    tags: list[str] | None = Query(default=None, description="Format tags (all must match)"),
-    organisms: list[str] | None = Query(default=None, description="Organisms (any must match)"),
-    scales: list[str] | None = Query(default=None, description="Modeling scales (any must match)"),
-    limit: int = Query(default=25, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
-) -> ModelListResponse:
+@router.post("/search", response_model=SearchResponse)
+async def search_resources(request: Request, body: SearchRequest) -> SearchResponse:
+    """Full-text search across models and datasets with filters and aggregations."""
     service: RegistryService = request.app.state.registry_service
 
-    resources = service.list_models(
-        name_contains=name,
-        owner=owner,
-        tags=tags,
-        organisms=organisms,
-        scales=scales,
+    query = SearchQuery(
+        text=body.query,
+        filters=tuple(
+            FieldFilter(field=f.field, op=f.op, value=f.value) for f in body.filters
+        ),
+        agg_fields=tuple(body.aggs),
+        sort_field=body.sort.field,
+        sort_order=body.sort.order,
+        limit=body.limit,
+        offset=body.offset,
     )
 
-    total = len(resources)
-    page = resources[offset : offset + limit]
+    result = service.search(query)
 
-    results = [
-        ModelListItem(
+    items = [
+        SearchResultItem(
             id=r.id,
             name=r.name,
             resource_type=r.resource_type.value,
             location_uri=r.location_uri,
-            execution_type=r.execution_type.value if r.execution_type else None,
+            description=r.description,
             version=r.version,
             status=r.status.value,
             owner=r.owner,
-            description=r.description,
+            execution_type=r.execution_type.value if r.execution_type else None,
+            organisms=r.organisms,
+            domains=r.domains,
+            modeling_scales=r.modeling_scales,
+            format_tags=r.format_tags,
             created_at=r.created_at,
+            updated_at=r.updated_at,
+            score=result.scores[i] if result.scores else None,
         )
-        for r in page
+        for i, r in enumerate(result.resources)
     ]
 
-    return ModelListResponse(total=total, results=results)
+    aggs = {
+        field_name: AggResultDTO(
+            buckets=[AggBucketDTO(key=b.key, count=b.count) for b in buckets]
+        )
+        for field_name, buckets in result.aggs.items()
+    }
+
+    return SearchResponse(total=result.total, results=items, aggs=aggs)
