@@ -24,9 +24,7 @@ async def search_resources(request: Request, body: SearchRequest) -> SearchRespo
 
     query = SearchQuery(
         text=body.query,
-        filters=tuple(
-            FieldFilter(field=f.field, op=f.op, value=f.value) for f in body.filters
-        ),
+        filters=tuple(FieldFilter(field=f.field, op=f.op, value=f.value) for f in body.filters),
         agg_fields=tuple(body.aggs),
         sort_field=body.sort.field,
         sort_order=body.sort.order,
@@ -59,9 +57,7 @@ async def search_resources(request: Request, body: SearchRequest) -> SearchRespo
     ]
 
     aggs = {
-        field_name: AggResultDTO(
-            buckets=[AggBucketDTO(key=b.key, count=b.count) for b in buckets]
-        )
+        field_name: AggResultDTO(buckets=[AggBucketDTO(key=b.key, count=b.count) for b in buckets])
         for field_name, buckets in result.aggs.items()
     }
 
