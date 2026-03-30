@@ -29,15 +29,27 @@ gateway:
       memory: 1Gi
   env:
     LOG_LEVEL: "INFO"
-    SEARCH_SERVICE_URL: "http://search-service:8100"
+    AUTH_MODE: "oidc"
+    DISABLE_AUTH: "false"
+    STUB_UPSTREAM_SERVICES: "false"
+    # Upload service
     UPLOAD_SERVICE_URL: "http://upload-service:8200"
-    OIDC_SERVICE_URL: "http://oidc-service:8080"
-    SEARCH_TIMEOUT_SECONDS: "10.0"
     UPLOAD_TIMEOUT_SECONDS: "60.0"
     UPLOAD_CHUNK_SIZE_BYTES: "5242880"
     UPLOAD_RETRY_MAX_ATTEMPTS: "3"
     UPLOAD_RETRY_BACKOFF_SECONDS: "1.0"
     UPLOAD_RETRY_TRAILING_BUFFER_BYTES: "15728640"
+    # OIDC – set via --set or values override per environment
+    OIDC_ISSUER_URL: ""
+    OIDC_DISCOVERY_URL: ""
+    OIDC_AUDIENCE: ""
+    OIDC_REQUIRED_SCOPES: ""
+    OIDC_JWKS_TTL_SECONDS: "300"
+    # JWT – alternative auth mode
+    JWT_ISSUER: ""
+    JWT_AUDIENCE: ""
+    JWT_ALGORITHMS: "RS256"
+    JWT_JWKS_URL: ""
 
 # ────────────────────────────────────────────────────────────
 # Search Service
@@ -61,8 +73,6 @@ searchService:
       memory: 1Gi
   env:
     LOG_LEVEL: "INFO"
-    METADATA_STORE_URL: "http://metadata-store:27017"
-    CROISSANT_SPEC_VERSION: "1.0"
 
 # ────────────────────────────────────────────────────────────
 # Upload Service
@@ -87,61 +97,6 @@ uploadService:
   env:
     LOG_LEVEL: "INFO"
     STORAGE_INTERFACE_URL: "http://storage-interface:9000"
-    ACL_SERVER_URL: "http://acl-server:8082"
-
-# ────────────────────────────────────────────────────────────
-# ACL Server  (AUTHorization)
-# ────────────────────────────────────────────────────────────
-aclServer:
-  enabled: true
-  replicaCount: 2
-  image:
-    repository: mism/acl-server
-    tag: "1.0.0"
-    pullPolicy: IfNotPresent
-  service:
-    type: ClusterIP
-    port: 8082
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-  env:
-    LOG_LEVEL: "INFO"
-    ACL_DB_HOST: "acl-db"
-    ACL_DB_PORT: "5432"
-    ACL_DB_NAME: "acldb"
-    ACL_DB_USER: "acluser"
-    # ACL_DB_PASSWORD is stored in a Secret (see secrets section)
-
-# ────────────────────────────────────────────────────────────
-# OIDC Provider  (AUTHentication)
-# ────────────────────────────────────────────────────────────
-oidcService:
-  enabled: true
-  replicaCount: 2
-  image:
-    repository: quay.io/keycloak/keycloak # Replace with your OIDC provider image
-    tag: "24.0.4"
-    pullPolicy: IfNotPresent
-  service:
-    type: ClusterIP
-    port: 8080
-  resources:
-    requests:
-      cpu: 250m
-      memory: 512Mi
-    limits:
-      cpu: 1000m
-      memory: 1Gi
-  env:
-    KC_HTTP_ENABLED: "true"
-    KC_HOSTNAME_STRICT: "false"
-    KEYCLOAK_ADMIN: "admin"
-    # KEYCLOAK_ADMIN_PASSWORD stored in Secret
 
 # ────────────────────────────────────────────────────────────
 # Storage Interface  (iRODS / LakeFS adapter)
@@ -172,17 +127,17 @@ storageInterface:
     BLOB_STORAGE_BUCKET: "mism-data"
 
 # ────────────────────────────────────────────────────────────
-# Metadata Store  (MongoDB – stores Croissant Data Specs)
+# Metadata Store  (PostgreSQL – DAL read/write backend)
 # ────────────────────────────────────────────────────────────
 metadataStore:
   enabled: true
   image:
-    repository: mongo
-    tag: "7.0"
+    repository: postgres
+    tag: "17-alpine"
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
-    port: 27017
+    port: 5432
   resources:
     requests:
       cpu: 250m
@@ -195,65 +150,16 @@ metadataStore:
     size: 20Gi
     storageClass: ""
   env:
-    MONGO_INITDB_DATABASE: "mism_metadata"
-    # MONGO_INITDB_ROOT_USERNAME / PASSWORD stored in Secret
+    POSTGRES_DB: "mism"
+    POSTGRES_USER: "mism"
+    # POSTGRES_PASSWORD stored in Secret (see secrets section)
 
 # ────────────────────────────────────────────────────────────
-# ACL Database  (PostgreSQL)
+# Database Migration  (Alembic – runs as a Helm hook Job)
 # ────────────────────────────────────────────────────────────
-aclDb:
+migration:
   enabled: true
-  image:
-    repository: postgres
-    tag: "16"
-    pullPolicy: IfNotPresent
-  service:
-    type: ClusterIP
-    port: 5432
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-  persistence:
-    enabled: true
-    size: 10Gi
-    storageClass: ""
-  env:
-    POSTGRES_DB: "acldb"
-    POSTGRES_USER: "acluser"
-    # POSTGRES_PASSWORD stored in Secret
-
-# ────────────────────────────────────────────────────────────
-# Blob Storage  (MinIO – local S3-compatible object store)
-# ────────────────────────────────────────────────────────────
-blobStorage:
-  enabled: true
-  image:
-    repository: minio/minio
-    tag: "RELEASE.2024-05-10T01-41-38Z"
-    pullPolicy: IfNotPresent
-  service:
-    type: ClusterIP
-    apiPort: 9000
-    consolePort: 9001
-  resources:
-    requests:
-      cpu: 250m
-      memory: 512Mi
-    limits:
-      cpu: 1000m
-      memory: 2Gi
-  persistence:
-    enabled: true
-    size: 50Gi
-    storageClass: ""
-  env:
-    MINIO_ROOT_USER: "minioadmin"
-    # MINIO_ROOT_PASSWORD stored in Secret
-    MINIO_DEFAULT_BUCKETS: "mism-data"
+  backoffLimit: 3
 
 # ────────────────────────────────────────────────────────────
 # Ingress
@@ -268,14 +174,10 @@ ingress:
     secretName: "mism-tls"
 
 # ────────────────────────────────────────────────────────────
-# Secrets  (base64-encoded values – override via --set or external secret manager)
+# Secrets  (override via --set or external secret manager)
 # ────────────────────────────────────────────────────────────
 secrets:
-  mongoRootUsername: "admin"
-  mongoRootPassword: "changeme"
-  aclDbPassword: "changeme"
-  minioRootPassword: "changeme"
-  keycloakAdminPassword: "changeme"
+  databasePassword: "changeme"
 
 # ────────────────────────────────────────────────────────────
 # External Secrets Operator integration
@@ -285,15 +187,9 @@ secrets:
 # ────────────────────────────────────────────────────────────
 externalSecrets:
   enabled: false
-  # Name of the SecretStore / ClusterSecretStore to pull from
   secretStoreName: "vault-backend"
-  # "SecretStore" (namespace-scoped) or "ClusterSecretStore" (cluster-scoped)
   secretStoreKind: "SecretStore"
-  # Path / prefix inside the store where all five keys live
-  # e.g. for Vault KV-v2: "mism/discovery"
-  # e.g. for AWS Secrets Manager: "prod/mism/discovery"
   secretPath: "mism/discovery"
-  # How often the operator re-syncs from upstream (Go duration string)
   refreshInterval: "1h"
 
 # ────────────────────────────────────────────────────────────
@@ -301,18 +197,12 @@ externalSecrets:
 # ────────────────────────────────────────────────────────────
 networkPolicy:
   enabled: true
-  # Namespace where your Ingress controller pods live.
-  # The label kubernetes.io/metadata.name=<value> must exist on that namespace.
   ingressControllerNamespace: "ingress-nginx"
-  # Set true to also render a restrictive egress policy (allows DNS +
-  # intra-namespace + kube-apiserver only).  Leave false if services need
-  # to reach external iRODS hosts, LakeFS, cloud object storage, etc.
   restrictEgress: false
 
 # ────────────────────────────────────────────────────────────
 # HorizontalPodAutoscalers
 # Requires metrics-server in the cluster.
-# For additionalMetrics also install the Prometheus adapter or KEDA.
 # ────────────────────────────────────────────────────────────
 hpa:
   gateway:
@@ -323,16 +213,6 @@ hpa:
     targetMemoryUtilizationPercentage: "" # leave empty to disable
     scaleUpStabilizationWindowSeconds: 60
     scaleDownStabilizationWindowSeconds: 300
-    # additionalMetrics: []
-    # Example – scale on requests-per-second via Prometheus adapter:
-    # additionalMetrics:
-    #   - type: Pods
-    #     pods:
-    #       metric:
-    #         name: http_requests_per_second
-    #       target:
-    #         type: AverageValue
-    #         averageValue: "500"
 
   searchService:
     enabled: true
@@ -342,7 +222,6 @@ hpa:
     targetMemoryUtilizationPercentage: 80 # search can be memory-heavy
     scaleUpStabilizationWindowSeconds: 60
     scaleDownStabilizationWindowSeconds: 300
-    # additionalMetrics: []
 
   uploadService:
     enabled: true
@@ -352,4 +231,3 @@ hpa:
     targetMemoryUtilizationPercentage: ""
     scaleUpStabilizationWindowSeconds: 30 # scale up fast for burst uploads
     scaleDownStabilizationWindowSeconds: 600 # keep pods longer; transfers may be in-flight
-    # additionalMetrics: []

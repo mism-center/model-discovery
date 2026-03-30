@@ -26,6 +26,15 @@ spec:
               containerPort: {{ .Values.gateway.service.port }}
               protocol: TCP
           env:
+            # DATABASE_URL is assembled from metadata-store values + secret password.
+            # The $(DATABASE_PASSWORD) is resolved by Kubernetes variable expansion.
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: model-discovery-secrets
+                  key: databasePassword
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://{{ .Values.metadataStore.env.POSTGRES_USER }}:$(DATABASE_PASSWORD)@metadata-store:{{ .Values.metadataStore.service.port }}/{{ .Values.metadataStore.env.POSTGRES_DB }}"
             {{- range $key, $val := .Values.gateway.env }}
             - name: {{ $key }}
               value: {{ $val | quote }}

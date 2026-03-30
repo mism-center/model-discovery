@@ -19,51 +19,48 @@ spec:
     spec:
       {{- include "model-discovery.imagePullSecrets" . | nindent 6 }}
       containers:
-        - name: mongodb
+        - name: postgres
           image: "{{ .Values.global.imageRegistry }}{{ .Values.metadataStore.image.repository }}:{{ .Values.metadataStore.image.tag }}"
           imagePullPolicy: {{ .Values.metadataStore.image.pullPolicy }}
           ports:
-            - name: mongo
+            - name: postgres
               containerPort: {{ .Values.metadataStore.service.port }}
               protocol: TCP
           env:
-            - name: MONGO_INITDB_DATABASE
-              value: {{ .Values.metadataStore.env.MONGO_INITDB_DATABASE | quote }}
-            - name: MONGO_INITDB_ROOT_USERNAME
+            - name: POSTGRES_DB
+              value: {{ .Values.metadataStore.env.POSTGRES_DB | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.metadataStore.env.POSTGRES_USER | quote }}
+            - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: model-discovery-secrets
-                  key: mongoRootUsername
-            - name: MONGO_INITDB_ROOT_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: model-discovery-secrets
-                  key: mongoRootPassword
+                  key: databasePassword
           livenessProbe:
             exec:
               command:
-                - mongosh
-                - --eval
-                - "db.adminCommand('ping')"
+                - pg_isready
+                - -U
+                - {{ .Values.metadataStore.env.POSTGRES_USER }}
             initialDelaySeconds: 30
             periodSeconds: 20
           readinessProbe:
             exec:
               command:
-                - mongosh
-                - --eval
-                - "db.adminCommand('ping')"
+                - pg_isready
+                - -U
+                - {{ .Values.metadataStore.env.POSTGRES_USER }}
             initialDelaySeconds: 10
             periodSeconds: 10
           resources:
             {{- toYaml .Values.metadataStore.resources | nindent 12 }}
           volumeMounts:
-            - name: mongo-data
-              mountPath: /data/db
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
   {{- if .Values.metadataStore.persistence.enabled }}
   volumeClaimTemplates:
     - metadata:
-        name: mongo-data
+        name: postgres-data
       spec:
         accessModes: ["ReadWriteOnce"]
         {{- if .Values.metadataStore.persistence.storageClass }}

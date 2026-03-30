@@ -31,22 +31,4 @@ spec:
                 name: discovery-gateway
                 port:
                   name: http
-
-          # Direct OIDC / Keycloak endpoints (for token exchange from clients)
-          - path: /auth
-            pathType: Prefix
-            backend:
-              service:
-                name: oidc-service
-                port:
-                  name: http
-
-          # MinIO console (optional, restrict in production)
-          - path: /minio
-            pathType: Prefix
-            backend:
-              service:
-                name: blob-storage
-                port:
-                  name: console
 {{- end }}
