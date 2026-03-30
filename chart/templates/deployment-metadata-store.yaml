@@ -1,0 +1,78 @@
+{{- if .Values.metadataStore.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: metadata-store
+  labels:
+    {{- include "model-discovery.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metadata-store
+spec:
+  serviceName: metadata-store
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "model-discovery.selectorLabels" (dict "component" "metadata-store" "context" $) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "model-discovery.selectorLabels" (dict "component" "metadata-store" "context" $) | nindent 8 }}
+    spec:
+      {{- include "model-discovery.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: mongodb
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.metadataStore.image.repository }}:{{ .Values.metadataStore.image.tag }}"
+          imagePullPolicy: {{ .Values.metadataStore.image.pullPolicy }}
+          ports:
+            - name: mongo
+              containerPort: {{ .Values.metadataStore.service.port }}
+              protocol: TCP
+          env:
+            - name: MONGO_INITDB_DATABASE
+              value: {{ .Values.metadataStore.env.MONGO_INITDB_DATABASE | quote }}
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: model-discovery-secrets
+                  key: mongoRootUsername
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: model-discovery-secrets
+                  key: mongoRootPassword
+          livenessProbe:
+            exec:
+              command:
+                - mongosh
+                - --eval
+                - "db.adminCommand('ping')"
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          readinessProbe:
+            exec:
+              command:
+                - mongosh
+                - --eval
+                - "db.adminCommand('ping')"
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.metadataStore.resources | nindent 12 }}
+          volumeMounts:
+            - name: mongo-data
+              mountPath: /data/db
+  {{- if .Values.metadataStore.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: mongo-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.metadataStore.persistence.storageClass }}
+        storageClassName: {{ .Values.metadataStore.persistence.storageClass }}
+        {{- else if .Values.global.storageClass }}
+        storageClassName: {{ .Values.global.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.metadataStore.persistence.size }}
+  {{- end }}
+{{- end }}

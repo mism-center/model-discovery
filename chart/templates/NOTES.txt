@@ -1,0 +1,66 @@
+========================================================
+  MISM Discovery Platform – Deployment Notes
+========================================================
+
+Release  : {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+Chart    : {{ .Chart.Name }} v{{ .Chart.Version }}
+
+Components deployed
+-------------------
+{{- if .Values.gateway.enabled }}
+  [x] Discovery Gateway REST API  (port {{ .Values.gateway.service.port }})
+{{- end }}
+{{- if .Values.searchService.enabled }}
+  [x] Search Service              (port {{ .Values.searchService.service.port }})
+{{- end }}
+{{- if .Values.uploadService.enabled }}
+  [x] Upload Service              (port {{ .Values.uploadService.service.port }})
+{{- end }}
+{{- if .Values.aclServer.enabled }}
+  [x] ACL Server / AUTHo         (port {{ .Values.aclServer.service.port }})
+{{- end }}
+{{- if .Values.oidcService.enabled }}
+  [x] OIDC / AUTHe               (port {{ .Values.oidcService.service.port }})
+{{- end }}
+{{- if .Values.storageInterface.enabled }}
+  [x] Storage Interface           (port {{ .Values.storageInterface.service.port }})
+{{- end }}
+{{- if .Values.metadataStore.enabled }}
+  [x] Metadata Store (MongoDB)    (port {{ .Values.metadataStore.service.port }})
+{{- end }}
+{{- if .Values.aclDb.enabled }}
+  [x] ACL Database (PostgreSQL)   (port {{ .Values.aclDb.service.port }})
+{{- end }}
+{{- if .Values.blobStorage.enabled }}
+  [x] Blob Storage (MinIO)        API {{ .Values.blobStorage.service.apiPort }} / Console {{ .Values.blobStorage.service.consolePort }}
+{{- end }}
+
+Access
+------
+{{- if .Values.ingress.enabled }}
+  Gateway  : http{{ if .Values.ingress.tls.enabled }}s{{ end }}://{{ .Values.ingress.host }}/
+  OIDC     : http{{ if .Values.ingress.tls.enabled }}s{{ end }}://{{ .Values.ingress.host }}/auth
+  MinIO UI : http{{ if .Values.ingress.tls.enabled }}s{{ end }}://{{ .Values.ingress.host }}/minio
+{{- else }}
+  Use kubectl port-forward to reach internal services, e.g.:
+    kubectl -n {{ .Release.Namespace }} port-forward svc/discovery-gateway {{ .Values.gateway.service.port }}:{{ .Values.gateway.service.port }}
+{{- end }}
+
+IMPORTANT – change default secrets before production use:
+  helm upgrade {{ .Release.Name }} ./chart \
+    --set secrets.mongoRootPassword=<STRONG_PASSWORD> \
+    --set secrets.aclDbPassword=<STRONG_PASSWORD> \
+    --set secrets.minioRootPassword=<STRONG_PASSWORD> \
+    --set secrets.keycloakAdminPassword=<STRONG_PASSWORD>
+
+Useful commands
+---------------
+  # Check pod status
+  kubectl -n {{ .Release.Namespace }} get pods
+
+  # Tail gateway logs
+  kubectl -n {{ .Release.Namespace }} logs -l app.kubernetes.io/component=gateway -f
+
+  # Uninstall
+  helm uninstall {{ .Release.Name }} -n {{ .Release.Namespace }}

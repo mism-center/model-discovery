@@ -1,0 +1,11 @@
+apiVersion: v2
+name: model-discovery
+description: >
+  MISM Discovery Platform – Helm chart deploying the Discovery Gateway REST API,
+  Search Service, Upload Service, ACL Server (AUTHo), OIDC (AUTHe),
+  Storage Interface (iRODS / LakeFS), Metadata Store, Blob Storage, and ACL DB.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+maintainers:
+  - name: MISM Team

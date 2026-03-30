@@ -1,0 +1,54 @@
+{{- if .Values.oidcService.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oidc-service
+  labels:
+    {{- include "model-discovery.labels" . | nindent 4 }}
+    app.kubernetes.io/component: oidc-service
+spec:
+  replicas: {{ .Values.oidcService.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "model-discovery.selectorLabels" (dict "component" "oidc-service" "context" $) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "model-discovery.selectorLabels" (dict "component" "oidc-service" "context" $) | nindent 8 }}
+    spec:
+      {{- include "model-discovery.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: oidc-service
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.oidcService.image.repository }}:{{ .Values.oidcService.image.tag }}"
+          imagePullPolicy: {{ .Values.oidcService.image.pullPolicy }}
+          args:
+            - start
+          ports:
+            - name: http
+              containerPort: {{ .Values.oidcService.service.port }}
+              protocol: TCP
+          env:
+            {{- range $key, $val := .Values.oidcService.env }}
+            - name: {{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: model-discovery-secrets
+                  key: keycloakAdminPassword
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.oidcService.resources | nindent 12 }}
+{{- end }}
