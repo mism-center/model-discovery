@@ -13,36 +13,38 @@ jobs:
   test-and-lint:
     name: Test, lint, and build API image
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     defaults:
       run:
         working-directory: api
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --group dev
+        run: make install
 
       - name: Run tests
-        run: uv run pytest
+        run: make test
 
       - name: Check formatting
-        run: uv run ruff format --check .
+        run: make format-check
 
       - name: Run Ruff lint checks
-        run: uv run ruff check .
+        run: make lint
 
       - name: Run mypy
-        run: uv run mypy src tests
+        run: make typecheck
 
       - name: Build Docker image
         run: docker build -t mismapi:ci .

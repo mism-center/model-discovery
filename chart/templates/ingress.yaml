@@ -1,0 +1,52 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: model-discovery-ingress
+  labels:
+    {{- include "model-discovery.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host }}
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          # Discovery Gateway REST API – main entry point
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: discovery-gateway
+                port:
+                  name: http
+
+          # Direct OIDC / Keycloak endpoints (for token exchange from clients)
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: oidc-service
+                port:
+                  name: http
+
+          # MinIO console (optional, restrict in production)
+          - path: /minio
+            pathType: Prefix
+            backend:
+              service:
+                name: blob-storage
+                port:
+                  name: console
+{{- end }}
