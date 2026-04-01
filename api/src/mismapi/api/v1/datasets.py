@@ -1,8 +1,9 @@
 import logging
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query
 
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
+from mismapi.dependencies.registry import get_registry_service
 from mismapi.schemas.registry import (
     RegisterDatasetRequest,
     RegisterDatasetResponse,
@@ -18,11 +19,10 @@ router = APIRouter()
 
 @router.post("/datasets", response_model=RegisterDatasetResponse, status_code=201)
 async def create_dataset(
-    request: Request,
     payload: RegisterDatasetRequest,
     principal: AuthenticatedPrincipal = Depends(require_principal),
+    service: RegistryService = Depends(get_registry_service),
 ) -> RegisterDatasetResponse:
-    service: RegistryService = request.app.state.registry_service
 
     resource = service.create_dataset(
         principal,
@@ -51,12 +51,11 @@ async def create_dataset(
 
 @router.put("/datasets/{dataset_id}", response_model=RegisterDatasetResponse)
 async def update_dataset(
-    request: Request,
     dataset_id: str,
     payload: UpdateDatasetRequest,
     principal: AuthenticatedPrincipal = Depends(require_principal),
+    service: RegistryService = Depends(get_registry_service),
 ) -> RegisterDatasetResponse:
-    service: RegistryService = request.app.state.registry_service
 
     resource = service.update_dataset(
         principal,
@@ -86,7 +85,6 @@ async def update_dataset(
 
 @router.get("/datasets", response_model=ModelListResponse)
 async def list_datasets(
-    request: Request,
     name: str | None = Query(default=None, description="Substring match on dataset name"),
     owner: str | None = Query(default=None, description="Exact match on owner"),
     tags: list[str] | None = Query(default=None, description="Format tags (all must match)"),
@@ -94,8 +92,8 @@ async def list_datasets(
     scales: list[str] | None = Query(default=None, description="Modeling scales (any must match)"),
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    service: RegistryService = Depends(get_registry_service),
 ) -> ModelListResponse:
-    service: RegistryService = request.app.state.registry_service
 
     resources = service.list_datasets(
         name_contains=name,

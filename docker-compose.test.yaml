@@ -39,6 +39,8 @@ services:
       DATABASE_URL: "postgresql+psycopg://postgres:postgres@db:5432/mism_test"
       DISABLE_AUTH: "true"
       STUB_UPSTREAM_SERVICES: "true"
+    volumes:
+      - ./data/uploads:/data/uploads
     ports:
       - "8000:8000"
     healthcheck:

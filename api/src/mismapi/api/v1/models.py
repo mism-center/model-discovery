@@ -1,8 +1,9 @@
 import logging
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query
 
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
+from mismapi.dependencies.registry import get_registry_service
 from mismapi.schemas.registry import (
     CreateRunRequest,
     CreateRunResponse,
@@ -20,7 +21,6 @@ router = APIRouter()
 
 @router.get("/models", response_model=ModelListResponse)
 async def list_models(
-    request: Request,
     name: str | None = Query(default=None, description="Substring match on model name"),
     owner: str | None = Query(default=None, description="Exact match on owner"),
     tags: list[str] | None = Query(default=None, description="Format tags (all must match)"),
@@ -28,8 +28,8 @@ async def list_models(
     scales: list[str] | None = Query(default=None, description="Modeling scales (any must match)"),
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    service: RegistryService = Depends(get_registry_service),
 ) -> ModelListResponse:
-    service: RegistryService = request.app.state.registry_service
 
     resources = service.list_models(
         name_contains=name,
@@ -63,11 +63,10 @@ async def list_models(
 
 @router.post("/models", response_model=RegisterModelResponse, status_code=201)
 async def create_model(
-    request: Request,
     payload: RegisterModelRequest,
     principal: AuthenticatedPrincipal = Depends(require_principal),
+    service: RegistryService = Depends(get_registry_service),
 ) -> RegisterModelResponse:
-    service: RegistryService = request.app.state.registry_service
 
     resource = service.create_model(
         principal,
@@ -94,12 +93,11 @@ async def create_model(
 
 @router.put("/models/{model_id}", response_model=RegisterModelResponse)
 async def update_model(
-    request: Request,
     model_id: str,
     payload: UpdateModelRequest,
     principal: AuthenticatedPrincipal = Depends(require_principal),
+    service: RegistryService = Depends(get_registry_service),
 ) -> RegisterModelResponse:
-    service: RegistryService = request.app.state.registry_service
 
     resource = service.update_model(
         principal,
@@ -131,12 +129,11 @@ async def update_model(
     status_code=201,
 )
 async def create_run(
-    request: Request,
     model_id: str,
     payload: CreateRunRequest,
     principal: AuthenticatedPrincipal = Depends(require_principal),
+    service: RegistryService = Depends(get_registry_service),
 ) -> CreateRunResponse:
-    service: RegistryService = request.app.state.registry_service
 
     run = service.create_run(
         principal,
