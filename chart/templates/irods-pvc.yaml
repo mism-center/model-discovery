@@ -1,0 +1,17 @@
+{{- if .Values.irods.pvc.create }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.irods.pvc.name }}
+  labels:
+    {{- include "model-discovery.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.irods.pvc.accessMode }}
+  {{- if .Values.irods.storageClass.name }}
+  storageClassName: {{ .Values.irods.storageClass.name }}
+  {{- end}}
+  resources:
+    requests:
+      storage: {{ .Values.irods.pvc.storage }}
+  {{ end }}
