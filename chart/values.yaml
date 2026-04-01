@@ -58,6 +58,8 @@ irods:
     name: "irods-pvc"
     storage: "5Gi"
     accessMode: "ReadWriteMany"
+    mountPath: "/irods"
+    subPath: "/"
 
   # StorageClass
   storageClass:
