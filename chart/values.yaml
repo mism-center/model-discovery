@@ -51,6 +51,20 @@ gateway:
     JWT_ALGORITHMS: "RS256"
     JWT_JWKS_URL: ""
 
+irods:
+  # PersistentVolumeClaim
+  pvc:
+    create: true
+    name: "irods-pvc"
+    storage: "5Gi"
+    accessMode: "ReadWriteMany"
+    mountPath: "/irods"
+    subPath: "/"
+
+  # StorageClass
+  storageClass:
+    name: "" # irods-sc
+
 # ────────────────────────────────────────────────────────────
 # Search Service
 # ────────────────────────────────────────────────────────────

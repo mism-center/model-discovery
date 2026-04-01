@@ -53,4 +53,12 @@ spec:
             periodSeconds: 10
           resources:
             {{- toYaml .Values.gateway.resources | nindent 12 }}
+          volumeMounts:
+            - name: irods-data
+              mountPath: {{ .Values.irods.pvc.mountPath }}
+              subPath: {{ .Values.irods.pvc.subPath }}
+      volumes:
+        - name: irods-data
+          persistentVolumeClaim:
+            claimName: {{ .Values.irods.pvc.name }}
 {{- end }}
