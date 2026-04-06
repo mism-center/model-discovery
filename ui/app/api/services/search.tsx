@@ -1,6 +1,6 @@
 import { parseDate } from '@internationalized/date';
-import mockModelsData from '../mocks/results-mock-data.json';
-import mockDatasetsData from '../mocks/datasets-mock-data.json';
+import mockModelsData from '~/api/mocks/results-mock-data.json';
+import mockDatasetsData from '~/api/mocks/datasets-mock-data.json';
 import type { ReactNode } from 'react';
 import {
   CalendarIcon,

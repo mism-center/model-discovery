@@ -1,4 +1,4 @@
-import SearchSection from '../components/sections/search/search';
+import SearchSection from '~/components/sections/search/search';
 
 export function meta() {
   return [

@@ -1,24 +1,24 @@
-# Welcome to React Router!
+# MISM Discovery Portal UI
 
-A modern, production-ready template for building full-stack React applications using React Router.
+The frontend for the Multiscale Immune Systems Modeling (MISM) discovery portal, providing a search/upload interface for multiscale models.
 
-[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/remix-run/react-router-templates/tree/main/default)
+## Tech Stack
 
-## Features
-
-- 🚀 Server-side rendering
-- ⚡️ Hot Module Replacement (HMR)
-- 📦 Asset bundling and optimization
-- 🔄 Data loading and mutations
-- 🔒 TypeScript by default
-- 🎉 TailwindCSS for styling
-- 📖 [React Router docs](https://reactrouter.com/)
+- **Framework**: [React Router 7](https://reactrouter.com/) with server-side rendering
+- **React**: v19
+- **TypeScript**: v5.9
+- **Styling**: [TailwindCSS v4](https://tailwindcss.com/) with a custom theme plugin
+- **Component Library**: [HeroUI v2.8](https://www.heroui.com/)
+- **Build Tool**: [Vite v7](https://vite.dev/)
 
 ## Getting Started
 
-### Installation
+### Prerequisites
 
-Install the dependencies:
+- Node.js (LTS recommended)
+- npm
+
+### Installation
 
 ```bash
 npm install
@@ -32,56 +32,52 @@ Start the development server with HMR:
 npm run dev
 ```
 
-Your application will be available at `http://localhost:5173`.
+The application will be available at `http://localhost:5173`.
+
+### Available Scripts
+
+| Command | Description |
+| --- | --- |
+| `npm run dev` | Start dev server with HMR |
+| `npm run build` | Create a production build |
+| `npm start` | Run the production server |
+| `npm run typecheck` | Generate route types and run `tsc` |
+| `npm run lint` | Run ESLint |
+| `npm run lint:fix` | Run ESLint with auto-fix |
+| `npm run format` | Format code with Prettier |
+
+## Project Structure
+
+```
+app/
+├── api/               # API hooks and service clients
+├── components/
+│   ├── layout/        # Global layout components
+│   └── sections/
+│       └── search/    # Search UI
+├── contexts/          # React context providers
+├── routes/            # File-based route components
+├── styles/            # TailwindCSS config and custom plugins
+├── root.tsx           # Root layout, providers, and error boundary
+└── routes.ts          # Route definitions
+```
 
 ## Building for Production
-
-Create a production build:
 
 ```bash
 npm run build
 ```
 
-## Deployment
+The build outputs to `build/`:
 
-### Docker Deployment
+```
+build/
+├── client/    # Static assets
+└── server/    # Server-side rendering code
+```
 
-To build and run using Docker:
+Start the production server:
 
 ```bash
-docker build -t my-app .
-
-# Run the container
-docker run -p 3000:3000 my-app
+npm start
 ```
-
-The containerized application can be deployed to any platform that supports Docker, including:
-
-- AWS ECS
-- Google Cloud Run
-- Azure Container Apps
-- Digital Ocean App Platform
-- Fly.io
-- Railway
-
-### DIY Deployment
-
-If you're familiar with deploying Node applications, the built-in app server is production-ready.
-
-Make sure to deploy the output of `npm run build`
-
-```
-├── package.json
-├── package-lock.json (or pnpm-lock.yaml, or bun.lockb)
-├── build/
-│   ├── client/    # Static assets
-│   └── server/    # Server-side code
-```
-
-## Styling
-
-This template comes with [Tailwind CSS](https://tailwindcss.com/) already configured for a simple default starting experience. You can use whatever CSS framework you prefer.
-
----
-
-Built with ❤️ using React Router.

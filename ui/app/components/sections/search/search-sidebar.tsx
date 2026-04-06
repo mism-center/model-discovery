@@ -14,14 +14,14 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import cn from 'classnames';
 import { matchSorter } from 'match-sorter';
 import { useDebounce } from 'use-debounce';
-import { useSearch } from '../../../contexts/search-context';
+import { useSearch } from '~/contexts/search-context';
 import type {
   CheckboxConfig,
   DateRangeConfig,
   FilterConfig,
   FilterValue,
   TermAggregation,
-} from '../../../api/services/search';
+} from '~/api/services/search';
 import { MagnifyingGlassIcon } from '@heroicons/react/16/solid';
 
 export function SearchSidebar() {
@@ -45,12 +45,7 @@ export function SearchSidebar() {
   }, [filterConfigs]);
 
   return (
-    <div
-      className={cn(
-        'flex flex-col h-full min-w-[320px]'
-        // 'border-l border-slate-200'
-      )}
-    >
+    <div className="flex flex-col h-full min-w-[320px]">
       <div className="mb-4 p-6 pb-0">
         <h2 className="text-black font-headline font-bold text-[14px] uppercase tracking-widest mb-1">
           Filters
@@ -62,7 +57,6 @@ export function SearchSidebar() {
       <Accordion
         selectionMode="multiple"
         defaultExpandedKeys={defaultExpandedKeys}
-        // dividerProps={{ className: 'bg-slate-200' }}
         showDivider={false}
         itemClasses={{
           heading: 'py-0 group px-6',
@@ -355,11 +349,7 @@ function CheckboxFilter({
               wrapper:
                 // Checkbox styling
                 'rounded-xs before:rounded-xs after:rounded-xs before:border-1 before:bg-white',
-              label: cn(
-                'ml-0 text-[14px] text-default-900',
-                'w-full flex',
-                selected.includes(optionName) ? '' : ''
-              ),
+              label: 'ml-0 w-full flex text-[14px] text-default-900',
               base: cn(
                 'group py-[6px] -m-[3px] max-w-none rounded-md',
                 'transition-colors duration-200',

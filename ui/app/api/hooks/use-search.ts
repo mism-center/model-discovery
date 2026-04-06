@@ -3,7 +3,7 @@ import {
   fetchSearchResults,
   type SearchQuery,
   type SearchResponse,
-} from '../services/search';
+} from '~/api/services/search';
 
 export function useSearchQuery(searchQuery: SearchQuery) {
   const [data, setData] = useState<SearchResponse | null>(null);

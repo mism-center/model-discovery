@@ -3,7 +3,7 @@ import { BreadcrumbItem, Button, Input } from '@heroui/react';
 import { MagnifyingGlassIcon } from '@heroicons/react/16/solid';
 import cn from 'classnames';
 import BreadcrumbsNav from '~/components/layout/breadcrumbs';
-import { useSearch } from '../../../../contexts/search-context';
+import { useSearch } from '~/contexts/search-context';
 import { SuggestedTermsContainer } from './suggested-terms';
 import { AIModeCard } from './ai-mode-card';
 

@@ -1,5 +1,5 @@
 {
-  "name": "mdsc-portal",
+  "name": "model-discovery-ui",
   "private": true,
   "type": "module",
   "scripts": {

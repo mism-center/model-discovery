@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Pagination } from '@heroui/react';
-import { useSearch } from '../../../../contexts/search-context';
+import { useSearch } from '~/contexts/search-context';
 import { SearchResult } from './search-result';
 import { ResultSkeleton } from './skeleton';
 import { SearchResultsHeader } from './search-header';

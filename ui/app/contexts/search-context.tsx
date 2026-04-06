@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useSearchParams } from 'react-router';
-import { useSearchQuery } from '../api/hooks/use-search';
+import { useSearchQuery } from '~/api/hooks/use-search';
 import {
   getFilterConfigs,
   type DatasetResult,
@@ -19,7 +19,7 @@ import {
   type SearchAggregations,
   type SearchQuery,
   type SortOrder,
-} from '../api/services/search';
+} from '~/api/services/search';
 
 // ============================================================================
 // Context types
