@@ -32,12 +32,6 @@ gateway:
     SEARCH_SERVICE_URL: "http://search-service:8100"
     UPLOAD_SERVICE_URL: "http://upload-service:8200"
     OIDC_SERVICE_URL: "http://oidc-service:8080"
-    SEARCH_TIMEOUT_SECONDS: "10.0"
-    UPLOAD_TIMEOUT_SECONDS: "60.0"
-    UPLOAD_CHUNK_SIZE_BYTES: "5242880"
-    UPLOAD_RETRY_MAX_ATTEMPTS: "3"
-    UPLOAD_RETRY_BACKOFF_SECONDS: "1.0"
-    UPLOAD_RETRY_TRAILING_BUFFER_BYTES: "15728640"
 
 # ────────────────────────────────────────────────────────────
 # Search Service
