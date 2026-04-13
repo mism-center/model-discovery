@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 from jwt.algorithms import RSAAlgorithm
 
 from mismapi.auth.base import build_auth_validator
-from mismapi.auth.jwt import JWTAuthValidator
-from mismapi.auth.oidc import OIDCAuthValidator
+from mismapi.auth.jwt_auth_validator import JWTAuthValidator
+from mismapi.auth.oidc_auth_validator import OIDCAuthValidator
 from mismapi.core.settings import Settings
 from mismapi.main import create_app
 

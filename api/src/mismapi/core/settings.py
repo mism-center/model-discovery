@@ -38,6 +38,14 @@ class Settings(BaseSettings):
     oidc_audience: str = Field(default="", alias="OIDC_AUDIENCE")
     oidc_required_scopes: str = Field(default="", alias="OIDC_REQUIRED_SCOPES")
     oidc_jwks_ttl_seconds: int = Field(default=300, alias="OIDC_JWKS_TTL_SECONDS")
+    oidc_client_id: str = Field(default="", alias="OIDC_CLIENT_ID")
+    oidc_client_secret: str = Field(default="", alias="OIDC_CLIENT_SECRET")
+    oidc_redirect_uri: str = Field(default="", alias="OIDC_REDIRECT_URI")
+    oidc_post_login_redirect_uri: str = Field(default="", alias="OIDC_POST_LOGIN_REDIRECT_URI")
+
+    redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
+    session_ttl_seconds: int = Field(default=3600, alias="SESSION_TTL_SECONDS")
+    session_cookie_name: str = Field(default="mism_session", alias="SESSION_COOKIE_NAME")
 
     @property
     def jwt_algorithm_list(self) -> list[str]:

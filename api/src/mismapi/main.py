@@ -2,9 +2,12 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from redis.asyncio import Redis
 
 from mismapi.api.router import build_api_router
 from mismapi.auth.base import build_auth_validator
+from mismapi.auth.oidc import OIDCDiscoveryLoader
+from mismapi.auth.session import RedisSessionStore
 from mismapi.clients.search_client import SearchServiceClient
 from mismapi.clients.upload_client import UploadServiceClient
 from mismapi.core.errors import register_exception_handlers
@@ -31,9 +34,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         stub_upstream=settings.stub_upstream_services,
     )
     app.state.auth_validator = build_auth_validator(settings=settings)
+
+    redis_client: Redis = Redis.from_url(  # type: ignore[type-arg]
+        settings.redis_url,
+        decode_responses=False,
+    )
+    app.state.redis = redis_client
+    app.state.session_store = RedisSessionStore(
+        redis=redis_client,
+        session_ttl_seconds=settings.session_ttl_seconds,
+    )
+    app.state.oidc_discovery_loader = OIDCDiscoveryLoader(settings=settings)
+
     yield
+
     await app.state.search_client.close()
     await app.state.upload_client.close()
+    await redis_client.aclose()
 
 
 def create_app() -> FastAPI:

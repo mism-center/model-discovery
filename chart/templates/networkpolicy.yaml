@@ -11,6 +11,7 @@
     Gateway             → Search Service
     Gateway             → Upload Service
     Gateway             → OIDC Service
+    Gateway             → Redis (when bundled subchart is enabled)
     Search Service      → Metadata Store (MongoDB)
     Upload Service      → Storage Interface
     Upload Service      → ACL Server
@@ -65,6 +66,33 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.gateway.service.port }}
+{{- end }}
+
+---
+# ── 1b. Redis (Bitnami subchart) – accepts traffic from Gateway only ─────────
+{{- if and .Values.redis .Values.redis.enabled .Values.gateway.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-to-redis
+  labels:
+    {{- include "model-discovery.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+      app.kubernetes.io/instance: {{ .Release.Name | quote }}
+      app.kubernetes.io/component: master
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: gateway
+      ports:
+        - protocol: TCP
+          port: 6379
 {{- end }}
 
 ---

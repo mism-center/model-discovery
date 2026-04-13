@@ -3,9 +3,15 @@ name: model-discovery
 description: >
   MISM Discovery Platform – Helm chart deploying the Discovery Gateway REST API,
   Search Service, Upload Service, ACL Server (AUTHo), OIDC (AUTHe),
-  Storage Interface (iRODS / LakeFS), Metadata Store, Blob Storage, and ACL DB.
+  Storage Interface (iRODS / LakeFS), Metadata Store, Blob Storage, ACL DB,
+  and Redis (sessions / cache for the gateway API).
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
 maintainers:
   - name: MISM Team
+dependencies:
+  - name: redis
+    version: "25.3.11"
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: redis.enabled

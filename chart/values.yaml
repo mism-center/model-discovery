@@ -347,3 +347,30 @@ hpa:
     scaleUpStabilizationWindowSeconds: 30 # scale up fast for burst uploads
     scaleDownStabilizationWindowSeconds: 600 # keep pods longer; transfers may be in-flight
     # additionalMetrics: []
+
+# ────────────────────────────────────────────────────────────
+# Redis  (Bitnami subchart – gateway sessions / cache)
+# https://artifacthub.io/packages/helm/bitnami/redis
+# Schedules on linux/amd64 nodes via master.nodeSelector (image matches node arch).
+# Set redis.enabled: false and configure gateway.env.REDIS_URL for an external Redis.
+# ────────────────────────────────────────────────────────────
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+  networkPolicy:
+    # Keep as false: the parent Bitnami chart's NetworkPolicy is overly permissive
+    # in-namespace. We want to disable the parent's NetworkPolicy and use our own,
+    # which provides a specific cutout for discovery gateway -> Redis.
+    enabled: false
+  master:
+    nodeSelector:
+      kubernetes.io/arch: amd64
+    persistence:
+      enabled: true
+      size: 8Gi
+      storageClass: ""
+  global:
+    imageRegistry: ""
+    imagePullSecrets: []
