@@ -129,37 +129,6 @@ async def update_model(
 
 @router.post(
     "/models/{model_id}/runs",
-    response_model=CreateRunResponse,
-    status_code=201,
-)
-async def create_run(
-    model_id: str,
-    payload: CreateRunRequest,
-    principal: AuthenticatedPrincipal = Depends(require_principal),
-    service: RegistryService = Depends(get_registry_service),
-) -> CreateRunResponse:
-
-    run = service.create_run(
-        principal,
-        model_id=model_id,
-        input_resource_ids=payload.input_resource_ids,
-        parameters=payload.parameters,
-        triggered_by=payload.triggered_by,
-        notes=payload.notes,
-    )
-
-    return CreateRunResponse(
-        id=run.id,
-        model_id=run.model_id,
-        model_version=run.model_version,
-        status=run.status.value,
-        input_resource_ids=list(run.input_resource_ids),
-        created_at=run.created_at,
-    )
-
-
-@router.post(
-    "/models/{model_id}/runs/execute",
     response_model=ExecuteRunResponse,
     status_code=201,
 )
