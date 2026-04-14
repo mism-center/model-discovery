@@ -3,10 +3,14 @@ import logging
 from fastapi import APIRouter, Depends, Query
 
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
+from mismapi.clients.execution_client import ExecutionClient
+from mismapi.dependencies.execution import get_execution_client
 from mismapi.dependencies.registry import get_registry_service
 from mismapi.schemas.registry import (
     CreateRunRequest,
     CreateRunResponse,
+    ExecuteRunRequest,
+    ExecuteRunResponse,
     RegisterModelRequest,
     RegisterModelResponse,
     UpdateModelRequest,
@@ -151,4 +155,50 @@ async def create_run(
         status=run.status.value,
         input_resource_ids=list(run.input_resource_ids),
         created_at=run.created_at,
+    )
+
+
+@router.post(
+    "/models/{model_id}/runs/execute",
+    response_model=ExecuteRunResponse,
+    status_code=201,
+)
+async def execute_run(
+    model_id: str,
+    payload: ExecuteRunRequest,
+    principal: AuthenticatedPrincipal = Depends(require_principal),
+    service: RegistryService = Depends(get_registry_service),
+    execution_client: ExecutionClient = Depends(get_execution_client),
+) -> ExecuteRunResponse:
+    """Create a run and immediately trigger execution on the Execution API."""
+
+    # 1. Register the run in the DAL (same as create_run)
+    run = service.create_run(
+        principal,
+        model_id=model_id,
+        input_resource_ids=payload.input_resource_ids,
+        parameters=payload.parameters,
+        triggered_by=payload.triggered_by,
+        notes=payload.notes,
+    )
+
+    # 2. Forward to Execution API
+    if payload.mode == "interactive":
+        exec_response = await execution_client.launch_interactive(run.id)
+    else:
+        exec_response = await execution_client.launch_batch(run.id)
+
+    logger.info(
+        "Executed run %s for model %s (mode=%s) by %s",
+        run.id, model_id, payload.mode, principal.subject,
+    )
+
+    return ExecuteRunResponse(
+        id=run.id,
+        model_id=run.model_id,
+        model_version=run.model_version,
+        status=run.status.value,
+        input_resource_ids=list(run.input_resource_ids),
+        created_at=run.created_at,
+        execution=exec_response,
     )

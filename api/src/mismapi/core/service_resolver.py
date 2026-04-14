@@ -8,6 +8,9 @@ class ServiceResolver(Protocol):
     def upload_service_url(self) -> str:
         raise NotImplementedError
 
+    def execution_service_url(self) -> str:
+        raise NotImplementedError
+
 
 @dataclass(slots=True)
 class EnvServiceResolver:
@@ -15,3 +18,6 @@ class EnvServiceResolver:
 
     def upload_service_url(self) -> str:
         return self.settings.upload_service_url.rstrip("/")
+
+    def execution_service_url(self) -> str:
+        return self.settings.execution_api_url.rstrip("/")

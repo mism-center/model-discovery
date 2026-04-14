@@ -6,6 +6,7 @@ from mism_registry.backends.postgres import create_session_factory
 
 from mismapi.api.router import build_api_router
 from mismapi.auth.base import build_auth_validator
+from mismapi.clients.execution_client import ExecutionClient
 from mismapi.clients.upload_client import UploadServiceClient
 from mismapi.core.errors import register_exception_handlers
 from mismapi.core.logging import configure_root_logger
@@ -28,10 +29,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         stub_upstream=settings.stub_upstream_services,
     )
 
+    app.state.execution_client = ExecutionClient(
+        base_url=resolver.execution_service_url(),
+        timeout_seconds=settings.execution_timeout_seconds,
+        stub_upstream=settings.stub_upstream_services,
+    )
+
     app.state.session_factory = create_session_factory(settings.database_url)
 
     yield
 
+    await app.state.execution_client.close()
     await app.state.upload_client.close()
 
 

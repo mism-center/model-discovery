@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from mism_registry import ExecutionType
 from pydantic import BaseModel, Field
@@ -83,3 +83,28 @@ class CreateRunResponse(BaseModel):
     status: str
     input_resource_ids: list[str] = Field(default_factory=list)
     created_at: datetime
+
+
+class ExecuteRunRequest(BaseModel):
+    """Create a run AND trigger execution on the Execution API."""
+
+    input_resource_ids: list[str] = Field(default_factory=list)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    triggered_by: str = ""
+    notes: str = ""
+    mode: Literal["batch", "interactive"] = "batch"
+
+
+class ExecuteRunResponse(BaseModel):
+    """Combined response: run record + execution launch result."""
+
+    id: str
+    model_id: str
+    model_version: str = ""
+    status: str
+    input_resource_ids: list[str] = Field(default_factory=list)
+    created_at: datetime
+    execution: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Raw response from the Execution API (batch or interactive).",
+    )
