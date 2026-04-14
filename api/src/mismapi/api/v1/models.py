@@ -159,7 +159,10 @@ async def execute_run(
 
     logger.info(
         "Executed run %s for model %s (mode=%s) by %s",
-        run.id, model_id, payload.mode, principal.subject,
+        run.id,
+        model_id,
+        payload.mode,
+        principal.subject,
     )
 
     return ExecuteRunResponse(
