@@ -63,6 +63,15 @@ typecheck:
 clean:
 	rm -rf .pytest_cache .ruff_cache .mypy_cache
 
+integration-up:
+	docker compose -f ../docker-compose.test.yaml up -d --build --wait
+
+integration-test: integration-up
+	$(UV) run pytest tests/test_integration.py -m integration -v
+
+integration-down:
+	docker compose -f ../docker-compose.test.yaml down -v
+
 ## Build the Docker image (linux/amd64).
 image-build:
 	docker build -t $(IMAGE_TAG) --platform linux/amd64 -f Dockerfile .

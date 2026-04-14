@@ -2,7 +2,7 @@ import httpx
 from fastapi.testclient import TestClient
 
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
-from mismapi.clients.upload_client import ModelMetadataUpsertResult, UploadSession
+from mismapi.clients.upload_client import UploadSession
 from mismapi.main import create_app
 
 TEST_MODEL_ID = "AbC123xYz890"
@@ -14,40 +14,6 @@ class FakeUploadClient:
         self.upload_part_calls: list[tuple[int, bytes]] = []
         self._failed_once = False
         self.completed = False
-        self.created_payload: dict[str, object] | None = None
-        self.updated_payload: dict[str, object] | None = None
-
-    async def create_model(
-        self,
-        name: str,
-        description: str | None,
-        version: str | None,
-        metadata: dict[str, str | int | float | bool | None],
-    ) -> ModelMetadataUpsertResult:
-        self.created_payload = {
-            "name": name,
-            "description": description,
-            "version": version,
-            "metadata": metadata,
-        }
-        return ModelMetadataUpsertResult(model_id=CREATED_MODEL_ID, tracking_id="track-created-1")
-
-    async def update_model(
-        self,
-        model_id: str,
-        name: str,
-        description: str | None,
-        version: str | None,
-        metadata: dict[str, str | int | float | bool | None],
-    ) -> ModelMetadataUpsertResult:
-        self.updated_payload = {
-            "model_id": model_id,
-            "name": name,
-            "description": description,
-            "version": version,
-            "metadata": metadata,
-        }
-        return ModelMetadataUpsertResult(model_id=model_id, tracking_id="track-updated-1")
 
     async def init_upload(
         self,
@@ -181,51 +147,6 @@ def test_upload_retry_retries_only_failing_part() -> None:
         ]
 
 
-def test_create_model_metadata() -> None:
-    app = create_app()
-    app.dependency_overrides[require_principal] = allow_principal
-    fake_upload_client = FakeUploadClient()
-
-    with TestClient(app) as client:
-        app.state.upload_client = fake_upload_client
-        response = client.post(
-            "/api/v1/models",
-            json={
-                "name": "example-model",
-                "description": "An example model",
-                "version": "1.0.0",
-                "metadata": {"framework": "pytorch"},
-            },
-        )
-
-        assert response.status_code == 200
-        payload = response.json()
-        assert payload["status"] == "accepted"
-        assert payload["model_id"] == CREATED_MODEL_ID
-        assert payload["tracking_id"] == "track-created-1"
-        assert fake_upload_client.created_payload is not None
-
-
-def test_update_model_metadata() -> None:
-    app = create_app()
-    app.dependency_overrides[require_principal] = allow_principal
-    fake_upload_client = FakeUploadClient()
-
-    with TestClient(app) as client:
-        app.state.upload_client = fake_upload_client
-        response = client.put(
-            f"/api/v1/models/{TEST_MODEL_ID}",
-            json={
-                "name": "example-model",
-                "description": "An updated model",
-                "version": "1.0.1",
-                "metadata": {"framework": "pytorch", "quantized": False},
-            },
-        )
-
-        assert response.status_code == 200
-        payload = response.json()
-        assert payload["status"] == "accepted"
-        assert payload["model_id"] == TEST_MODEL_ID
-        assert payload["tracking_id"] == "track-updated-1"
-        assert fake_upload_client.updated_payload is not None
+# NOTE: test_create_model_metadata and test_update_model_metadata were removed.
+# POST /models now uses the registry (tested in test_search_endpoint.py / create endpoint tests).
+# PUT /models/{id} was removed (registry uses immutable versioning).

@@ -1,30 +1,20 @@
-# MISM Discovery Platform – Helm Chart
-
-## Session Summary
-
-This session translated the MISM Discovery architecture diagram
-(`mism_discovery_architecture.png`) into a production-ready Helm chart located
-at `chart/` in this repository (chart name: `model-discovery`).
-
----
+# MISM Model Discovery Platform – Helm Chart
 
 ## Architecture Overview
 
-![MISM Discovery Architecture](./mism_discovery_architecture.png)
-
-The platform is composed of nine components derived from the architecture diagram:
+The platform deploys five components plus a database migration Job:
 
 | Component | Kind | Description |
 |---|---|---|
-| Discovery Gateway REST API | Deployment | Single entry point for all client traffic |
-| Search Service | Deployment | Queries the Metadata Store; consumes Croissant Data Specs |
-| Upload Service | Deployment | Handles dataset ingestion; delegates to Storage Interface and ACL Server |
-| ACL Server (AUTHo) | Deployment | Authorization layer; backed by ACL DB |
-| OIDC Service (AUTHe) | Deployment | Authentication provider (Keycloak) |
+| Discovery Gateway REST API | Deployment | FastAPI entry point — serves models, datasets, and full-text search |
+| Search Service | Deployment | Downstream search microservice |
+| Upload Service | Deployment | Handles dataset ingestion; delegates to Storage Interface |
 | Storage Interface | Deployment | Adapter for iRODS or LakeFS backends |
-| Metadata Store | StatefulSet | MongoDB; stores Croissant Data Spec records |
-| ACL DB | StatefulSet | PostgreSQL; stores access-control rules |
-| Blob Storage | StatefulSet | MinIO (S3-compatible); stores raw dataset files |
+| Metadata Store | StatefulSet | PostgreSQL — DAL read/write backend for the registry |
+| Database Migration | Job (Helm hook) | Runs Alembic `upgrade head` on install/upgrade |
+
+> ACL Server, OIDC (Keycloak), ACL DB, and Blob Storage (MinIO) are managed by
+> separate charts and are **not** included here.
 
 ---
 
@@ -34,35 +24,37 @@ The platform is composed of nine components derived from the architecture diagra
 chart/
 ├── Chart.yaml
 ├── values.yaml
+├── test-values.yaml                      # test overrides (feat branch, auth disabled)
 └── templates/
     ├── _helpers.tpl                      # shared name/label helpers
     ├── configmap.yaml                    # shared environment config
     ├── secrets.yaml                      # dual-mode secret management (see below)
-    ├── ingress.yaml                      # nginx Ingress for gateway + OIDC + MinIO console
-    ├── services.yaml                     # ClusterIP Services for all nine components
-    ├── networkpolicy.yaml                # per-receiver NetworkPolicies (see below)
-    ├── hpa.yaml                          # HorizontalPodAutoscalers (see below)
+    ├── ingress.yaml                      # nginx Ingress for the gateway
+    ├── services.yaml                     # ClusterIP Services (5 components)
+    ├── networkpolicy.yaml                # per-receiver NetworkPolicies
+    ├── hpa.yaml                          # HorizontalPodAutoscalers
+    ├── job-migrate.yaml                  # Alembic migration Helm hook
     ├── NOTES.txt                         # post-install instructions
     ├── deployment-gateway.yaml
     ├── deployment-search-service.yaml
     ├── deployment-upload-service.yaml
-    ├── deployment-acl-server.yaml
-    ├── deployment-oidc.yaml
     ├── deployment-storage-interface.yaml
-    ├── deployment-metadata-store.yaml    # StatefulSet
-    ├── deployment-acl-db.yaml            # StatefulSet
-    └── deployment-blob-storage.yaml      # StatefulSet
+    └── deployment-metadata-store.yaml    # StatefulSet (PostgreSQL)
 ```
 
 ---
 
 ## Key Design Decisions
 
-### Stateful vs Stateless workloads
+### Database & Migrations
 
-MongoDB, PostgreSQL, and MinIO use `StatefulSet` with `volumeClaimTemplates`
-so each pod gets a stable, persistent volume. All application services use
-`Deployment` with configurable replica counts.
+The Metadata Store is PostgreSQL 17. The gateway connects via `DATABASE_URL`,
+which is assembled in the deployment template from the metadata-store values and
+a secret password.
+
+When `migration.enabled: true` (the default), a Helm hook Job runs Alembic
+migrations (`post-install,post-upgrade`) using the same gateway image. An
+init container waits for PostgreSQL readiness before migrating.
 
 ### Secret management (`templates/secrets.yaml`)
 
@@ -73,28 +65,28 @@ Two modes, toggled by `externalSecrets.enabled` in `values.yaml`:
 | `false` (default) | Plain `Opaque Secret` from values | Local dev, CI |
 | `true` | `ExternalSecret` CR (ESO v1beta1) | Production — pulls from Vault, AWS SM, GCP SM, Azure KV |
 
-The generated Secret is always named `model-discovery-secrets` so all Deployment
-references stay the same regardless of mode. The plain Secret carries
-`helm.sh/resource-policy: keep` to prevent accidental deletion on upgrade.
+The generated Secret is always named `model-discovery-secrets` so all
+deployment references stay the same regardless of mode.
 
 ### Network Policies (`templates/networkpolicy.yaml`)
 
 A `default-deny-ingress` policy covers every pod in the namespace. Individual
-allow policies then open only the exact paths shown in the architecture diagram:
+allow policies then open only the exact paths:
 
 ```
 Ingress controller  →  Gateway
-Gateway             →  Search Service, Upload Service, OIDC
-Upload Service      →  Storage Interface, ACL Server
-ACL Server          →  ACL DB (PostgreSQL 5432)
-Search Service      →  Metadata Store (MongoDB 27017)
-Storage Interface   →  Blob Storage (MinIO API 9000)
-Ingress controller  →  OIDC (/auth), MinIO console (9001)
+Gateway             →  Search Service, Upload Service
+Gateway / Migrate   →  Metadata Store (PostgreSQL 5432)
+Upload Service      →  Storage Interface
 ```
 
 An optional `networkPolicy.restrictEgress: true` flag adds a matching egress
-lockdown (DNS + intra-namespace + kube-apiserver only). It is off by default to
-allow services to reach external iRODS or LakeFS endpoints.
+lockdown (DNS + intra-namespace + kube-apiserver only).
+
+### HPA Autoscaling
+
+Three HPAs for the stateless services (gateway, search, upload), each with
+tuned CPU/memory thresholds and scale-up/down behaviors.
 
 ---
 
@@ -107,32 +99,30 @@ allow services to reach external iRODS or LakeFS endpoints.
 | metrics-server | Required for HPA CPU/memory metrics |
 | nginx Ingress controller | Running in the `ingress-nginx` namespace (configurable) |
 | External Secrets Operator | Only if `externalSecrets.enabled: true` |
-| Prometheus adapter or KEDA | Only if using `additionalMetrics` in HPA |
 
 ---
 
 ## Installation
 
-All chart resources are created in the **Helm release namespace** (the `-n` /
-`--namespace` you pass to `helm install` / `helm upgrade`). The chart does not
-render a `Namespace` object, so whoever runs Helm must be able to deploy into
-an existing namespace, or use `--create-namespace` when their RBAC allows
-creating namespaces.
-
 ### Minimal (dev/local)
 
 ```bash
-helm install mism . -n <namespace> --create-namespace \
-  --set secrets.mongoRootPassword=<STRONG> \
-  --set secrets.aclDbPassword=<STRONG> \
-  --set secrets.minioRootPassword=<STRONG> \
-  --set secrets.keycloakAdminPassword=<STRONG>
+helm install mism ./chart -n <namespace> --create-namespace \
+  --set secrets.databasePassword=<STRONG>
+```
+
+### With test values (feature branch)
+
+```bash
+helm install mism ./chart -n <namespace> --create-namespace \
+  -f chart/test-values.yaml \
+  --set secrets.databasePassword=<STRONG>
 ```
 
 ### Production with External Secrets Operator
 
 ```bash
-helm install mism . -n <namespace> --create-namespace \
+helm install mism ./chart -n <namespace> --create-namespace \
   --set externalSecrets.enabled=true \
   --set externalSecrets.secretStoreName=vault-backend \
   --set externalSecrets.secretPath=prod/mism/discovery \
@@ -146,6 +136,9 @@ helm install mism . -n <namespace> --create-namespace \
 ```bash
 # Check pod status
 kubectl -n <namespace> get pods
+
+# Check migration Job
+kubectl -n <namespace> get jobs -l app.kubernetes.io/component=migrate
 
 # Watch HPA activity
 kubectl -n <namespace> get hpa -w
@@ -163,10 +156,7 @@ helm uninstall mism -n <namespace>
 
 | Component | Default PVC size | Mount path |
 |---|---|---|
-| Metadata Store (MongoDB) | 20 Gi | `/data/db` |
-| ACL DB (PostgreSQL) | 10 Gi | `/var/lib/postgresql/data` |
-| Blob Storage (MinIO) | 50 Gi | `/data` |
+| Metadata Store (PostgreSQL) | 20 Gi | `/var/lib/postgresql/data` |
 
-Override sizes via `metadataStore.persistence.size`, `aclDb.persistence.size`,
-and `blobStorage.persistence.size`. Set a custom `storageClass` per component
-or globally via `global.storageClass`.
+Override via `metadataStore.persistence.size`. Set a custom `storageClass` per
+component or globally via `global.storageClass`.
