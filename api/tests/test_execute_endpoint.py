@@ -63,7 +63,7 @@ def test_execute_run_batch_success() -> None:
 
     client = _make_app(service, exec_client)
     response = client.post(
-        "/api/v1/models/model-1/runs/execute",
+        "/api/v1/models/model-1/runs",
         json={
             "input_resource_ids": ["ds-1"],
             "parameters": {"condition": "both"},
@@ -94,7 +94,7 @@ def test_execute_run_batch_default_mode() -> None:
 
     client = _make_app(service, exec_client)
     response = client.post(
-        "/api/v1/models/model-1/runs/execute",
+        "/api/v1/models/model-1/runs",
         json={},
     )
 
@@ -120,7 +120,7 @@ def test_execute_run_interactive_success() -> None:
 
     client = _make_app(service, exec_client)
     response = client.post(
-        "/api/v1/models/model-1/runs/execute",
+        "/api/v1/models/model-1/runs",
         json={
             "input_resource_ids": ["ds-1"],
             "mode": "interactive",
@@ -146,7 +146,7 @@ def test_execute_run_invalid_mode_returns_422() -> None:
 
     client = _make_app(service, exec_client)
     response = client.post(
-        "/api/v1/models/model-1/runs/execute",
+        "/api/v1/models/model-1/runs",
         json={"mode": "invalid"},
     )
 
