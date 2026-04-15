@@ -1,10 +1,13 @@
 import logging
+import time
 from dataclasses import dataclass
 from typing import Protocol
 
+import jwt
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from mismapi.auth.oidc import OIDCDiscoveryLoader, refresh_tokens
 from mismapi.core.errors import APIError
 from mismapi.core.settings import Settings
 
@@ -79,4 +82,46 @@ async def _principal_from_session_cookie(request: Request) -> AuthenticatedPrinc
         )
 
     validator: AuthValidator = request.app.state.auth_validator
-    return await validator.validate_token(access_token)
+    try:
+        return await validator.validate_token(access_token)
+    except jwt.ExpiredSignatureError:
+        if settings.auth_mode != "oidc":
+            raise APIError(
+                status_code=401,
+                code="auth_session_expired",
+                detail="Session token has expired.",
+            ) from None
+        refresh = session_data.get("refresh_token", "")
+        if not refresh:
+            raise APIError(
+                status_code=401,
+                code="auth_session_expired",
+                detail="Session has expired or is invalid.",
+            ) from None
+        discovery_loader: OIDCDiscoveryLoader = request.app.state.oidc_discovery_loader
+        discovery = await discovery_loader.load()
+        try:
+            token_response = await refresh_tokens(
+                discovery,
+                settings,
+                refresh_token=refresh,
+            )
+        except APIError:
+            raise APIError(
+                status_code=401,
+                code="auth_session_expired",
+                detail="Session has expired or is invalid.",
+            ) from None
+        merged = {**session_data, "access_token": token_response.access_token}
+        if token_response.refresh_token:
+            merged["refresh_token"] = token_response.refresh_token
+        if token_response.id_token:
+            merged["id_token"] = token_response.id_token
+        ttl_sec = (
+            token_response.expires_in
+            if token_response.expires_in > 0
+            else settings.session_ttl_seconds
+        )
+        merged["expires_at"] = str(int(time.time()) + ttl_sec)
+        await session_store.replace(session_id, merged)
+        return await validator.validate_token(token_response.access_token)

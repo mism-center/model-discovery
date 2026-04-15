@@ -1,16 +1,20 @@
-import hashlib
 import logging
 import secrets
-from base64 import urlsafe_b64encode
 from dataclasses import dataclass, field
 from urllib.parse import urlencode
 
 import httpx
+from authlib.integrations.base_client.errors import OAuthError
+from authlib.integrations.httpx_client import AsyncOAuth2Client
+from authlib.oauth2.rfc6749.errors import MismatchingStateException
 
 from mismapi.core.errors import APIError
 from mismapi.core.settings import Settings
+from mismapi.utils import get_string_or_empty_from_dict
 
 logger = logging.getLogger(__name__)
+
+TOKEN_ERROR_BODY_MAX_LEN = 256
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +25,15 @@ class OIDCDiscoveryDocument:
     jwks_uri: str
     end_session_endpoint: str
 
+    def build_end_session_url(self, settings: Settings, *, id_token_hint: str) -> str:
+        params: dict[str, str] = {
+            "id_token_hint": id_token_hint,
+            "client_id": settings.oidc_client_id,
+        }
+        if settings.oidc_post_logout_redirect_uri:
+            params["post_logout_redirect_uri"] = settings.oidc_post_logout_redirect_uri
+        return f"{self.end_session_endpoint}?{urlencode(params)}"
+
 
 @dataclass(frozen=True, slots=True)
 class TokenResponse:
@@ -30,9 +43,101 @@ class TokenResponse:
     expires_in: int
 
 
+def _discovery_url(settings: Settings) -> str:
+    if settings.oidc_discovery_url:
+        return settings.oidc_discovery_url
+    issuer = settings.oidc_issuer_url.rstrip("/")
+    return f"{issuer}/.well-known/openid-configuration"
+
+
+def _build_async_oauth_client(
+    discovery: OIDCDiscoveryDocument,
+    settings: Settings,
+) -> AsyncOAuth2Client:
+    return AsyncOAuth2Client(
+        client_id=settings.oidc_client_id,
+        client_secret=settings.oidc_client_secret,
+        redirect_uri=settings.oidc_redirect_uri,
+        scope="openid",
+        code_challenge_method="S256",
+        token_endpoint_auth_method="client_secret_post",
+        timeout=httpx.Timeout(10.0),
+        issuer=discovery.issuer,
+        authorization_endpoint=discovery.authorization_endpoint,
+        token_endpoint=discovery.token_endpoint,
+    )
+
+
+def _coerce_expires_in(value: object) -> int:
+    """Normalize OAuth expires_in to a non-negative int seconds (RFC 6749)."""
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        try:
+            n = int(value)
+        except (ValueError, OverflowError):
+            return 0
+        return n if n > 0 else 0
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return 0
+        try:
+            n = int(s)
+        except ValueError:
+            return 0
+        return n if n > 0 else 0
+    return 0
+
+
+def _build_authlib_token_response(
+    token: dict[str, object],
+    *,
+    invalid_access_token_code: str = "auth_token_exchange_invalid",
+) -> TokenResponse:
+    access_token = token.get("access_token")
+    if not isinstance(access_token, str) or not access_token.strip():
+        raise APIError(
+            status_code=502,
+            code=invalid_access_token_code,
+            detail="OIDC token response is missing or empty access_token.",
+        )
+    id_token = get_string_or_empty_from_dict(token, "id_token")
+    refresh_out = get_string_or_empty_from_dict(token, "refresh_token")
+    expires_in = _coerce_expires_in(token.get("expires_in", 0))
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_out,
+        id_token=id_token,
+        expires_in=expires_in,
+    )
+
+
+def _map_oauth_http_errors(prefix: str, exc: Exception) -> None:
+    if isinstance(exc, httpx.HTTPStatusError):
+        body_text = exc.response.text or ""
+        body_prefix = body_text[:TOKEN_ERROR_BODY_MAX_LEN]
+        logger.error("%s status=%s body_prefix=%s", prefix, exc.response.status_code, body_prefix)
+        is_exchange = "exchange" in prefix
+        raise APIError(
+            status_code=502,
+            code="auth_token_exchange_failed" if is_exchange else "auth_token_refresh_failed",
+            detail="OIDC token exchange failed." if is_exchange else "OIDC token refresh failed.",
+        ) from exc
+    if isinstance(exc, httpx.HTTPError):
+        is_exchange = "exchange" in prefix
+        raise APIError(
+            status_code=502,
+            code="auth_token_exchange_unavailable"
+            if is_exchange
+            else "auth_token_refresh_unavailable",
+            detail="OIDC token endpoint is unavailable.",
+        ) from exc
+
+
 @dataclass(slots=True)
 class OIDCDiscoveryLoader:
-    """Fetches and caches the OpenID Connect discovery document."""
+    """OIDC discovery and OAuth2 flows via Authlib AsyncOAuth2Client."""
 
     settings: Settings
     _cached: OIDCDiscoveryDocument | None = field(default=None)
@@ -41,15 +146,20 @@ class OIDCDiscoveryLoader:
         if self._cached is not None:
             return self._cached
 
-        discovery_url = self.settings.oidc_discovery_url
-        if not discovery_url:
-            issuer = self.settings.oidc_issuer_url.rstrip("/")
-            discovery_url = f"{issuer}/.well-known/openid-configuration"
-
+        discovery_url = _discovery_url(self.settings)
         logger.info("loading_oidc_discovery url=%s", discovery_url)
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(discovery_url)
+            async with AsyncOAuth2Client(
+                client_id=self.settings.oidc_client_id,
+                client_secret=self.settings.oidc_client_secret,
+                token_endpoint_auth_method="client_secret_post",
+                timeout=httpx.Timeout(10.0),
+            ) as client:
+                response = await client.request(
+                    "GET",
+                    discovery_url,
+                    withhold_token=True,
+                )
                 response.raise_for_status()
                 payload = response.json()
         except httpx.HTTPError as exc:
@@ -87,30 +197,27 @@ class OIDCDiscoveryLoader:
         )
         return self._cached
 
+    async def create_authorization_url(self, *, state: str, code_verifier: str) -> str:
+        discovery = await self.load()
+        client = _build_async_oauth_client(discovery, self.settings)
+        try:
+            url, _ = client.create_authorization_url(
+                discovery.authorization_endpoint,
+                state=state,
+                code_verifier=code_verifier,
+            )
+        finally:
+            await client.aclose()
+        return url
 
-def generate_pkce_pair() -> tuple[str, str]:
-    code_verifier = secrets.token_urlsafe(96)
-    digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
-    code_challenge = urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
-    return code_verifier, code_challenge
+
+def generate_code_verifier() -> str:
+    """RFC 7636 code_verifier (high-entropy secret)."""
+    return secrets.token_urlsafe(96)
 
 
-def build_authorize_url(
-    discovery: OIDCDiscoveryDocument,
-    settings: Settings,
-    state: str,
-    code_challenge: str,
-) -> str:
-    params = {
-        "response_type": "code",
-        "client_id": settings.oidc_client_id,
-        "redirect_uri": settings.oidc_redirect_uri,
-        "scope": "openid",
-        "state": state,
-        "code_challenge": code_challenge,
-        "code_challenge_method": "S256",
-    }
-    return f"{discovery.authorization_endpoint}?{urlencode(params)}"
+def build_authorization_callback_url(settings: Settings, *, code: str, state: str) -> str:
+    return f"{settings.oidc_redirect_uri}?{urlencode({'code': code, 'state': state})}"
 
 
 async def exchange_code_for_tokens(
@@ -118,54 +225,101 @@ async def exchange_code_for_tokens(
     settings: Settings,
     code: str,
     code_verifier: str,
+    *,
+    state: str,
 ) -> TokenResponse:
-    form_data = {
-        "grant_type": "authorization_code",
-        "code": code,
-        "redirect_uri": settings.oidc_redirect_uri,
-        "client_id": settings.oidc_client_id,
-        "client_secret": settings.oidc_client_secret,
-        "code_verifier": code_verifier,
-    }
-
+    client = _build_async_oauth_client(discovery, settings)
+    token: dict[str, object] | None = None
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(
-                discovery.token_endpoint,
-                data=form_data,
-            )
-            response.raise_for_status()
-            payload = response.json()
-    except httpx.HTTPStatusError as exc:
+        token = await client.fetch_token(
+            discovery.token_endpoint,
+            authorization_response=build_authorization_callback_url(
+                settings,
+                code=code,
+                state=state,
+            ),
+            code_verifier=code_verifier,
+            state=state,
+        )
+    except MismatchingStateException as exc:
+        logger.warning("oidc_mismatching_state error=%s", exc)
+        raise APIError(
+            status_code=400,
+            code="auth_callback_invalid",
+            detail="OAuth state did not match.",
+        ) from exc
+    except OAuthError as exc:
         logger.error(
-            "oidc_token_exchange_failed status=%s body=%s",
-            exc.response.status_code,
-            exc.response.text,
+            "oidc_token_exchange_failed oauth_error=%s description=%s",
+            getattr(exc, "error", type(exc).__name__),
+            str(getattr(exc, "description", ""))[:TOKEN_ERROR_BODY_MAX_LEN],
         )
         raise APIError(
             status_code=502,
             code="auth_token_exchange_failed",
             detail="OIDC token exchange failed.",
         ) from exc
+    except httpx.HTTPStatusError as exc:
+        _map_oauth_http_errors("oidc_token_exchange_failed", exc)
     except httpx.HTTPError as exc:
+        _map_oauth_http_errors("oidc_token_exchange_failed", exc)
+    finally:
+        await client.aclose()
+
+    if token is None:
         raise APIError(
             status_code=502,
-            code="auth_token_exchange_unavailable",
-            detail="OIDC token endpoint is unavailable.",
-        ) from exc
-
-    access_token = payload.get("access_token")
-    id_token = payload.get("id_token")
-    if not isinstance(access_token, str) or not isinstance(id_token, str):
+            code="auth_token_exchange_failed",
+            detail="OIDC token exchange failed.",
+        )
+    id_token = token.get("id_token")
+    if not isinstance(id_token, str) or not id_token:
         raise APIError(
             status_code=502,
             code="auth_token_exchange_invalid",
             detail="OIDC token response is missing required fields.",
         )
+    return _build_authlib_token_response(dict(token))
 
-    return TokenResponse(
-        access_token=access_token,
-        refresh_token=payload.get("refresh_token", ""),
-        id_token=id_token,
-        expires_in=int(payload.get("expires_in", 0)),
+
+async def refresh_tokens(
+    discovery: OIDCDiscoveryDocument,
+    settings: Settings,
+    *,
+    refresh_token: str,
+) -> TokenResponse:
+    client = _build_async_oauth_client(discovery, settings)
+    token: dict[str, object] | None = None
+    try:
+        token = await client.refresh_token(
+            discovery.token_endpoint,
+            refresh_token=refresh_token,
+        )
+    except OAuthError as exc:
+        logger.error(
+            "oidc_token_refresh_failed oauth_error=%s description=%s",
+            getattr(exc, "error", type(exc).__name__),
+            str(getattr(exc, "description", ""))[:TOKEN_ERROR_BODY_MAX_LEN],
+        )
+        raise APIError(
+            status_code=502,
+            code="auth_token_refresh_failed",
+            detail="OIDC token refresh failed.",
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        _map_oauth_http_errors("oidc_token_refresh_failed", exc)
+    except httpx.HTTPError as exc:
+        _map_oauth_http_errors("oidc_token_refresh_failed", exc)
+    finally:
+        await client.aclose()
+
+    if token is None:
+        raise APIError(
+            status_code=502,
+            code="auth_token_refresh_failed",
+            detail="OIDC token refresh failed.",
+        )
+    return _build_authlib_token_response(
+        dict(token),
+        invalid_access_token_code="auth_token_refresh_invalid",
     )

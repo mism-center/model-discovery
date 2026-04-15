@@ -6,7 +6,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        populate_by_name=True,
+    )
 
     mism_env: str = Field(default="local", alias="MISM_ENV")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
@@ -32,6 +37,7 @@ class Settings(BaseSettings):
     jwt_algorithms: str = Field(default="RS256", alias="JWT_ALGORITHMS")
     jwt_jwks_url: str = Field(default="", alias="JWT_JWKS_URL")
     jwt_public_key: str = Field(default="", alias="JWT_PUBLIC_KEY")
+    jwt_leeway_seconds: int = Field(default=0, alias="JWT_LEEWAY_SECONDS")
 
     oidc_issuer_url: str = Field(default="", alias="OIDC_ISSUER_URL")
     oidc_discovery_url: str = Field(default="", alias="OIDC_DISCOVERY_URL")
@@ -42,6 +48,10 @@ class Settings(BaseSettings):
     oidc_client_secret: str = Field(default="", alias="OIDC_CLIENT_SECRET")
     oidc_redirect_uri: str = Field(default="", alias="OIDC_REDIRECT_URI")
     oidc_post_login_redirect_uri: str = Field(default="", alias="OIDC_POST_LOGIN_REDIRECT_URI")
+    oidc_post_logout_redirect_uri: str = Field(default="", alias="OIDC_POST_LOGOUT_REDIRECT_URI")
+    oidc_jwt_leeway_seconds: int = Field(default=30, alias="OIDC_JWT_LEEWAY_SECONDS")
+
+    production_mode: bool = Field(default=False, alias="PRODUCTION_MODE")
 
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
     session_ttl_seconds: int = Field(default=3600, alias="SESSION_TTL_SECONDS")

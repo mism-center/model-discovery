@@ -11,6 +11,8 @@ class SessionStore(Protocol):
 
     async def get(self, session_id: str) -> dict[str, str] | None: ...
 
+    async def replace(self, session_id: str, session_data: dict[str, str]) -> None: ...
+
     async def delete(self, session_id: str) -> None: ...
 
     async def set_ephemeral(self, key: str, value: str, ttl_seconds: int) -> None: ...
@@ -40,6 +42,10 @@ class RedisSessionStore:
             return None
         payload: dict[str, str] = json.loads(raw)
         return payload
+
+    async def replace(self, session_id: str, session_data: dict[str, str]) -> None:
+        key = f"{SESSION_KEY_PREFIX}{session_id}"
+        await self.redis.set(key, json.dumps(session_data), ex=self.session_ttl_seconds)
 
     async def delete(self, session_id: str) -> None:
         key = f"{SESSION_KEY_PREFIX}{session_id}"

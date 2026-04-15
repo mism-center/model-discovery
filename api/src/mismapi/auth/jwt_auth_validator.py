@@ -31,6 +31,7 @@ class JWTAuthValidator:
             algorithms=self.settings.jwt_algorithm_list,
             audience=self.settings.jwt_audience,
             issuer=self.settings.jwt_issuer,
+            leeway=self.settings.jwt_leeway_seconds,
         )
         scopes = _parse_scope_claim(payload)
         subject = str(payload.get("sub", ""))

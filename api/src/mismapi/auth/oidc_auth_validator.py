@@ -36,6 +36,7 @@ class OIDCAuthValidator:
             algorithms=["RS256"],
             audience=self.settings.oidc_audience,
             issuer=self._issuer,
+            leeway=self.settings.oidc_jwt_leeway_seconds,
         )
 
         scopes = _parse_scope_claim(payload=payload)
@@ -78,6 +79,7 @@ class OIDCAuthValidator:
             algorithms=["RS256"],
             audience=self.settings.oidc_client_id,
             issuer=self._issuer,
+            leeway=self.settings.oidc_jwt_leeway_seconds,
         )
 
         subject = str(payload.get("sub", ""))

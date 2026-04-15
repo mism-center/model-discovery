@@ -14,6 +14,7 @@ from mismapi.core.errors import register_exception_handlers
 from mismapi.core.logging import configure_root_logger
 from mismapi.core.service_resolver import EnvServiceResolver
 from mismapi.core.settings import get_settings
+from mismapi.core.uvicorn_access_log import install_uvicorn_access_formatter
 from mismapi.middleware.request_context import RequestContextMiddleware
 
 
@@ -56,6 +57,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     settings = get_settings()
     configure_root_logger(log_level=settings.log_level)
+    install_uvicorn_access_formatter(settings)
 
     app = FastAPI(
         title="MISM Gateway API",
