@@ -10,8 +10,6 @@ from mismapi.clients.execution_client import ExecutionClient
 from mismapi.dependencies.execution import get_execution_client
 from mismapi.dependencies.registry import get_registry_service
 from mismapi.schemas.registry import (
-    CreateRunRequest,
-    CreateRunResponse,
     ExecuteRunRequest,
     ExecuteRunResponse,
     ModelRunDetailItem,
