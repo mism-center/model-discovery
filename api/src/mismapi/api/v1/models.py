@@ -1,6 +1,9 @@
 import logging
 
 from fastapi import APIRouter, Depends, Query
+from mism_registry.enums import RunStatus
+from mism_registry.resource import Resource
+from mism_registry.run import Run
 
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
 from mismapi.clients.execution_client import ExecutionClient
@@ -11,8 +14,12 @@ from mismapi.schemas.registry import (
     CreateRunResponse,
     ExecuteRunRequest,
     ExecuteRunResponse,
+    ModelRunDetailItem,
+    ModelRunDetailsResponse,
     RegisterModelRequest,
     RegisterModelResponse,
+    ResourceSummaryItem,
+    RunDetailItem,
     UpdateModelRequest,
 )
 from mismapi.schemas.search import ModelListItem, ModelListResponse
@@ -173,4 +180,74 @@ async def execute_run(
         input_resource_ids=list(run.input_resource_ids),
         created_at=run.created_at,
         execution=exec_response,
+    )
+
+
+# ── Helpers ──────────────────────────────────────────────────────
+
+
+def _resource_summary(r: Resource) -> ResourceSummaryItem:
+    return ResourceSummaryItem(
+        id=r.id,
+        name=r.name,
+        resource_type=r.resource_type.value,
+        location_uri=r.location_uri,
+        description=r.description,
+        version=r.version,
+        status=r.status.value,
+        owner=r.owner,
+        format_tags=list(r.format_tags),
+        created_at=r.created_at,
+    )
+
+
+def _run_detail(run: Run) -> RunDetailItem:
+    return RunDetailItem(
+        id=run.id,
+        model_id=run.model_id,
+        model_version=run.model_version,
+        status=run.status.value,
+        input_resource_ids=list(run.input_resource_ids),
+        output_resource_ids=list(run.output_resource_ids),
+        parameters=dict(run.parameters),
+        started_at=run.started_at,
+        completed_at=run.completed_at,
+        error_message=run.error_message,
+        log_uri=run.log_uri,
+        triggered_by=run.triggered_by,
+        notes=run.notes,
+        created_at=run.created_at,
+    )
+
+
+# ── GET /models/{model_id}/runs ─────────────────────────────────
+
+
+@router.get("/models/{model_id}/runs", response_model=ModelRunDetailsResponse)
+async def list_model_runs(
+    model_id: str,
+    status: RunStatus | None = Query(
+        default=None, description="Optional filter — only include runs with this status."
+    ),
+    service: RegistryService = Depends(get_registry_service),
+) -> ModelRunDetailsResponse:
+    """Fetch all runs for a model, enriched with hydrated input/output resources.
+
+    Designed to populate the UI's "Model Runs" page in a single call.
+    """
+    summary = service.get_model_run_details(model_id=model_id, status=status)
+
+    runs = [
+        ModelRunDetailItem(
+            run=_run_detail(detail.run),
+            input_resources=[_resource_summary(r) for r in detail.input_resources],
+            output_resources=[_resource_summary(r) for r in detail.output_resources],
+        )
+        for detail in summary.runs
+    ]
+
+    return ModelRunDetailsResponse(
+        model=_resource_summary(summary.model),
+        runs=runs,
+        total=len(runs),
     )

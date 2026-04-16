@@ -4,11 +4,14 @@ from typing import Any
 from mism_registry import (
     ResourceNotFoundError,
     ResourceType,
+    RunStatus,
     find_resources,
+    get_model_run_details,
     prepare_run,
     register_dataset,
     register_model,
 )
+from mism_registry.run_detail import ModelRunSummary
 from mism_registry import (
     ValidationError as RegistryValidationError,
 )
@@ -152,6 +155,27 @@ class RegistryService:
 
         logger.info("Created run %s for model %s by %s", run.id, model_id, principal.subject)
         return run
+
+    def get_model_run_details(
+        self,
+        *,
+        model_id: str,
+        status: RunStatus | None = None,
+    ) -> ModelRunSummary:
+        """Return the model plus all of its runs with hydrated I/O resources.
+
+        Used by the UI's "Model Runs" page to populate the view in a single call.
+        """
+        try:
+            return get_model_run_details(
+                self._registry,
+                model_id=model_id,
+                status=status,
+            )
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+        except RegistryValidationError as exc:
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
 
     # ── Query operations ─────────────────────────────────────────────
 

@@ -14,7 +14,7 @@ dependencies = [
     "python-multipart>=0.0.20",
     "pyjwt[crypto]>=2.10.1",
     "uvicorn[standard]>=0.35.0",
-    "mism-registry[postgres] @ git+https://github.com/mism-center/metadata-schema.git@feature/mism-81",
+    "mism-registry[postgres] @ git+https://github.com/mism-center/metadata-schema.git@feature/run-details",
 ]
 
 [dependency-groups]
