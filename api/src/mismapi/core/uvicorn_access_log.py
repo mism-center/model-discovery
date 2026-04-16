@@ -9,7 +9,7 @@ from uvicorn.logging import AccessFormatter
 
 from mismapi.core.settings import Settings
 
-REDACT_PLACEHOLDER = "..."
+REDACT_PLACEHOLDER = "<redacted>"
 
 
 def redact_request_path(full_path: str, *, production: bool) -> str:

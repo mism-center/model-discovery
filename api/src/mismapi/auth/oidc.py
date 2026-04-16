@@ -16,6 +16,16 @@ logger = logging.getLogger(__name__)
 
 TOKEN_ERROR_BODY_MAX_LEN = 256
 
+TOKEN_EXCHANGE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:token-exchange"
+JWT_ACCESS_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:access_token"
+
+
+@dataclass(frozen=True, slots=True)
+class ExchangedAccessTokenResult:
+    access_token: str
+    issued_token_type: str
+    expires_in: int
+
 
 @dataclass(frozen=True, slots=True)
 class OIDCDiscoveryDocument:
@@ -68,8 +78,24 @@ def _build_async_oauth_client(
     )
 
 
+def _build_token_exchange_oauth_client(
+    discovery: OIDCDiscoveryDocument,
+    settings: Settings,
+) -> AsyncOAuth2Client:
+    """OAuth client for token-endpoint exchange only (no default OIDC scopes on the request)."""
+    return AsyncOAuth2Client(
+        client_id=settings.oidc_client_id,
+        client_secret=settings.oidc_client_secret,
+        token_endpoint_auth_method="client_secret_post",
+        timeout=httpx.Timeout(15.0),
+        issuer=discovery.issuer,
+        token_endpoint=discovery.token_endpoint,
+        scope=None,
+    )
+
+
 def _coerce_expires_in(value: object) -> int:
-    """Normalize OAuth expires_in to a non-negative int seconds (RFC 6749)."""
+    """Normalize OAuth ``expires_in`` to a non-negative int seconds."""
     if isinstance(value, bool):
         return 0
     if isinstance(value, (int, float)):
@@ -212,7 +238,7 @@ class OIDCDiscoveryLoader:
 
 
 def generate_code_verifier() -> str:
-    """RFC 7636 code_verifier (high-entropy secret)."""
+    """PKCE ``code_verifier`` (high-entropy secret)."""
     return secrets.token_urlsafe(96)
 
 
@@ -322,4 +348,96 @@ async def refresh_tokens(
     return _build_authlib_token_response(
         dict(token),
         invalid_access_token_code="auth_token_refresh_invalid",
+    )
+
+
+async def exchange_access_token_for_audience(
+    discovery: OIDCDiscoveryDocument,
+    settings: Settings,
+    *,
+    subject_access_token: str,
+    audience: str,
+) -> ExchangedAccessTokenResult:
+    """
+    Token exchange at the IdP token endpoint (e.g. Keycloak standard token exchange).
+
+    The IdP must allow OIDC_CLIENT_ID to exchange a user access token into the given audience.
+    """
+    if not audience.strip():
+        raise APIError(
+            status_code=500,
+            code="auth_token_upstream_audience_missing",
+            detail="Token exchange audience is not configured.",
+        )
+
+    fetch_kwargs: dict[str, str] = {
+        "subject_token": subject_access_token,
+        "subject_token_type": JWT_ACCESS_TOKEN_TYPE,
+        "audience": audience.strip(),
+        "requested_token_type": JWT_ACCESS_TOKEN_TYPE,
+    }
+    scope_parts = settings.oidc_token_exchange_scopes_parts
+    if scope_parts:
+        fetch_kwargs["scope"] = " ".join(scope_parts)
+
+    client = _build_token_exchange_oauth_client(discovery, settings)
+    token: dict[str, object] | None = None
+    try:
+        token = await client.fetch_token(
+            discovery.token_endpoint,
+            grant_type=TOKEN_EXCHANGE_GRANT_TYPE,
+            **fetch_kwargs,
+        )
+    except OAuthError as exc:
+        logger.error(
+            "oidc_upstream_token_exchange_oauth_error oauth_error=%s description=%s",
+            getattr(exc, "error", type(exc).__name__),
+            str(getattr(exc, "description", ""))[:TOKEN_ERROR_BODY_MAX_LEN],
+        )
+        raise APIError(
+            status_code=502,
+            code="auth_token_exchange_failed",
+            detail="OIDC token exchange failed.",
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        _map_oauth_http_errors("oidc_upstream_token_exchange_http", exc)
+    except httpx.HTTPError as exc:
+        _map_oauth_http_errors("oidc_upstream_token_exchange_http", exc)
+    finally:
+        await client.aclose()
+
+    if token is None:
+        raise APIError(
+            status_code=502,
+            code="auth_token_exchange_response_invalid",
+            detail="Token exchange returned no token payload.",
+        )
+
+    body: dict[str, object] = dict(token)
+
+    issued_raw = get_string_or_empty_from_dict(body, "issued_token_type").strip()
+    if issued_raw != JWT_ACCESS_TOKEN_TYPE:
+        logger.warning(
+            "oidc_upstream_unexpected_issued_token_type issued_token_type=%s",
+            issued_raw,
+        )
+        raise APIError(
+            status_code=502,
+            code="auth_token_exchange_issued_type_mismatch",
+            detail="Token exchange did not return an access token type.",
+        )
+
+    access_token = get_string_or_empty_from_dict(body, "access_token").strip()
+    if not access_token:
+        raise APIError(
+            status_code=502,
+            code="auth_token_exchange_missing_access_token",
+            detail="Token exchange response is missing access_token.",
+        )
+
+    expires_in = _coerce_expires_in(body.get("expires_in", 0))
+    return ExchangedAccessTokenResult(
+        access_token=access_token,
+        issued_token_type=issued_raw,
+        expires_in=expires_in,
     )

@@ -63,6 +63,53 @@ class OIDCAuthValidator:
             scopes=scopes,
         )
 
+    async def validate_upstream_access_token(
+        self,
+        token: str,
+        *,
+        expected_audience: str,
+        expected_subject: str,
+    ) -> None:
+        """
+        Validate an exchanged access token before forwarding it to HeLx (signature, iss, aud, exp,
+        sub binding to the gateway-authenticated user).
+        """
+        if not expected_audience.strip():
+            raise APIError(
+                status_code=500,
+                code="auth_upstream_audience_missing",
+                detail="Upstream JWT audience is not configured.",
+            )
+        if not self._jwks_uri:
+            await self._load_discovery()
+
+        unverified_header = jwt.get_unverified_header(token)
+        key: Any = await self._resolve_key(unverified_header=unverified_header)
+        try:
+            payload = jwt.decode(
+                token,
+                key=key,
+                algorithms=["RS256"],
+                audience=expected_audience.strip(),
+                issuer=self._issuer,
+                leeway=self.settings.oidc_jwt_leeway_seconds,
+            )
+        except jwt.PyJWTError as exc:
+            logger.warning("upstream_access_token_jwt_invalid error=%s", type(exc).__name__)
+            raise APIError(
+                status_code=502,
+                code="auth_upstream_token_invalid",
+                detail="Exchanged access token failed validation.",
+            ) from exc
+
+        subject = str(payload.get("sub", ""))
+        if not subject or subject != expected_subject:
+            raise APIError(
+                status_code=502,
+                code="auth_upstream_subject_mismatch",
+                detail="Exchanged token subject does not match the current user.",
+            )
+
     async def verify_identity(self, id_token: str) -> str:
         """
         Validate an id_token for identity only (signature, issuer, audience)

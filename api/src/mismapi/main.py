@@ -8,6 +8,7 @@ from mismapi.api.router import build_api_router
 from mismapi.auth.base import build_auth_validator
 from mismapi.auth.oidc import OIDCDiscoveryLoader
 from mismapi.auth.session import RedisSessionStore
+from mismapi.clients.helx_execution_client import HelxExecutionClient
 from mismapi.clients.search_client import SearchServiceClient
 from mismapi.clients.upload_client import UploadServiceClient
 from mismapi.core.errors import register_exception_handlers
@@ -34,6 +35,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         timeout_seconds=settings.upload_timeout_seconds,
         stub_upstream=settings.stub_upstream_services,
     )
+    helx_exec_platform_base_url = settings.helx_exec_platform_base_url.strip() or "http://localhost"
+    app.state.helx_execution_client = HelxExecutionClient(
+        base_url=helx_exec_platform_base_url,
+        timeout_seconds=settings.helx_exec_platform_timeout_seconds,
+        stub_upstream=settings.stub_upstream_services,
+    )
     app.state.auth_validator = build_auth_validator(settings=settings)
 
     redis_client: Redis = Redis.from_url(  # type: ignore[type-arg]
@@ -51,6 +58,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     await app.state.search_client.close()
     await app.state.upload_client.close()
+    await app.state.helx_execution_client.close()
     await redis_client.aclose()
 
 
