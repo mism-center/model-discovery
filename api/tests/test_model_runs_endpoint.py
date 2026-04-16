@@ -27,6 +27,7 @@ def _make_model(id: str = "m-1", name: str = "Example Model") -> Resource:
         owner="user-1",
         format_tags=["python"],
         created_at=datetime(2025, 1, 1, tzinfo=UTC),
+        execution_ref="ref",
     )
 
 

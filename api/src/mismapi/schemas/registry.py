@@ -9,6 +9,7 @@ class RegisterModelRequest(BaseModel):
     name: str
     location_uri: str
     execution_type: ExecutionType
+    execution_ref: str | None = None
     description: str = ""
     version: str = ""
     owner: str = ""
@@ -21,6 +22,7 @@ class RegisterModelResponse(BaseModel):
     resource_type: str
     location_uri: str
     execution_type: str | None = None
+    execution_ref: str | None = None
     version: str = ""
     status: str
     created_at: datetime
@@ -34,6 +36,7 @@ class UpdateModelRequest(BaseModel):
     location_uri: str | None = None
     execution_type: ExecutionType | None = None
     metadata: dict[str, Any] | None = None
+    execution_ref: str | None = None
 
 
 class RegisterDatasetRequest(BaseModel):

@@ -82,6 +82,7 @@ async def create_model(
         name=payload.name,
         location_uri=payload.location_uri,
         execution_type=payload.execution_type,
+        execution_ref=payload.execution_ref or "",
         description=payload.description,
         version=payload.version,
         owner=payload.owner,
@@ -94,6 +95,7 @@ async def create_model(
         resource_type=resource.resource_type.value,
         location_uri=resource.location_uri,
         execution_type=resource.execution_type.value if resource.execution_type else None,
+        execution_ref=resource.execution_ref,
         version=resource.version,
         status=resource.status.value,
         created_at=resource.created_at,
@@ -118,6 +120,7 @@ async def update_model(
         location_uri=payload.location_uri,
         execution_type=payload.execution_type,
         metadata=payload.metadata,
+        execution_ref=payload.execution_ref,
     )
 
     return RegisterModelResponse(
@@ -126,6 +129,7 @@ async def update_model(
         resource_type=resource.resource_type.value,
         location_uri=resource.location_uri,
         execution_type=resource.execution_type.value if resource.execution_type else None,
+        execution_ref=resource.execution_ref,
         version=resource.version,
         status=resource.status.value,
         created_at=resource.created_at,

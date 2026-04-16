@@ -50,6 +50,7 @@ class RegistryService:
         name: str,
         location_uri: str,
         execution_type: ExecutionType,
+        execution_ref: str = "",
         description: str = "",
         version: str = "",
         owner: str = "",
@@ -65,6 +66,7 @@ class RegistryService:
                 version=version,
                 owner=owner or principal.subject,
                 metadata=metadata or {},
+                execution_ref=execution_ref,
             )
             # FUTURE: fga.write_tuple(user=principal.subject,
             #   relation="owner", object=f"model:{resource.id}")
@@ -87,6 +89,7 @@ class RegistryService:
         owner: str | None = None,
         location_uri: str | None = None,
         execution_type: ExecutionType | None = None,
+        execution_ref: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> Resource:
         try:
@@ -109,6 +112,8 @@ class RegistryService:
             resource.location_uri = location_uri
         if execution_type is not None:
             resource.execution_type = execution_type
+        if execution_ref is not None:
+            resource.execution_ref = execution_ref
         if metadata is not None:
             resource.metadata = metadata
 
