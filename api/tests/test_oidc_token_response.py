@@ -1,6 +1,9 @@
 import pytest
 
-from mismapi.auth.oidc import _build_authlib_token_response, _coerce_expires_in
+from mismapi.auth.oidc_service import (
+    _build_authlib_token_response,
+    _normalize_expires_in_to_seconds,
+)
 from mismapi.core.errors import APIError
 
 
@@ -22,16 +25,16 @@ from mismapi.core.errors import APIError
         ([], 0),
     ],
 )
-def test_coerce_expires_in(raw: object, expected: int) -> None:
-    assert _coerce_expires_in(raw) == expected
+def test_normalize_expires_in_to_seconds(raw: object, expected: int) -> None:
+    assert _normalize_expires_in_to_seconds(raw) == expected
 
 
-def test_coerce_expires_in_nan_float() -> None:
-    assert _coerce_expires_in(float("nan")) == 0
+def test_normalize_expires_in_to_seconds_nan_float() -> None:
+    assert _normalize_expires_in_to_seconds(float("nan")) == 0
 
 
-def test_coerce_expires_in_inf_float() -> None:
-    assert _coerce_expires_in(float("inf")) == 0
+def test_normalize_expires_in_to_seconds_inf_float() -> None:
+    assert _normalize_expires_in_to_seconds(float("inf")) == 0
 
 
 def test_build_authlib_token_response_minimal() -> None:

@@ -7,7 +7,15 @@ from mismapi.main import create_app
 def test_callback_idp_error_redirects_to_login_with_params() -> None:
     clear_settings_cache()
     try:
-        settings = Settings(OIDC_POST_LOGIN_REDIRECT_URI="")
+        settings = Settings(
+            AUTH_MODE="oidc",
+            OIDC_ISSUER_URL="https://issuer.example.com",
+            OIDC_AUDIENCE="discovery-api",
+            OIDC_CLIENT_ID="discovery-api",
+            OIDC_CLIENT_SECRET="x",
+            OIDC_REDIRECT_URI="https://gateway.example.com/api/auth/callback",
+            OIDC_POST_LOGIN_REDIRECT_URI="",
+        )
 
         def _patched_get_settings() -> Settings:
             return settings

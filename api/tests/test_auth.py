@@ -1,5 +1,4 @@
 import json
-import time
 
 import jwt
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -7,37 +6,27 @@ from fastapi.testclient import TestClient
 from jwt.algorithms import RSAAlgorithm
 
 from mismapi.auth.base import build_auth_validator
-from mismapi.auth.jwt_auth_validator import JWTAuthValidator
-from mismapi.auth.oidc_auth_validator import OIDCAuthValidator
+from mismapi.auth.jwks_cache import JWKSCache
+from mismapi.auth.oidc_discovery import OIDCDiscoveryCache
+from mismapi.auth.oidc_types import OIDCDiscoveryDocument
+from mismapi.auth.validator import JWTAuthValidator, OIDCAuthValidator
+from mismapi.core.container import AppContainer
 from mismapi.core.settings import Settings
-from mismapi.main import create_app
+from tests.conftest import build_test_app, temporary_env
 
 
 def _settings_with_env(env_overrides: dict[str, str]) -> Settings:
-    import os
-
-    old_values: dict[str, str | None] = {}
-    try:
-        for key, value in env_overrides.items():
-            old_values[key] = os.environ.get(key)
-            os.environ[key] = value
+    with temporary_env(env_overrides):
         return Settings()
-    finally:
-        for key in env_overrides:
-            original = old_values[key]
-            if original is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = original
 
 
 def test_route_requires_bearer_token() -> None:
-    app = create_app()
-    with TestClient(app) as client:
-        response = client.get("/api/v1/models?q=test")
-        assert response.status_code == 401
-        payload = response.json()
-        assert payload["error"]["code"] == "auth_missing"
+    with build_test_app({"AUTH_MODE": "jwt"}) as app:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/models?q=test")
+            assert response.status_code == 401
+            payload = response.json()
+            assert payload["error"]["code"] == "auth_missing"
 
 
 def test_build_auth_validator_selects_jwt() -> None:
@@ -92,11 +81,18 @@ async def test_oidc_auth_validator_validates_token_with_cached_jwks() -> None:
             "OIDC_REQUIRED_SCOPES": "read",
         }
     )
-    validator = OIDCAuthValidator(settings=settings)
-    validator._issuer = "https://issuer.example.com"
-    validator._jwks_uri = "https://issuer.example.com/jwks"
-    validator._jwks_cache = {"key-1": jwk_payload}
-    validator._jwks_cached_at = time.time()
+    discovery_cache = OIDCDiscoveryCache(settings=settings)
+    discovery_cache.seed(
+        OIDCDiscoveryDocument(
+            issuer="https://issuer.example.com",
+            authorization_endpoint="",
+            token_endpoint="",
+            jwks_uri="https://issuer.example.com/jwks",
+            end_session_endpoint="",
+        )
+    )
+    validator = OIDCAuthValidator(settings=settings, discovery_cache=discovery_cache)
+    validator.jwks_cache = JWKSCache.from_keys({"key-1": jwk_payload})
 
     token = jwt.encode(
         payload={
@@ -120,11 +116,12 @@ def test_route_unexpected_auth_error_returns_internal_server_error() -> None:
         async def validate_token(self, token: str) -> object:
             raise RuntimeError("unexpected validator failure")
 
-    app = create_app()
-    with TestClient(app, raise_server_exceptions=False) as client:
-        app.state.auth_validator = BrokenAuthValidator()
-        response = client.get(
-            "/api/v1/models?q=test",
-            headers={"Authorization": "Bearer token-value"},
-        )
-        assert response.status_code == 500
+    with build_test_app({"AUTH_MODE": "jwt"}) as app:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            container: AppContainer = app.state.container
+            container.auth_validator = BrokenAuthValidator()  # type: ignore[assignment]
+            response = client.get(
+                "/api/v1/models?q=test",
+                headers={"Authorization": "Bearer token-value"},
+            )
+            assert response.status_code == 500

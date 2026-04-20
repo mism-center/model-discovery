@@ -1,8 +1,5 @@
 import json
-import os
 import time
-from collections.abc import Iterator
-from contextlib import contextmanager
 
 import jwt
 import pytest
@@ -10,33 +7,40 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 from jwt.algorithms import RSAAlgorithm
 
-from mismapi.auth.base import (
-    AuthenticatedPrincipal,
-    require_principal,
-    subject_access_token_for_upstream_exchange,
-)
-from mismapi.auth.oidc_auth_validator import OIDCAuthValidator
+from mismapi.auth.jwks_cache import JWKSCache
+from mismapi.auth.oidc_discovery import OIDCDiscoveryCache
+from mismapi.auth.oidc_types import OIDCDiscoveryDocument
+from mismapi.auth.validator import OIDCAuthValidator
 from mismapi.core.errors import APIError
-from mismapi.core.settings import Settings, clear_settings_cache
-from mismapi.main import create_app
+from mismapi.core.settings import Settings
+from tests.conftest import (
+    build_test_app,
+    minimal_oidc_env,
+    override_principal,
+    override_subject_access_token,
+)
 
 
-@contextmanager
-def _temporary_env(overrides: dict[str, str]) -> Iterator[None]:
-    previous: dict[str, str | None] = {key: os.environ.get(key) for key in overrides}
-    try:
-        for key, value in overrides.items():
-            os.environ[key] = value
-        clear_settings_cache()
-        yield
-    finally:
-        for key in overrides:
-            prior = previous[key]
-            if prior is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = prior
-        clear_settings_cache()
+def _validator_with_seeded_caches(
+    settings: Settings,
+    *,
+    issuer: str,
+    jwks_uri: str,
+    keys: dict[str, dict[str, object]],
+) -> OIDCAuthValidator:
+    discovery_cache = OIDCDiscoveryCache(settings=settings)
+    discovery_cache.seed(
+        OIDCDiscoveryDocument(
+            issuer=issuer,
+            authorization_endpoint="",
+            token_endpoint="",
+            jwks_uri=jwks_uri,
+            end_session_endpoint="",
+        )
+    )
+    validator = OIDCAuthValidator(settings=settings, discovery_cache=discovery_cache)
+    validator.jwks_cache = JWKSCache.from_keys(keys, uri=jwks_uri)
+    return validator
 
 
 @pytest.mark.asyncio
@@ -51,11 +55,12 @@ async def test_validate_upstream_access_token_success() -> None:
         OIDC_AUDIENCE="discovery-api",
         OIDC_REQUIRED_SCOPES="",
     )
-    validator = OIDCAuthValidator(settings=settings)
-    validator._issuer = "https://issuer.example.com"
-    validator._jwks_uri = "https://issuer.example.com/jwks"
-    validator._jwks_cache = {"key-1": jwk_payload}
-    validator._jwks_cached_at = time.time()
+    validator = _validator_with_seeded_caches(
+        settings,
+        issuer="https://issuer.example.com",
+        jwks_uri="https://issuer.example.com/jwks",
+        keys={"key-1": jwk_payload},
+    )
 
     token = jwt.encode(
         payload={
@@ -88,11 +93,12 @@ async def test_validate_upstream_access_token_rejects_subject_mismatch() -> None
         OIDC_AUDIENCE="discovery-api",
         OIDC_REQUIRED_SCOPES="",
     )
-    validator = OIDCAuthValidator(settings=settings)
-    validator._issuer = "https://issuer.example.com"
-    validator._jwks_uri = "https://issuer.example.com/jwks"
-    validator._jwks_cache = {"key-1": jwk_payload}
-    validator._jwks_cached_at = time.time()
+    validator = _validator_with_seeded_caches(
+        settings,
+        issuer="https://issuer.example.com",
+        jwks_uri="https://issuer.example.com/jwks",
+        keys={"key-1": jwk_payload},
+    )
 
     token = jwt.encode(
         payload={
@@ -116,38 +122,19 @@ async def test_validate_upstream_access_token_rejects_subject_mismatch() -> None
 
 
 def test_execution_requires_helx_url_when_not_stub() -> None:
-    with _temporary_env(
-        {
-            "AUTH_MODE": "oidc",
-            "OIDC_ISSUER_URL": "https://issuer.example.com",
-            "OIDC_AUDIENCE": "discovery-api",
-            "OIDC_REQUIRED_SCOPES": "openid",
-            "OIDC_CLIENT_ID": "discovery-api",
-            "OIDC_CLIENT_SECRET": "x",
-            "OIDC_TOKEN_EXCHANGE_AUDIENCE": "helx",
-            "STUB_UPSTREAM_SERVICES": "false",
-            "HELX_EXEC_PLATFORM_BASE_URL": "",
-        }
-    ):
-        app = create_app()
-
-        async def principal_override() -> AuthenticatedPrincipal:
-            return AuthenticatedPrincipal(
-                subject="u",
-                issuer="https://issuer.example.com",
-                audience="discovery-api",
-                scopes=set(),
-            )
-
-        async def subject_token_override() -> str:
-            return "t"
-
-        app.dependency_overrides[require_principal] = principal_override
-        app.dependency_overrides[subject_access_token_for_upstream_exchange] = (
-            subject_token_override
+    with build_test_app(
+        minimal_oidc_env(
+            OIDC_REQUIRED_SCOPES="openid",
+            OIDC_TOKEN_EXCHANGE_AUDIENCE="helx",
+            STUB_UPSTREAM_SERVICES="false",
+            HELX_EXEC_PLATFORM_BASE_URL="",
         )
+    ) as app:
+        override_principal(app)
+        override_subject_access_token(app, "t")
 
         with TestClient(app) as client:
             response = client.post("/api/v1/executions", json={})
+
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "execution_exec_platform_unconfigured"

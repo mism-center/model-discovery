@@ -1,9 +1,8 @@
 import httpx
 from fastapi.testclient import TestClient
 
-from mismapi.auth.base import AuthenticatedPrincipal, require_principal
 from mismapi.clients.upload_client import ModelMetadataUpsertResult, UploadSession
-from mismapi.main import create_app
+from tests.conftest import build_test_app, container_of, override_principal
 
 TEST_MODEL_ID = "AbC123xYz890"
 CREATED_MODEL_ID = "Cr8ModelID12"
@@ -115,117 +114,109 @@ class MultiPartRetryUploadClient:
         return None
 
 
-async def allow_principal() -> AuthenticatedPrincipal:
-    return AuthenticatedPrincipal(
-        subject="user-1",
-        issuer="test",
-        audience="mism-api",
-        scopes=set(),
-    )
-
-
 def test_upload_retries_chunk_after_transient_error() -> None:
-    app = create_app()
-    app.dependency_overrides[require_principal] = allow_principal
-    fake_upload_client = FakeUploadClient()
+    with build_test_app({"AUTH_MODE": "jwt"}) as app:
+        override_principal(app)
+        fake_upload_client = FakeUploadClient()
 
-    with TestClient(app) as client:
-        app.state.upload_client = fake_upload_client
-        response = client.post(
-            f"/api/v1/models/{TEST_MODEL_ID}/files",
-            files={
-                "file": (
-                    "dataset.bin",
-                    b"0123456789ABCDEFGHIJKLMN",
-                    "application/octet-stream",
-                )
-            },
-        )
+        with TestClient(app) as client:
+            container_of(app).upload_client = fake_upload_client  # type: ignore[assignment]
+            response = client.post(
+                f"/api/v1/models/{TEST_MODEL_ID}/files",
+                files={
+                    "file": (
+                        "dataset.bin",
+                        b"0123456789ABCDEFGHIJKLMN",
+                        "application/octet-stream",
+                    )
+                },
+            )
 
-        assert response.status_code == 200
-        payload = response.json()
-        assert payload["status"] == "accepted"
-        assert payload["model_id"] == TEST_MODEL_ID
-        assert payload["upload_id"] == "upload-123"
-        assert payload["tracking_id"] == "track-123"
-        assert payload["parts_uploaded"] == 1
-        assert fake_upload_client.completed is True
-        assert len(fake_upload_client.upload_part_calls) >= 2
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["status"] == "accepted"
+            assert payload["model_id"] == TEST_MODEL_ID
+            assert payload["upload_id"] == "upload-123"
+            assert payload["tracking_id"] == "track-123"
+            assert payload["parts_uploaded"] == 1
+            assert fake_upload_client.completed is True
+            assert len(fake_upload_client.upload_part_calls) >= 2
 
 
 def test_upload_retry_retries_only_failing_part() -> None:
-    app = create_app()
-    app.dependency_overrides[require_principal] = allow_principal
-    fake_upload_client = MultiPartRetryUploadClient()
+    with build_test_app({"AUTH_MODE": "jwt"}) as app:
+        override_principal(app)
+        fake_upload_client = MultiPartRetryUploadClient()
 
-    with TestClient(app) as client:
-        app.state.upload_client = fake_upload_client
-        app.state.settings.upload_chunk_size_bytes = 4
-        response = client.post(
-            f"/api/v1/models/{TEST_MODEL_ID}/files",
-            files={
-                "file": (
-                    "dataset.bin",
-                    b"ABCDEFGH",
-                    "application/octet-stream",
-                )
-            },
-        )
+        with TestClient(app) as client:
+            container = container_of(app)
+            container.upload_client = fake_upload_client  # type: ignore[assignment]
+            container.settings.upload_chunk_size_bytes = 4
+            response = client.post(
+                f"/api/v1/models/{TEST_MODEL_ID}/files",
+                files={
+                    "file": (
+                        "dataset.bin",
+                        b"ABCDEFGH",
+                        "application/octet-stream",
+                    )
+                },
+            )
 
-        assert response.status_code == 200
-        assert fake_upload_client.completed is True
-        assert fake_upload_client.upload_part_calls == [
-            (1, b"ABCD"),
-            (2, b"EFGH"),
-            (2, b"EFGH"),
-        ]
+            assert response.status_code == 200
+            assert fake_upload_client.completed is True
+            assert fake_upload_client.upload_part_calls == [
+                (1, b"ABCD"),
+                (2, b"EFGH"),
+                (2, b"EFGH"),
+            ]
 
 
 def test_create_model_metadata() -> None:
-    app = create_app()
-    app.dependency_overrides[require_principal] = allow_principal
-    fake_upload_client = FakeUploadClient()
+    with build_test_app({"AUTH_MODE": "jwt"}) as app:
+        override_principal(app)
+        fake_upload_client = FakeUploadClient()
 
-    with TestClient(app) as client:
-        app.state.upload_client = fake_upload_client
-        response = client.post(
-            "/api/v1/models",
-            json={
-                "name": "example-model",
-                "description": "An example model",
-                "version": "1.0.0",
-                "metadata": {"framework": "pytorch"},
-            },
-        )
+        with TestClient(app) as client:
+            container_of(app).upload_client = fake_upload_client  # type: ignore[assignment]
+            response = client.post(
+                "/api/v1/models",
+                json={
+                    "name": "example-model",
+                    "description": "An example model",
+                    "version": "1.0.0",
+                    "metadata": {"framework": "pytorch"},
+                },
+            )
 
-        assert response.status_code == 200
-        payload = response.json()
-        assert payload["status"] == "accepted"
-        assert payload["model_id"] == CREATED_MODEL_ID
-        assert payload["tracking_id"] == "track-created-1"
-        assert fake_upload_client.created_payload is not None
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["status"] == "accepted"
+            assert payload["model_id"] == CREATED_MODEL_ID
+            assert payload["tracking_id"] == "track-created-1"
+            assert fake_upload_client.created_payload is not None
 
 
 def test_update_model_metadata() -> None:
-    app = create_app()
-    app.dependency_overrides[require_principal] = allow_principal
-    fake_upload_client = FakeUploadClient()
+    with build_test_app({"AUTH_MODE": "jwt"}) as app:
+        override_principal(app)
+        fake_upload_client = FakeUploadClient()
 
-    with TestClient(app) as client:
-        app.state.upload_client = fake_upload_client
-        response = client.put(
-            f"/api/v1/models/{TEST_MODEL_ID}",
-            json={
-                "name": "example-model",
-                "description": "An updated model",
-                "version": "1.0.1",
-                "metadata": {"framework": "pytorch", "quantized": False},
-            },
-        )
+        with TestClient(app) as client:
+            container_of(app).upload_client = fake_upload_client  # type: ignore[assignment]
+            response = client.put(
+                f"/api/v1/models/{TEST_MODEL_ID}",
+                json={
+                    "name": "example-model",
+                    "description": "An updated model",
+                    "version": "1.0.1",
+                    "metadata": {"framework": "pytorch", "quantized": False},
+                },
+            )
 
-        assert response.status_code == 200
-        payload = response.json()
-        assert payload["status"] == "accepted"
-        assert payload["model_id"] == TEST_MODEL_ID
-        assert payload["tracking_id"] == "track-updated-1"
-        assert fake_upload_client.updated_payload is not None
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["status"] == "accepted"
+            assert payload["model_id"] == TEST_MODEL_ID
+            assert payload["tracking_id"] == "track-updated-1"
+            assert fake_upload_client.updated_payload is not None

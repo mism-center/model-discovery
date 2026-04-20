@@ -1,21 +1,15 @@
 import httpx
+import respx
 
 from mismapi.clients.search_client import SearchServiceClient
 
-
-def _build_search_client_with_handler(handler: httpx.MockTransport) -> SearchServiceClient:
-    client = SearchServiceClient(base_url="http://search-service", timeout_seconds=5.0)
-    client._client = httpx.AsyncClient(
-        transport=handler,
-        base_url="http://search-service",
-        timeout=5.0,
-    )
-    return client
+SEARCH_BASE_URL = "http://search-service"
 
 
+@respx.mock
 async def test_search_accepts_mixed_metadata_value_types() -> None:
-    async def handler(_: httpx.Request) -> httpx.Response:
-        return httpx.Response(
+    respx.get(f"{SEARCH_BASE_URL}/search").mock(
+        return_value=httpx.Response(
             200,
             json={
                 "total": 1,
@@ -37,8 +31,9 @@ async def test_search_accepts_mixed_metadata_value_types() -> None:
                 ],
             },
         )
+    )
 
-    client = _build_search_client_with_handler(httpx.MockTransport(handler))
+    client = SearchServiceClient(base_url=SEARCH_BASE_URL, timeout_seconds=5.0)
     try:
         response = await client.search(
             query="example",

@@ -1,14 +1,23 @@
-from unittest.mock import patch
+"""RFC 8693 token exchange (OIDCService.exchange_for_audience) behavior.
 
+Exercises the real ``OIDCService`` against an in-process ``respx`` mock of the
+IdP token endpoint, so the test covers the full authlib + httpx wiring rather
+than a hand-rolled fake client.
+"""
+
+from __future__ import annotations
+
+import httpx
 import pytest
+import respx
 
-from mismapi.auth.oidc import (
-    JWT_ACCESS_TOKEN_TYPE,
-    OIDCDiscoveryDocument,
-    exchange_access_token_for_audience,
-)
+from mismapi.auth.oidc import JWT_ACCESS_TOKEN_TYPE, OIDCDiscoveryDocument
+from mismapi.auth.oidc_discovery import OIDCDiscoveryCache
+from mismapi.auth.oidc_service import OIDCService
 from mismapi.core.errors import APIError
 from mismapi.core.settings import Settings
+
+TOKEN_ENDPOINT = "https://issuer.example.com/token"
 
 
 def _settings() -> Settings:
@@ -23,62 +32,98 @@ def _discovery() -> OIDCDiscoveryDocument:
     return OIDCDiscoveryDocument(
         issuer="https://issuer.example.com/realms/r",
         authorization_endpoint="https://issuer.example.com/auth",
-        token_endpoint="https://issuer.example.com/token",
+        token_endpoint=TOKEN_ENDPOINT,
         jwks_uri="https://issuer.example.com/jwks",
         end_session_endpoint="",
     )
 
 
-class _FakeExchangeClient:
-    def __init__(self, token_payload: dict[str, object]) -> None:
-        self._token_payload = token_payload
-
-    async def fetch_token(self, *args: object, **kwargs: object) -> dict[str, object]:
-        return self._token_payload
-
-    async def aclose(self) -> None:
-        return None
+def _build_service() -> OIDCService:
+    settings = _settings()
+    cache = OIDCDiscoveryCache(settings=settings)
+    cache.seed(_discovery())
+    return OIDCService(settings=settings, discovery=cache)
 
 
 @pytest.mark.asyncio
-async def test_exchange_access_token_for_audience_success() -> None:
-    body: dict[str, object] = {
-        "access_token": "helx-at",
-        "issued_token_type": JWT_ACCESS_TOKEN_TYPE,
-        "expires_in": 90,
-    }
+@respx.mock
+async def test_exchange_for_audience_success() -> None:
+    route = respx.post(TOKEN_ENDPOINT).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "access_token": "helx-at",
+                "issued_token_type": JWT_ACCESS_TOKEN_TYPE,
+                "expires_in": 90,
+                "token_type": "Bearer",
+            },
+        )
+    )
 
-    with patch(
-        "mismapi.auth.oidc._build_token_exchange_oauth_client",
-        return_value=_FakeExchangeClient(body),
-    ):
-        result = await exchange_access_token_for_audience(
-            _discovery(),
-            _settings(),
+    service = _build_service()
+    try:
+        result = await service.exchange_for_audience(
             subject_access_token="user-at",
             audience="helx",
         )
+    finally:
+        await service.aclose()
+
     assert result.access_token == "helx-at"
     assert result.issued_token_type == JWT_ACCESS_TOKEN_TYPE
     assert result.expires_in == 90
 
+    assert route.called
+    body = route.calls.last.request.content.decode()
+    assert "subject_token=user-at" in body
+    assert "audience=helx" in body
+
 
 @pytest.mark.asyncio
+@respx.mock
 async def test_exchange_rejects_wrong_issued_token_type() -> None:
-    body: dict[str, object] = {
-        "access_token": "x",
-        "issued_token_type": "urn:ietf:params:oauth:token-type:refresh_token",
-    }
+    respx.post(TOKEN_ENDPOINT).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "access_token": "x",
+                "issued_token_type": "urn:ietf:params:oauth:token-type:refresh_token",
+                "token_type": "Bearer",
+            },
+        )
+    )
 
-    with patch(
-        "mismapi.auth.oidc._build_token_exchange_oauth_client",
-        return_value=_FakeExchangeClient(body),
-    ):
+    service = _build_service()
+    try:
         with pytest.raises(APIError) as excinfo:
-            await exchange_access_token_for_audience(
-                _discovery(),
-                _settings(),
+            await service.exchange_for_audience(
                 subject_access_token="user-at",
                 audience="helx",
             )
+    finally:
+        await service.aclose()
+
     assert excinfo.value.code == "auth_token_exchange_issued_type_mismatch"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_exchange_http_error_surfaces_as_api_error() -> None:
+    respx.post(TOKEN_ENDPOINT).mock(
+        return_value=httpx.Response(
+            400,
+            json={"error": "invalid_grant"},
+        )
+    )
+
+    service = _build_service()
+    try:
+        with pytest.raises(APIError) as excinfo:
+            await service.exchange_for_audience(
+                subject_access_token="user-at",
+                audience="helx",
+            )
+    finally:
+        await service.aclose()
+
+    assert excinfo.value.code == "auth_token_exchange_failed"

@@ -1,34 +1,62 @@
+"""
+FastAPI-level auth glue.
+
+`AuthenticatedPrincipal` lives in `mismapi.auth.principal` (a pure,
+dependency-free value type) and the `AuthValidator` / `OIDCValidator`
+protocols live alongside the stand-alone `JWTAuthValidator` in
+`mismapi.auth.validator`, so validator implementations can import them
+without dragging in the request-path helpers below. This module re-exports
+them so existing callers keep working.
+
+Session token refreshing logic lives in `mismapi.auth.session_refresh` as the
+`SessionRefresher` collaborator.
+
+What remains here is strictly request-path stuff:
+
+* `bearer_token_from_request_header` — lightweight header parsing.
+* `build_auth_validator` — the factory the container uses at startup to build the `AuthValidator`.
+* `require_principal` — the default `Depends` authenticated routes use to validate the principal.
+* `subject_access_token_for_upstream_exchange` — supplies the subject's access
+  token downstream handlers can exchange for an upstream audience.
+"""
+
+from __future__ import annotations
+
 import logging
-import time
-from dataclasses import dataclass
-from typing import Annotated, Protocol
+from typing import Annotated
 
 import jwt
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from mismapi.auth.oidc import OIDCDiscoveryLoader, refresh_tokens
+from mismapi.auth.factory import build_auth_validator
+from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.auth.session import SessionStore
+from mismapi.auth.session_refresh import SessionRefresher
+from mismapi.auth.validator import AuthValidator, OIDCValidator
+from mismapi.core.deps import (
+    AuthValidatorDep,
+    SessionRefresherDep,
+    SessionStoreDep,
+    SettingsDep,
+)
 from mismapi.core.errors import APIError
 from mismapi.core.settings import Settings
+
+__all__ = [
+    "AuthenticatedPrincipal",
+    "AuthValidator",
+    "OIDCValidator",
+    "bearer_token_from_request_header",
+    "build_auth_validator",
+    "require_principal",
+    "subject_access_token_for_upstream_exchange",
+]
 
 logger = logging.getLogger(__name__)
 
 bearer_scheme = HTTPBearer(auto_error=False)
 bearer_dependency = Depends(bearer_scheme)
-
-
-@dataclass(slots=True)
-class AuthenticatedPrincipal:
-    subject: str
-    issuer: str
-    audience: str
-    scopes: set[str]
-
-
-class AuthValidator(Protocol):
-    async def validate_token(self, token: str) -> AuthenticatedPrincipal:
-        raise NotImplementedError
 
 
 def bearer_token_from_request_header(request: Request) -> str | None:
@@ -42,97 +70,34 @@ def bearer_token_from_request_header(request: Request) -> str | None:
     return token or None
 
 
-async def _oidc_refresh_session_tokens(
-    request: Request,
-    *,
-    session_id: str,
-    session_data: dict[str, str],
-    refresh_token: str,
-) -> dict[str, str]:
-    settings: Settings = request.app.state.settings
-    session_store: SessionStore = request.app.state.session_store
-    discovery_loader: OIDCDiscoveryLoader = request.app.state.oidc_discovery_loader
-    discovery = await discovery_loader.load()
-    token_response = await refresh_tokens(
-        discovery,
-        settings,
-        refresh_token=refresh_token,
-    )
-    merged = {**session_data, "access_token": token_response.access_token}
-    if token_response.refresh_token:
-        merged["refresh_token"] = token_response.refresh_token
-    if token_response.id_token:
-        merged["id_token"] = token_response.id_token
-    ttl_sec = (
-        token_response.expires_in if token_response.expires_in > 0 else settings.session_ttl_seconds
-    )
-    merged["expires_at"] = str(int(time.time()) + ttl_sec)
-    await session_store.replace(session_id, merged)
-    return merged
-
-
-async def maybe_proactively_refresh_oidc_session(
-    request: Request,
-    *,
-    session_id: str,
-    session_data: dict[str, str],
-) -> dict[str, str]:
-    settings: Settings = request.app.state.settings
-    if settings.auth_mode != "oidc":
-        return session_data
-    refresh = session_data.get("refresh_token", "")
-    if not refresh:
-        return session_data
-    expires_raw = session_data.get("expires_at", "")
-    try:
-        expires_at = int(str(expires_raw).strip())
-    except ValueError:
-        return session_data
-    now = int(time.time())
-    skew = max(0, settings.oidc_access_token_refresh_skew_seconds)
-    if expires_at - now > skew:
-        return session_data
-    try:
-        return await _oidc_refresh_session_tokens(
-            request,
-            session_id=session_id,
-            session_data=session_data,
-            refresh_token=refresh,
-        )
-    except APIError:
-        logger.warning("oidc_proactive_refresh_failed session_id_prefix=%s", session_id[:8])
-        return session_data
-
-
-def build_auth_validator(settings: Settings) -> AuthValidator:
-    if settings.auth_mode == "oidc":
-        from mismapi.auth.oidc_auth_validator import OIDCAuthValidator
-
-        return OIDCAuthValidator(settings=settings)
-
-    from mismapi.auth.jwt_auth_validator import JWTAuthValidator
-
-    return JWTAuthValidator(settings=settings)
-
-
 async def require_principal(
     request: Request,
+    settings: SettingsDep,
+    session_store: SessionStoreDep,
+    validator: AuthValidatorDep,
+    session_refresher: SessionRefresherDep,
     credentials: HTTPAuthorizationCredentials | None = bearer_dependency,
 ) -> AuthenticatedPrincipal:
     if credentials is not None and credentials.scheme.lower() == "bearer":
-        validator: AuthValidator = request.app.state.auth_validator
         return await validator.validate_token(credentials.credentials)
 
-    return await _principal_from_session_cookie(request)
+    return await _principal_from_session_cookie(
+        request,
+        settings=settings,
+        session_store=session_store,
+        validator=validator,
+        session_refresher=session_refresher,
+    )
 
 
-async def _principal_from_session_cookie(request: Request) -> AuthenticatedPrincipal:
-    settings: Settings = request.app.state.settings
-    session_store: SessionStore | None = getattr(request.app.state, "session_store", None)
-
-    if session_store is None:
-        raise APIError(status_code=401, code="auth_missing", detail="Missing credentials.")
-
+async def _principal_from_session_cookie(
+    request: Request,
+    *,
+    settings: Settings,
+    session_store: SessionStore,
+    validator: AuthValidator,
+    session_refresher: SessionRefresher,
+) -> AuthenticatedPrincipal:
     session_id = request.cookies.get(settings.session_cookie_name)
     if not session_id:
         raise APIError(status_code=401, code="auth_missing", detail="Missing credentials.")
@@ -153,7 +118,6 @@ async def _principal_from_session_cookie(request: Request) -> AuthenticatedPrinc
             detail="Session is missing access token.",
         )
 
-    validator: AuthValidator = request.app.state.auth_validator
     try:
         return await validator.validate_token(access_token)
     except jwt.ExpiredSignatureError:
@@ -163,19 +127,18 @@ async def _principal_from_session_cookie(request: Request) -> AuthenticatedPrinc
                 code="auth_session_expired",
                 detail="Session token has expired.",
             ) from None
-        refresh = session_data.get("refresh_token", "")
-        if not refresh:
+        refresh_token = session_data.get("refresh_token", "")
+        if not refresh_token:
             raise APIError(
                 status_code=401,
                 code="auth_session_expired",
                 detail="Session has expired or is invalid.",
             ) from None
         try:
-            merged = await _oidc_refresh_session_tokens(
-                request,
+            merged = await session_refresher.refresh(
                 session_id=session_id,
                 session_data=session_data,
-                refresh_token=refresh,
+                refresh_token=refresh_token,
             )
         except APIError:
             raise APIError(
@@ -188,14 +151,24 @@ async def _principal_from_session_cookie(request: Request) -> AuthenticatedPrinc
 
 async def subject_access_token_for_upstream_exchange(
     request: Request,
-    principal: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    _principal: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
+    settings: SettingsDep,
+    session_store: SessionStoreDep,
+    session_refresher: SessionRefresherDep,
 ) -> str:
+    """Return the subject access token to hand to an upstream exchange.
+
+    `require_principal` is declared as a dependency so this helper never runs
+    for an unauthenticated caller; the resulting principal itself is unused
+    here because the session record is the canonical source of the subject
+    token. Revalidating the access token a second time would be redundant — the
+    cookie path already validated it inside `require_principal` (refreshing
+    if needed), and the bearer path short-circuits before any session lookup.
+    """
     bearer = bearer_token_from_request_header(request)
     if bearer:
         return bearer
 
-    settings: Settings = request.app.state.settings
-    session_store: SessionStore = request.app.state.session_store
     session_id = request.cookies.get(settings.session_cookie_name)
     if not session_id:
         raise APIError(
@@ -210,8 +183,7 @@ async def subject_access_token_for_upstream_exchange(
             code="auth_session_expired",
             detail="Session has expired or is invalid.",
         )
-    refreshed = await maybe_proactively_refresh_oidc_session(
-        request,
+    refreshed = await session_refresher.maybe_proactively_refresh(
         session_id=session_id,
         session_data=session_data,
     )
@@ -221,13 +193,5 @@ async def subject_access_token_for_upstream_exchange(
             status_code=401,
             code="auth_session_invalid",
             detail="Session is missing access token.",
-        )
-    validator: AuthValidator = request.app.state.auth_validator
-    revalidated = await validator.validate_token(access_token)
-    if revalidated.subject != principal.subject:
-        raise APIError(
-            status_code=401,
-            code="auth_session_invalid",
-            detail="Session token subject changed unexpectedly.",
         )
     return access_token

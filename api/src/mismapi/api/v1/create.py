@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 
-from mismapi.clients.upload_client import UploadServiceClient
+from mismapi.core.deps import UploadClientDep
 from mismapi.schemas.common import ModelId
 from mismapi.schemas.upload import (
     ModelMetadataPayload,
@@ -12,10 +12,9 @@ router = APIRouter()
 
 @router.post("/models", response_model=ModelMetadataUpsertResponse)
 async def create_model(
-    request: Request,
     payload: ModelMetadataPayload,
+    upload_client: UploadClientDep,
 ) -> ModelMetadataUpsertResponse:
-    upload_client: UploadServiceClient = request.app.state.upload_client
     created = await upload_client.create_model(
         name=payload.name,
         description=payload.description,
@@ -27,11 +26,10 @@ async def create_model(
 
 @router.put("/models/{model_id}", response_model=ModelMetadataUpsertResponse)
 async def update_model(
-    request: Request,
     model_id: ModelId,
     payload: ModelMetadataPayload,
+    upload_client: UploadClientDep,
 ) -> ModelMetadataUpsertResponse:
-    upload_client: UploadServiceClient = request.app.state.upload_client
     updated = await upload_client.update_model(
         model_id=model_id,
         name=payload.name,

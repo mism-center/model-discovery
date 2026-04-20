@@ -1,26 +1,23 @@
 import httpx
+import respx
 
 from mismapi.clients.upload_client import UploadServiceClient
 from mismapi.core.errors import APIError
 
-
-def _build_client_with_handler(
-    handler: httpx.MockTransport,
-) -> UploadServiceClient:
-    client = UploadServiceClient(base_url="http://upload-service", timeout_seconds=5.0)
-    client._client = httpx.AsyncClient(
-        transport=handler,
-        base_url="http://upload-service",
-        timeout=5.0,
-    )
-    return client
+UPLOAD_BASE_URL = "http://upload-service"
+INIT_URL = f"{UPLOAD_BASE_URL}/models/model-1/files/init"
+MODELS_URL = f"{UPLOAD_BASE_URL}/models"
 
 
+def _build_client() -> UploadServiceClient:
+    return UploadServiceClient(base_url=UPLOAD_BASE_URL, timeout_seconds=5.0)
+
+
+@respx.mock
 async def test_init_upload_rejects_non_json_payload() -> None:
-    async def handler(_: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, text="not-json")
+    respx.post(INIT_URL).mock(return_value=httpx.Response(200, text="not-json"))
 
-    client = _build_client_with_handler(httpx.MockTransport(handler))
+    client = _build_client()
     try:
         try:
             await client.init_upload(
@@ -36,11 +33,13 @@ async def test_init_upload_rejects_non_json_payload() -> None:
         await client.close()
 
 
+@respx.mock
 async def test_init_upload_rejects_non_string_or_blank_ids() -> None:
-    async def handler(_: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"upload_id": None, "tracking_id": "   "})
+    respx.post(INIT_URL).mock(
+        return_value=httpx.Response(200, json={"upload_id": None, "tracking_id": "   "})
+    )
 
-    client = _build_client_with_handler(httpx.MockTransport(handler))
+    client = _build_client()
     try:
         try:
             await client.init_upload(
@@ -56,11 +55,13 @@ async def test_init_upload_rejects_non_string_or_blank_ids() -> None:
         await client.close()
 
 
+@respx.mock
 async def test_init_upload_rejects_non_string_identifier_types() -> None:
-    async def handler(_: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"upload_id": 123, "tracking_id": {"id": "track-1"}})
+    respx.post(INIT_URL).mock(
+        return_value=httpx.Response(200, json={"upload_id": 123, "tracking_id": {"id": "track-1"}})
+    )
 
-    client = _build_client_with_handler(httpx.MockTransport(handler))
+    client = _build_client()
     try:
         try:
             await client.init_upload(
@@ -76,9 +77,10 @@ async def test_init_upload_rejects_non_string_identifier_types() -> None:
         await client.close()
 
 
+@respx.mock
 async def test_create_model_passthrough_409_conflict() -> None:
-    async def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
+    respx.post(MODELS_URL).mock(
+        return_value=httpx.Response(
             409,
             json={
                 "error": {
@@ -87,8 +89,9 @@ async def test_create_model_passthrough_409_conflict() -> None:
                 }
             },
         )
+    )
 
-    client = _build_client_with_handler(httpx.MockTransport(handler))
+    client = _build_client()
     try:
         try:
             await client.create_model(
@@ -106,11 +109,13 @@ async def test_create_model_passthrough_409_conflict() -> None:
         await client.close()
 
 
+@respx.mock
 async def test_create_model_passthrough_5xx_as_502() -> None:
-    async def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(503, json={"error": {"detail": "Service unavailable"}})
+    respx.post(MODELS_URL).mock(
+        return_value=httpx.Response(503, json={"error": {"detail": "Service unavailable"}})
+    )
 
-    client = _build_client_with_handler(httpx.MockTransport(handler))
+    client = _build_client()
     try:
         try:
             await client.create_model(
@@ -127,11 +132,11 @@ async def test_create_model_passthrough_5xx_as_502() -> None:
         await client.close()
 
 
+@respx.mock
 async def test_init_upload_rejects_malformed_json_shape() -> None:
-    async def handler(_: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=["upload-1", "track-1"])
+    respx.post(INIT_URL).mock(return_value=httpx.Response(200, json=["upload-1", "track-1"]))
 
-    client = _build_client_with_handler(httpx.MockTransport(handler))
+    client = _build_client()
     try:
         try:
             await client.init_upload(
