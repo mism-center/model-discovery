@@ -79,7 +79,7 @@ def test_install_uvicorn_access_formatter_replaces_handler() -> None:
     )
     log.addHandler(handler)
     try:
-        settings = Settings(PRODUCTION_MODE=True)
+        settings = Settings(_env_file=None, PRODUCTION_MODE=True)  # type: ignore[call-arg]
         install_uvicorn_access_formatter(settings)
         assert isinstance(handler.formatter, RedactedAccessFormatter)
         record = logging.LogRecord(

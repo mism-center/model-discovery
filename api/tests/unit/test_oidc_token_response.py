@@ -23,18 +23,12 @@ from mismapi.core.errors import APIError
         ("-5", 0),
         (None, 0),
         ([], 0),
+        (float("nan"), 0),
+        (float("inf"), 0),
     ],
 )
 def test_normalize_expires_in_to_seconds(raw: object, expected: int) -> None:
     assert _normalize_expires_in_to_seconds(raw) == expected
-
-
-def test_normalize_expires_in_to_seconds_nan_float() -> None:
-    assert _normalize_expires_in_to_seconds(float("nan")) == 0
-
-
-def test_normalize_expires_in_to_seconds_inf_float() -> None:
-    assert _normalize_expires_in_to_seconds(float("inf")) == 0
 
 
 def test_build_authlib_token_response_minimal() -> None:

@@ -3,8 +3,7 @@ Unified OIDC flow service.
 
 Single entry point for every OIDC flow the API performs: building the
 authorization URL, exchanging an authorization code, refreshing tokens,
-token exchanges to an upstream audience, and constructing the
-end-session URL.
+and constructing the end-session URL.
 
 The service owns **one** long-lived `AsyncOAuth2Client`. All flows are
 issued through that client, keeping the connection pool warm and removing the
@@ -24,12 +23,8 @@ from authlib.oauth2.rfc6749.errors import MismatchingStateException
 
 from mismapi.auth.oidc_types import (
     CODE_EXCHANGE_ERRORS,
-    JWT_ACCESS_TOKEN_TYPE,
     REFRESH_ERRORS,
     TOKEN_ERROR_BODY_MAX_LEN,
-    TOKEN_EXCHANGE_GRANT_TYPE,
-    UPSTREAM_EXCHANGE_ERRORS,
-    ExchangedAccessTokenResult,
     OIDCErrorCodes,
     TokenResponse,
 )
@@ -239,80 +234,6 @@ class OIDCService:
         return _build_authlib_token_response(
             dict(token),
             invalid_access_token_code=REFRESH_ERRORS.invalid_response,
-        )
-
-    async def exchange_for_audience(
-        self,
-        *,
-        subject_access_token: str,
-        audience: str,
-    ) -> ExchangedAccessTokenResult:
-        """RFC 8693 token exchange into the given audience."""
-        if not audience.strip():
-            raise APIError(
-                status_code=500,
-                code="auth_token_upstream_audience_missing",
-                detail="Token exchange audience is not configured.",
-            )
-
-        discovery = await self._discovery.get()
-
-        fetch_kwargs: dict[str, str] = {
-            "subject_token": subject_access_token,
-            "subject_token_type": JWT_ACCESS_TOKEN_TYPE,
-            "audience": audience.strip(),
-            "requested_token_type": JWT_ACCESS_TOKEN_TYPE,
-        }
-        scope_parts = self._settings.oidc_token_exchange_scopes_parts
-        if scope_parts:
-            fetch_kwargs["scope"] = " ".join(scope_parts)
-
-        try:
-            token = await self._client.fetch_token(
-                discovery.token_endpoint,
-                grant_type=TOKEN_EXCHANGE_GRANT_TYPE,
-                **fetch_kwargs,
-            )
-        except OAuthError as exc:
-            _raise_oauth_error(
-                "oidc_upstream_token_exchange_oauth_error",
-                UPSTREAM_EXCHANGE_ERRORS,
-                exc,
-            )
-        except httpx.HTTPError as exc:
-            _raise_for_http_error(
-                "oidc_upstream_token_exchange_http",
-                UPSTREAM_EXCHANGE_ERRORS,
-                exc,
-            )
-
-        body: dict[str, object] = dict(token)
-
-        issued_raw = get_string_or_empty_from_dict(body, "issued_token_type").strip()
-        if issued_raw != JWT_ACCESS_TOKEN_TYPE:
-            logger.warning(
-                "oidc_upstream_unexpected_issued_token_type issued_token_type=%s",
-                issued_raw,
-            )
-            raise APIError(
-                status_code=502,
-                code="auth_token_exchange_issued_type_mismatch",
-                detail="Token exchange did not return an access token type.",
-            )
-
-        access_token = get_string_or_empty_from_dict(body, "access_token").strip()
-        if not access_token:
-            raise APIError(
-                status_code=502,
-                code="auth_token_exchange_missing_access_token",
-                detail="Token exchange response is missing access_token.",
-            )
-
-        expires_in = _normalize_expires_in_to_seconds(body.get("expires_in", 0))
-        return ExchangedAccessTokenResult(
-            access_token=access_token,
-            issued_token_type=issued_raw,
-            expires_in=expires_in,
         )
 
     async def build_end_session_url(self, *, id_token_hint: str) -> str:

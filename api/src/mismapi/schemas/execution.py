@@ -18,7 +18,7 @@ class ExecutionStartRequest(BaseModel):
 
 class ExecutionStartResponse(BaseModel):
     """
-    Response for the UI after the gateway has exchanged tokens and called HeLx.
+    Response for the UI after the gateway has called HeLx.
 
     The UI should treat `execution_id` as an opaque handle for polling a future status endpoint
     (not implemented here). `poll_after_seconds` is a hint for backoff between polls.
@@ -37,11 +37,4 @@ class ExecutionStartResponse(BaseModel):
         default=5,
         ge=1,
         description="Suggested delay before the first status poll.",
-    )
-    exchanged_access_token_ttl_seconds: int | None = Field(
-        default=None,
-        description=(
-            "TTL of the HeLx-scoped access token from the IdP (if provided). Long-running work may "
-            "require HeLx-side handling beyond this TTL."
-        ),
     )

@@ -50,41 +50,10 @@ class Settings(BaseSettings):
     oidc_post_login_redirect_uri: str = Field(default="", alias="OIDC_POST_LOGIN_REDIRECT_URI")
     oidc_post_logout_redirect_uri: str = Field(default="", alias="OIDC_POST_LOGOUT_REDIRECT_URI")
     oidc_jwt_leeway_seconds: int = Field(default=30, alias="OIDC_JWT_LEEWAY_SECONDS")
-    oidc_token_exchange_audience: str = Field(
-        default="helx-exec-platform",
-        alias="OIDC_TOKEN_EXCHANGE_AUDIENCE",
-        description=(
-            "Target audience for token exchange at the IdP (Keycloak: often the HeLx Execution "
-            "Platform resource server client id or configured audience). Requires client policies "
-            "that allow this gateway client (OIDC_CLIENT_ID) to exchange a user access token into "
-            "that audience."
-        ),
-    )
-    oidc_token_exchange_scopes: str = Field(
-        default="",
-        alias="OIDC_TOKEN_EXCHANGE_SCOPES",
-        description="Optional space-delimited scopes to request on the exchanged access token.",
-    )
-    oidc_access_token_refresh_skew_seconds: int = Field(
-        default=120,
-        alias="OIDC_ACCESS_TOKEN_REFRESH_SKEW_SECONDS",
-        description=(
-            "When calling upstream token exchange, refresh the user session access token if it "
-            "expires within this many seconds."
-        ),
-    )
     helx_exec_platform_base_url: str = Field(
         default="",
         alias="HELX_EXEC_PLATFORM_BASE_URL",
         description="Base URL of the HeLx Execution Platform (server-to-server calls).",
-    )
-    helx_exec_platform_jwt_audience: str = Field(
-        default="",
-        alias="HELX_EXEC_PLATFORM_JWT_AUDIENCE",
-        description=(
-            "Expected JWT aud claim on the exchanged token before calling the HeLx Execution "
-            "Platform. If empty, OIDC_TOKEN_EXCHANGE_AUDIENCE is used."
-        ),
     )
     helx_exec_platform_timeout_seconds: float = Field(
         default=60.0,
@@ -105,21 +74,7 @@ class Settings(BaseSettings):
     def oidc_required_scope_list(self) -> list[str]:
         return [scope.strip() for scope in self.oidc_required_scopes.split(",") if scope.strip()]
 
-    @property
-    def oidc_token_exchange_scopes_parts(self) -> list[str]:
-        return [part for part in self.oidc_token_exchange_scopes.split() if part]
-
-    @property
-    def helx_exec_platform_jwt_audience_effective(self) -> str:
-        if self.helx_exec_platform_jwt_audience.strip():
-            return self.helx_exec_platform_jwt_audience.strip()
-        return self.oidc_token_exchange_audience.strip()
-
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
-
-
-def clear_settings_cache() -> None:
-    get_settings.cache_clear()

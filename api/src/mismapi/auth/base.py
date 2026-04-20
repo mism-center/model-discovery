@@ -16,14 +16,11 @@ What remains here is strictly request-path stuff:
 * `bearer_token_from_request_header` — lightweight header parsing.
 * `build_auth_validator` — the factory the container uses at startup to build the `AuthValidator`.
 * `require_principal` — the default `Depends` authenticated routes use to validate the principal.
-* `subject_access_token_for_upstream_exchange` — supplies the subject's access
-  token downstream handlers can exchange for an upstream audience.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Annotated
 
 import jwt
 from fastapi import Depends, Request
@@ -50,7 +47,6 @@ __all__ = [
     "bearer_token_from_request_header",
     "build_auth_validator",
     "require_principal",
-    "subject_access_token_for_upstream_exchange",
 ]
 
 logger = logging.getLogger(__name__)
@@ -147,51 +143,3 @@ async def _principal_from_session_cookie(
                 detail="Session has expired or is invalid.",
             ) from None
         return await validator.validate_token(merged["access_token"])
-
-
-async def subject_access_token_for_upstream_exchange(
-    request: Request,
-    _principal: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
-    settings: SettingsDep,
-    session_store: SessionStoreDep,
-    session_refresher: SessionRefresherDep,
-) -> str:
-    """Return the subject access token to hand to an upstream exchange.
-
-    `require_principal` is declared as a dependency so this helper never runs
-    for an unauthenticated caller; the resulting principal itself is unused
-    here because the session record is the canonical source of the subject
-    token. Revalidating the access token a second time would be redundant — the
-    cookie path already validated it inside `require_principal` (refreshing
-    if needed), and the bearer path short-circuits before any session lookup.
-    """
-    bearer = bearer_token_from_request_header(request)
-    if bearer:
-        return bearer
-
-    session_id = request.cookies.get(settings.session_cookie_name)
-    if not session_id:
-        raise APIError(
-            status_code=401,
-            code="auth_missing",
-            detail="Missing credentials for upstream token exchange.",
-        )
-    session_data = await session_store.get(session_id)
-    if session_data is None:
-        raise APIError(
-            status_code=401,
-            code="auth_session_expired",
-            detail="Session has expired or is invalid.",
-        )
-    refreshed = await session_refresher.maybe_proactively_refresh(
-        session_id=session_id,
-        session_data=session_data,
-    )
-    access_token = refreshed.get("access_token", "")
-    if not access_token:
-        raise APIError(
-            status_code=401,
-            code="auth_session_invalid",
-            detail="Session is missing access token.",
-        )
-    return access_token

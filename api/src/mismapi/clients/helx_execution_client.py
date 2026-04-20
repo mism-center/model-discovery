@@ -35,12 +35,7 @@ class HelxExecutionClient:
     async def close(self) -> None:
         await self._client.aclose()
 
-    async def execute(
-        self,
-        *,
-        bearer_access_token: str,
-        request_body: dict[str, Any],
-    ) -> HelxExecuteResult:
+    async def execute(self, *, request_body: dict[str, Any]) -> HelxExecuteResult:
         if self._stub_upstream:
             fake_id = str(uuid.uuid4())
             logger.info("helx_execute_stub execution_id=%s", fake_id)
@@ -53,7 +48,6 @@ class HelxExecutionClient:
         try:
             response = await self._client.post(
                 "/api/v1/execute",
-                headers={"Authorization": f"Bearer {bearer_access_token}"},
                 json=request_body,
             )
         except httpx.HTTPError as exc:

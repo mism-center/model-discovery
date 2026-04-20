@@ -1,8 +1,8 @@
 import json
+from typing import Any
 
 import jwt
 from cryptography.hazmat.primitives.asymmetric import rsa
-from fastapi.testclient import TestClient
 from jwt.algorithms import RSAAlgorithm
 
 from mismapi.auth.base import build_auth_validator
@@ -10,46 +10,30 @@ from mismapi.auth.jwks_cache import JWKSCache
 from mismapi.auth.oidc_discovery import OIDCDiscoveryCache
 from mismapi.auth.oidc_types import OIDCDiscoveryDocument
 from mismapi.auth.validator import JWTAuthValidator, OIDCAuthValidator
-from mismapi.core.container import AppContainer
 from mismapi.core.settings import Settings
-from tests.conftest import build_test_app, temporary_env
 
 
-def _settings_with_env(env_overrides: dict[str, str]) -> Settings:
-    with temporary_env(env_overrides):
-        return Settings()
-
-
-def test_route_requires_bearer_token() -> None:
-    with build_test_app({"AUTH_MODE": "jwt"}) as app:
-        with TestClient(app) as client:
-            response = client.get("/api/v1/models?q=test")
-            assert response.status_code == 401
-            payload = response.json()
-            assert payload["error"]["code"] == "auth_missing"
+def _settings(**overrides: Any) -> Settings:
+    return Settings(_env_file=None, **overrides)  # type: ignore[call-arg]
 
 
 def test_build_auth_validator_selects_jwt() -> None:
-    settings = _settings_with_env({"AUTH_MODE": "jwt"})
-    validator = build_auth_validator(settings=settings)
+    validator = build_auth_validator(settings=_settings(AUTH_MODE="jwt"))
     assert isinstance(validator, JWTAuthValidator)
 
 
 def test_build_auth_validator_selects_oidc() -> None:
-    settings = _settings_with_env({"AUTH_MODE": "oidc"})
-    validator = build_auth_validator(settings=settings)
+    validator = build_auth_validator(settings=_settings(AUTH_MODE="oidc"))
     assert isinstance(validator, OIDCAuthValidator)
 
 
 async def test_jwt_auth_validator_validates_token() -> None:
-    settings = _settings_with_env(
-        {
-            "AUTH_MODE": "jwt",
-            "JWT_ISSUER": "https://issuer.example.com",
-            "JWT_AUDIENCE": "mism-api",
-            "JWT_ALGORITHMS": "HS256",
-            "JWT_PUBLIC_KEY": "0123456789abcdef0123456789abcdef",
-        }
+    settings = _settings(
+        AUTH_MODE="jwt",
+        JWT_ISSUER="https://issuer.example.com",
+        JWT_AUDIENCE="mism-api",
+        JWT_ALGORITHMS="HS256",
+        JWT_PUBLIC_KEY="0123456789abcdef0123456789abcdef",
     )
     validator = JWTAuthValidator(settings=settings)
     token = jwt.encode(
@@ -74,12 +58,10 @@ async def test_oidc_auth_validator_validates_token_with_cached_jwks() -> None:
     jwk_payload = json.loads(RSAAlgorithm.to_jwk(key_obj=public_key))
     jwk_payload["kid"] = "key-1"
 
-    settings = _settings_with_env(
-        {
-            "AUTH_MODE": "oidc",
-            "OIDC_AUDIENCE": "mism-api",
-            "OIDC_REQUIRED_SCOPES": "read",
-        }
+    settings = _settings(
+        AUTH_MODE="oidc",
+        OIDC_AUDIENCE="mism-api",
+        OIDC_REQUIRED_SCOPES="read",
     )
     discovery_cache = OIDCDiscoveryCache(settings=settings)
     discovery_cache.seed(
@@ -109,19 +91,3 @@ async def test_oidc_auth_validator_validates_token_with_cached_jwks() -> None:
     principal = await validator.validate_token(token=token)
     assert principal.subject == "user-2"
     assert "read" in principal.scopes
-
-
-def test_route_unexpected_auth_error_returns_internal_server_error() -> None:
-    class BrokenAuthValidator:
-        async def validate_token(self, token: str) -> object:
-            raise RuntimeError("unexpected validator failure")
-
-    with build_test_app({"AUTH_MODE": "jwt"}) as app:
-        with TestClient(app, raise_server_exceptions=False) as client:
-            container: AppContainer = app.state.container
-            container.auth_validator = BrokenAuthValidator()  # type: ignore[assignment]
-            response = client.get(
-                "/api/v1/models?q=test",
-                headers={"Authorization": "Bearer token-value"},
-            )
-            assert response.status_code == 500

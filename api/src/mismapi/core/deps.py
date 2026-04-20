@@ -58,8 +58,8 @@ def _get_oidc_validator(container: ContainerDep) -> OIDCValidator:
     In OIDC mode the container always wires an ``OIDCAuthValidator``, which
     structurally satisfies :class:`mismapi.auth.base.OIDCValidator`. The
     ``settings.auth_mode`` gate is the runtime guarantee; handlers can then
-    call ``verify_identity`` / ``validate_upstream_access_token`` without
-    ``isinstance``-branching on the concrete class.
+    call ``verify_identity`` without ``isinstance``-branching on the concrete
+    class.
     """
     if container.settings.auth_mode != "oidc":
         raise APIError(
