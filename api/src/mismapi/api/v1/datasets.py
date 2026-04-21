@@ -10,7 +10,6 @@ from mismapi.schemas.registry import (
     UpdateDatasetRequest,
 )
 from mismapi.schemas.search import ModelListItem, ModelListResponse
-from mismapi.services.registry_service import RegistryService
 
 logger = logging.getLogger(__name__)
 
@@ -101,8 +100,6 @@ async def list_datasets(
         tags=tags,
         organisms=organisms,
         scales=scales,
-        limit=limit,
-        offset=offset,
     )
 
     total = len(resources)

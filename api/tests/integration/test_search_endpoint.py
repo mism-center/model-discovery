@@ -60,7 +60,7 @@ def test_list_models_returns_results() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert "total" not in payload
+    assert payload["total"] == 2
     assert payload["results"][0]["id"] == "r-1"
     assert payload["results"][0]["name"] == "Model A"
     assert payload["results"][1]["id"] == "r-2"
@@ -71,8 +71,6 @@ def test_list_models_returns_results() -> None:
         tags=None,
         organisms=None,
         scales=None,
-        limit=25,
-        offset=0,
     )
 
 
@@ -85,7 +83,7 @@ def test_list_models_empty() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert "total" not in payload
+    assert payload["total"] == 0
     assert payload["results"] == []
 
 
@@ -105,22 +103,21 @@ def test_list_models_passes_filters() -> None:
         organisms=None,
         scales=None,
     )
-    service.list_models.assert_called_once_with(**filter_kwargs, limit=25, offset=0)
+    service.list_models.assert_called_once_with(**filter_kwargs)
 
 
 def test_list_models_pagination() -> None:
     resources = [_make_resource(id=f"r-{i}", name=f"Model {i}") for i in range(5)]
-    page = [resources[1], resources[2]]
 
     service = MagicMock(spec=RegistryService)
-    service.list_models.return_value = page
+    service.list_models.return_value = resources
 
     client = _make_app_with_service(service)
     response = client.get("/api/v1/models?limit=2&offset=1")
 
     assert response.status_code == 200
     payload = response.json()
-    assert "total" not in payload
+    assert payload["total"] == 5
     assert len(payload["results"]) == 2
     assert payload["results"][0]["id"] == "r-1"
     assert payload["results"][1]["id"] == "r-2"
@@ -131,8 +128,6 @@ def test_list_models_pagination() -> None:
         tags=None,
         organisms=None,
         scales=None,
-        limit=2,
-        offset=1,
     )
 
 

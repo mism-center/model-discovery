@@ -36,8 +36,6 @@ async def list_models(
         tags=tags,
         organisms=organisms,
         scales=scales,
-        limit=limit,
-        offset=offset,
     )
 
     total = len(resources)

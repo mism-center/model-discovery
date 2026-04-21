@@ -23,7 +23,6 @@ from mism_registry.search import (
     SearchQuery,
     SearchResult,
 )
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from mismapi.auth.principal import AuthenticatedPrincipal
@@ -213,6 +212,7 @@ class RegistryService:
                 code="unsupported_backend",
                 detail="Full-text search requires a PostgreSQL backend",
             )
+
         return self._registry.search_resources(query)
 
     # ── Dataset operations ─────────────────────────────────────────
