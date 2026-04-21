@@ -1,9 +1,12 @@
+from typing import Any
+
 import httpx
 from fastapi.testclient import TestClient
 
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
 from mismapi.clients.upload_client import UploadSession
 from mismapi.core.deps import _get_upload_client
+from mismapi.core.settings import Settings
 from mismapi.main import create_app
 
 from .conftest import make_settings
@@ -12,8 +15,8 @@ TEST_MODEL_ID = "AbC123xYz890"
 CREATED_MODEL_ID = "Cr8ModelID12"
 
 
-def _test_settings(**overrides: object):
-    base: dict[str, object] = {
+def _test_settings(**overrides: Any) -> Settings:
+    base: dict[str, Any] = {
         "AUTH_MODE": "jwt",
         "UPLOAD_RETRY_BACKOFF_SECONDS": 0.0,
     }

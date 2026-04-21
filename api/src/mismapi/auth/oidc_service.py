@@ -13,7 +13,7 @@ per-call client construction churn that plagued the old free-function API.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, NoReturn
+from typing import TYPE_CHECKING, NoReturn, cast
 from urllib.parse import urlencode
 
 import httpx
@@ -160,7 +160,7 @@ class OIDCService:
         )
 
     async def aclose(self) -> None:
-        await self._client.aclose()
+        await cast(httpx.AsyncClient, self._client).aclose()
 
     async def build_authorization_url(self, *, state: str, code_verifier: str) -> str:
         discovery = await self._discovery.get()
@@ -169,7 +169,7 @@ class OIDCService:
             state=state,
             code_verifier=code_verifier,
         )
-        return url
+        return str(url)
 
     async def exchange_code(
         self,
