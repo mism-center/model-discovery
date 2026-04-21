@@ -10,6 +10,7 @@ from mismapi.schemas.registry import (
     UpdateDatasetRequest,
 )
 from mismapi.schemas.search import ModelListItem, ModelListResponse
+from mismapi.services.registry_service import RegistryService
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ async def list_datasets(
     offset: int = Query(default=0, ge=0),
 ) -> ModelListResponse:
 
-    page = service.list_datasets(
+    resources = service.list_datasets(
         name_contains=name,
         owner=owner,
         tags=tags,
@@ -103,6 +104,9 @@ async def list_datasets(
         limit=limit,
         offset=offset,
     )
+
+    total = len(resources)
+    page = resources[offset : offset + limit]
 
     results = [
         ModelListItem(
@@ -120,4 +124,4 @@ async def list_datasets(
         for r in page
     ]
 
-    return ModelListResponse(results=results)
+    return ModelListResponse(total=total, results=results)

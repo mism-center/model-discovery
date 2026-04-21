@@ -30,7 +30,7 @@ async def list_models(
     offset: int = Query(default=0, ge=0),
 ) -> ModelListResponse:
 
-    page = service.list_models(
+    resources = service.list_models(
         name_contains=name,
         owner=owner,
         tags=tags,
@@ -39,6 +39,9 @@ async def list_models(
         limit=limit,
         offset=offset,
     )
+
+    total = len(resources)
+    page = resources[offset : offset + limit]
 
     results = [
         ModelListItem(
@@ -56,7 +59,7 @@ async def list_models(
         for r in page
     ]
 
-    return ModelListResponse(results=results)
+    return ModelListResponse(total=total, results=results)
 
 
 @router.post("/models", response_model=RegisterModelResponse, status_code=201)

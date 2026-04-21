@@ -1,9 +1,10 @@
 import logging
-from typing import Any, cast
+from typing import Any
 
 from mism_registry import (
     ResourceNotFoundError,
     ResourceType,
+    find_resources,
     prepare_run,
     register_dataset,
     register_model,
@@ -11,7 +12,7 @@ from mism_registry import (
 from mism_registry import (
     ValidationError as RegistryValidationError,
 )
-from mism_registry.backends.postgres import ResourceModel, resource_from_db
+from mism_registry.backends.postgres import PostgresRegistry
 from mism_registry.enums import ExecutionType
 from mism_registry.protocol import Registry
 from mism_registry.resource import Resource
@@ -29,59 +30,6 @@ from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.core.errors import APIError
 
 logger = logging.getLogger(__name__)
-
-
-def _apply_resource_list_filters(
-    stmt: Any,
-    *,
-    resource_type: ResourceType | None,
-    tags: list[str] | None,
-    owner: str | None,
-    name_contains: str | None,
-    organisms: list[str] | None,
-    scales: list[str] | None,
-) -> Any:
-    """Mirror ``PostgresRegistry.find_resources`` WHERE clauses (same semantics)."""
-    if resource_type is not None:
-        stmt = stmt.where(ResourceModel.resource_type == resource_type)
-    if tags is not None:
-        stmt = stmt.where(ResourceModel.format_tags.contains(tags))
-    if owner is not None:
-        stmt = stmt.where(ResourceModel.owner == owner)
-    if name_contains is not None:
-        stmt = stmt.where(ResourceModel.name.ilike(f"%{name_contains}%"))
-    if organisms is not None:
-        stmt = stmt.where(ResourceModel.organisms.overlap(organisms))
-    if scales is not None:
-        stmt = stmt.where(ResourceModel.modeling_scales.overlap(scales))
-    return stmt
-
-
-def _fetch_resources_page(
-    session: Session,
-    *,
-    resource_type: ResourceType | None,
-    tags: list[str] | None,
-    owner: str | None,
-    name_contains: str | None,
-    organisms: list[str] | None,
-    scales: list[str] | None,
-    limit: int,
-    offset: int,
-) -> list[Resource]:
-    stmt = select(ResourceModel)
-    stmt = _apply_resource_list_filters(
-        stmt,
-        resource_type=resource_type,
-        tags=tags,
-        owner=owner,
-        name_contains=name_contains,
-        organisms=organisms,
-        scales=scales,
-    )
-    stmt = stmt.order_by(ResourceModel.created_at.desc()).limit(limit).offset(offset)
-    rows = session.execute(stmt).scalars().all()
-    return [resource_from_db(m) for m in rows]
 
 
 class RegistryService:
@@ -216,20 +164,16 @@ class RegistryService:
         tags: list[str] | None = None,
         organisms: list[str] | None = None,
         scales: list[str] | None = None,
-        limit: int = 25,
-        offset: int = 0,
     ) -> list[Resource]:
         # FUTURE: batch fga check for visibility filtering
-        return _fetch_resources_page(
-            self._session,
+        return find_resources(
+            self._registry,
             resource_type=ResourceType.MODEL,
             name_contains=name_contains,
             owner=owner,
             tags=tags,
             organisms=organisms,
             scales=scales,
-            limit=limit,
-            offset=offset,
         )
 
     # ── Search ────────────────────────────────────────────────────────
@@ -263,15 +207,13 @@ class RegistryService:
                     detail=f"Unknown aggregation field: {agg}",
                 )
 
-        search_resources = getattr(self._registry, "search_resources", None)
-        if not callable(search_resources):
+        if not isinstance(self._registry, PostgresRegistry):
             raise APIError(
-                status_code=501,
+                status_code=500,
                 code="unsupported_backend",
-                detail="Full-text search is not supported by the configured registry backend",
+                detail="Full-text search requires a PostgreSQL backend",
             )
-
-        return cast(SearchResult, search_resources(query))
+        return self._registry.search_resources(query)
 
     # ── Dataset operations ─────────────────────────────────────────
 
@@ -364,20 +306,16 @@ class RegistryService:
         tags: list[str] | None = None,
         organisms: list[str] | None = None,
         scales: list[str] | None = None,
-        limit: int = 25,
-        offset: int = 0,
     ) -> list[Resource]:
         # FUTURE: batch fga check for visibility filtering
-        return _fetch_resources_page(
-            self._session,
+        return find_resources(
+            self._registry,
             resource_type=ResourceType.DATASET,
             name_contains=name_contains,
             owner=owner,
             tags=tags,
             organisms=organisms,
             scales=scales,
-            limit=limit,
-            offset=offset,
         )
 
     # ── Lifecycle ────────────────────────────────────────────────────
