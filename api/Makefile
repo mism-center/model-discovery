@@ -44,8 +44,15 @@ dev:
 	$(UV) run uvicorn --app-dir src $(APP) --host 0.0.0.0 --port $(PORT) --reload
 
 ## Run the test suite (pytest)
-test:
-	$(UV) run python -m pytest
+test-unit:
+	$(UV) run pytest tests/unit/*.py -v
+
+## Run the integration test suite (pytest)
+test-integration:
+	$(UV) run pytest tests/integration/*.py -v
+
+## Run the test suite (pytest)
+test: test-unit test-integration
 
 ## Run Ruff linter
 lint:
