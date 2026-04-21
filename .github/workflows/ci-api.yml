@@ -6,13 +6,52 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test-and-lint:
     name: Test, lint, and build API image
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     defaults:
       run:
         working-directory: api
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: make install
+
+      - name: Run tests
+        run: make test
+
+      - name: Check formatting
+        run: make format-check
+
+      - name: Run Ruff lint checks
+        run: make lint
+
+      - name: Run mypy
+        run: make typecheck
+
+      - name: Build Docker image
+        run: docker build -t mismapi:ci .
+
+  integration-test:
+    name: Integration tests (Docker Compose)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -26,20 +65,22 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Install dependencies
+
+      - name: Install test dependencies
+        working-directory: api
         run: uv sync --group dev
 
-      - name: Run tests
-        run: uv run pytest
+      - name: Start services
+        run: docker compose -f docker-compose.test.yaml up -d --build --wait
 
-      - name: Check formatting
-        run: uv run ruff format --check .
+      - name: Run integration tests
+        working-directory: api
+        run: uv run pytest tests/test_integration.py -m integration -v
 
-      - name: Run Ruff lint checks
-        run: uv run ruff check .
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.test.yaml logs
 
-      - name: Run mypy
-        run: uv run mypy src tests
-
-      - name: Build Docker image
-        run: docker build -t mismapi:ci .
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.test.yaml down -v

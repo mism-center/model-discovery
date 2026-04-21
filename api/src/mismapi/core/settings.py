@@ -10,10 +10,12 @@ class Settings(BaseSettings):
 
     mism_env: str = Field(default="local", alias="MISM_ENV")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    database_url: str = Field(
+        default="postgresql+psycopg://postgres:postgres@localhost/mism",
+        alias="DATABASE_URL",
+    )
 
-    search_service_url: str = Field(default="http://localhost:8100", alias="SEARCH_SERVICE_URL")
     upload_service_url: str = Field(default="http://localhost:8200", alias="UPLOAD_SERVICE_URL")
-    search_timeout_seconds: float = Field(default=10.0, alias="SEARCH_TIMEOUT_SECONDS")
     upload_timeout_seconds: float = Field(default=60.0, alias="UPLOAD_TIMEOUT_SECONDS")
 
     upload_chunk_size_bytes: int = Field(default=5 * 1024 * 1024, alias="UPLOAD_CHUNK_SIZE_BYTES")
@@ -25,6 +27,7 @@ class Settings(BaseSettings):
     )
 
     auth_mode: Literal["jwt", "oidc"] = Field(default="jwt", alias="AUTH_MODE")
+    disable_auth: bool = Field(default=False, alias="DISABLE_AUTH")
     stub_upstream_services: bool = Field(default=False, alias="STUB_UPSTREAM_SERVICES")
 
     jwt_issuer: str = Field(default="", alias="JWT_ISSUER")

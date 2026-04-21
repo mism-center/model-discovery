@@ -1,0 +1,197 @@
+{{- if .Values.networkPolicy.enabled }}
+{{/*
+  networkpolicy.yaml
+  ─────────────────────────────────────────────────────────────────────────────
+  Enforces the communication paths shown in the architecture diagram.
+  Default posture: deny-all ingress within the namespace, then open only the
+  exact paths each component legitimately needs.
+
+  Allowed call graph (→ = may initiate connection):
+    Ingress controller  → Gateway
+    Gateway             → Search Service
+    Gateway             → Upload Service
+    Gateway / Migrate   → Metadata Store (PostgreSQL)
+    Upload Service      → Storage Interface
+  ─────────────────────────────────────────────────────────────────────────────
+*/}}
+
+# ── 0. Default-deny all intra-namespace ingress ───────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  labels:
+    {{- include "model-discovery.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+
+---
+# ── 1. Discovery Gateway – accepts traffic from the Ingress controller only ───
+{{- if .Values.gateway.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-gateway
+  labels:
+    {{- include "model-discovery.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: gateway
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressControllerNamespace | default "ingress-nginx" }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: {{ .Values.gateway.service.port }}
+{{- end }}
+
+---
+# ── 2. Search Service – accepts traffic from Gateway only ─────────────────────
+{{- if .Values.searchService.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-to-search
+  labels:
+    {{- include "model-discovery.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: search-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: gateway
+      ports:
+        - protocol: TCP
+          port: {{ .Values.searchService.service.port }}
+{{- end }}
+
+---
+# ── 3. Upload Service – accepts traffic from Gateway only ─────────────────────
+{{- if .Values.uploadService.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-to-upload
+  labels:
+    {{- include "model-discovery.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: upload-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: gateway
+      ports:
+        - protocol: TCP
+          port: {{ .Values.uploadService.service.port }}
+{{- end }}
+
+---
+# ── 4. Storage Interface – accepts traffic from Upload Service only ────────────
+{{- if .Values.storageInterface.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-upload-to-storage-interface
+  labels:
+    {{- include "model-discovery.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: storage-interface
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: upload-service
+      ports:
+        - protocol: TCP
+          port: {{ .Values.storageInterface.service.port }}
+{{- end }}
+
+---
+# ── 5. Metadata Store (PostgreSQL) – accepts traffic from Gateway + Migrate ───
+{{- if .Values.metadataStore.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-to-db
+  labels:
+    {{- include "model-discovery.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: metadata-store
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        # Gateway pods
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: gateway
+        # Migration Job pods
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: migrate
+      ports:
+        - protocol: TCP
+          port: {{ .Values.metadataStore.service.port }}
+{{- end }}
+
+{{- if .Values.networkPolicy.restrictEgress }}
+---
+# ── 6. Restrict egress – allow only DNS + known intra-namespace targets ──────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-restrict-egress
+  labels:
+    {{- include "model-discovery.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+{{- end }}
+
+{{- end }}{{/* networkPolicy.enabled */}}

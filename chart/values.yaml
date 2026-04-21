@@ -1,0 +1,247 @@
+# ============================================================
+# MISM Discovery Platform – Default Values
+# ============================================================
+
+global:
+  imageRegistry: "" # Override to push/pull from a private registry
+  imagePullSecrets: []
+  storageClass: "" # Leave empty to use cluster default
+
+# ────────────────────────────────────────────────────────────
+# Discovery Gateway REST API  (entry-point / API gateway)
+# ────────────────────────────────────────────────────────────
+gateway:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: mismplatform/model-discovery
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  env:
+    LOG_LEVEL: "INFO"
+    AUTH_MODE: "oidc"
+    DISABLE_AUTH: "false"
+    STUB_UPSTREAM_SERVICES: "false"
+    # Upload service
+    UPLOAD_SERVICE_URL: "http://upload-service:8200"
+    UPLOAD_TIMEOUT_SECONDS: "60.0"
+    UPLOAD_CHUNK_SIZE_BYTES: "5242880"
+    UPLOAD_RETRY_MAX_ATTEMPTS: "3"
+    UPLOAD_RETRY_BACKOFF_SECONDS: "1.0"
+    UPLOAD_RETRY_TRAILING_BUFFER_BYTES: "15728640"
+    # OIDC – set via --set or values override per environment
+    OIDC_ISSUER_URL: ""
+    OIDC_DISCOVERY_URL: ""
+    OIDC_AUDIENCE: ""
+    OIDC_REQUIRED_SCOPES: ""
+    OIDC_JWKS_TTL_SECONDS: "300"
+    # JWT – alternative auth mode
+    JWT_ISSUER: ""
+    JWT_AUDIENCE: ""
+    JWT_ALGORITHMS: "RS256"
+    JWT_JWKS_URL: ""
+
+irods:
+  # PersistentVolumeClaim
+  pvc:
+    create: true
+    name: "irods-pvc"
+    storage: "5Gi"
+    accessMode: "ReadWriteMany"
+    mountPath: "/irods"
+    subPath: "/"
+
+  # StorageClass
+  storageClass:
+    name: "" # irods-sc
+
+# ────────────────────────────────────────────────────────────
+# Search Service
+# ────────────────────────────────────────────────────────────
+searchService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: mism/search-service
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  env:
+    LOG_LEVEL: "INFO"
+
+# ────────────────────────────────────────────────────────────
+# Upload Service
+# ────────────────────────────────────────────────────────────
+uploadService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: mism/upload-service
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8001
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  env:
+    LOG_LEVEL: "INFO"
+    STORAGE_INTERFACE_URL: "http://storage-interface:9000"
+
+# ────────────────────────────────────────────────────────────
+# Storage Interface  (iRODS / LakeFS adapter)
+# ────────────────────────────────────────────────────────────
+storageInterface:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: mism/storage-interface
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 9000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  env:
+    LOG_LEVEL: "INFO"
+    BACKEND: "lakefs" # "irods" | "lakefs"
+    LAKEFS_ENDPOINT: "http://lakefs:8080"
+    IRODS_HOST: "irods-server"
+    IRODS_PORT: "1247"
+    BLOB_STORAGE_BUCKET: "mism-data"
+
+# ────────────────────────────────────────────────────────────
+# Metadata Store  (PostgreSQL – DAL read/write backend)
+# ────────────────────────────────────────────────────────────
+metadataStore:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "17-alpine"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 5432
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: ""
+  env:
+    POSTGRES_DB: "mism"
+    POSTGRES_USER: "mism"
+    # POSTGRES_PASSWORD stored in Secret (see secrets section)
+
+# ────────────────────────────────────────────────────────────
+# Database Migration  (Alembic – runs as a Helm hook Job)
+# ────────────────────────────────────────────────────────────
+migration:
+  enabled: true
+  backoffLimit: 3
+
+# ────────────────────────────────────────────────────────────
+# Ingress
+# ────────────────────────────────────────────────────────────
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations: {}
+  host: "model-discovery.example.com"
+  tls:
+    enabled: false
+    secretName: "mism-tls"
+
+# ────────────────────────────────────────────────────────────
+# Secrets  (override via --set or external secret manager)
+# ────────────────────────────────────────────────────────────
+secrets:
+  databasePassword: "changeme"
+
+# ────────────────────────────────────────────────────────────
+# External Secrets Operator integration
+# Set enabled: true to render an ExternalSecret CR instead of
+# a plain Secret.  Requires ESO to be installed in the cluster.
+# https://external-secrets.io
+# ────────────────────────────────────────────────────────────
+externalSecrets:
+  enabled: false
+  secretStoreName: "vault-backend"
+  secretStoreKind: "SecretStore"
+  secretPath: "mism/discovery"
+  refreshInterval: "1h"
+
+# ────────────────────────────────────────────────────────────
+# Network Policies
+# ────────────────────────────────────────────────────────────
+networkPolicy:
+  enabled: true
+  ingressControllerNamespace: "ingress-nginx"
+  restrictEgress: false
+
+# ────────────────────────────────────────────────────────────
+# HorizontalPodAutoscalers
+# Requires metrics-server in the cluster.
+# ────────────────────────────────────────────────────────────
+hpa:
+  gateway:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: "" # leave empty to disable
+    scaleUpStabilizationWindowSeconds: 60
+    scaleDownStabilizationWindowSeconds: 300
+
+  searchService:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80 # search can be memory-heavy
+    scaleUpStabilizationWindowSeconds: 60
+    scaleDownStabilizationWindowSeconds: 300
+
+  uploadService:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 12
+    targetCPUUtilizationPercentage: 65 # lower threshold – uploads are I/O bound
+    targetMemoryUtilizationPercentage: ""
+    scaleUpStabilizationWindowSeconds: 30 # scale up fast for burst uploads
+    scaleDownStabilizationWindowSeconds: 600 # keep pods longer; transfers may be in-flight

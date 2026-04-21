@@ -2,10 +2,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from mism_registry.backends.postgres import create_session_factory
 
 from mismapi.api.router import build_api_router
 from mismapi.auth.base import build_auth_validator
-from mismapi.clients.search_client import SearchServiceClient
 from mismapi.clients.upload_client import UploadServiceClient
 from mismapi.core.errors import register_exception_handlers
 from mismapi.core.logging import configure_root_logger
@@ -20,19 +20,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     resolver = EnvServiceResolver(settings=settings)
 
     app.state.settings = settings
-    app.state.search_client = SearchServiceClient(
-        base_url=resolver.search_service_url(),
-        timeout_seconds=settings.search_timeout_seconds,
-        stub_upstream=settings.stub_upstream_services,
-    )
+    app.state.auth_validator = build_auth_validator(settings=settings)
+
     app.state.upload_client = UploadServiceClient(
         base_url=resolver.upload_service_url(),
         timeout_seconds=settings.upload_timeout_seconds,
         stub_upstream=settings.stub_upstream_services,
     )
-    app.state.auth_validator = build_auth_validator(settings=settings)
+
+    app.state.session_factory = create_session_factory(settings.database_url)
+
     yield
-    await app.state.search_client.close()
+
     await app.state.upload_client.close()
 
 
@@ -59,3 +58,9 @@ def create_app() -> FastAPI:
 
 
 app: FastAPI = create_app()
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=9999)

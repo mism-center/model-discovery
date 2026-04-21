@@ -1,0 +1,13 @@
+apiVersion: v2
+name: model-discovery
+description: >
+  MISM Model Discovery Platform – Deploys the Discovery Gateway API (FastAPI),
+  Search Service, Upload Service, Storage Interface (iRODS / LakeFS), and a
+  PostgreSQL metadata store. Includes a Helm-hook Job for Alembic schema
+  migrations, network policies, HPA autoscaling, and External Secrets Operator
+  integration.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+maintainers:
+  - name: MISM Team

@@ -5,6 +5,8 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy
 
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
@@ -12,7 +14,9 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY src ./src
 
+
 RUN uv sync --frozen --no-dev \
+    && rm -f /root/.gitconfig \
     && groupadd --system app \
     && useradd --system --gid app --no-create-home app \
     && chown -R app:app /app

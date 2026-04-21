@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: model-discovery-config
+  labels:
+    {{- include "model-discovery.labels" . | nindent 4 }}
+data:
+  # ── Gateway ─────────────────────────────────
+  GATEWAY_PORT: {{ .Values.gateway.service.port | quote }}
+  UPLOAD_SERVICE_URL: {{ .Values.gateway.env.UPLOAD_SERVICE_URL | quote }}
+
+  # ── Database ────────────────────────────────
+  DATABASE_HOST: "metadata-store"
+  DATABASE_PORT: {{ .Values.metadataStore.service.port | quote }}
+  DATABASE_NAME: {{ .Values.metadataStore.env.POSTGRES_DB | quote }}
+  DATABASE_USER: {{ .Values.metadataStore.env.POSTGRES_USER | quote }}
+
+  # ── Storage Interface ──────────────────────
+  {{- if .Values.storageInterface.enabled }}
+  STORAGE_INTERFACE_URL: "http://storage-interface:{{ .Values.storageInterface.service.port }}"
+  STORAGE_BACKEND: {{ .Values.storageInterface.env.BACKEND | quote }}
+  BLOB_STORAGE_BUCKET: {{ .Values.storageInterface.env.BLOB_STORAGE_BUCKET | quote }}
+  {{- end }}
