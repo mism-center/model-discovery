@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING, Annotated, cast
 
 from fastapi import Depends, Request
 from mism_registry.backends.postgres import PostgresRegistry
-from sqlalchemy.orm import Session, sessionmaker
 
 from mismapi.core.container import AppContainer
 from mismapi.core.errors import APIError
@@ -56,7 +55,8 @@ def _get_auth_validator(container: ContainerDep) -> AuthValidator:
 
 
 def _get_oidc_validator(container: ContainerDep) -> OIDCValidator:
-    """Resolve the active validator as an ``OIDCValidator`` or 503 in non-OIDC mode.
+    """
+    Resolve the active validator as an ``OIDCValidator`` or raise 503 in non-OIDC mode.
 
     In OIDC mode the container always wires an ``OIDCAuthValidator``, which
     structurally satisfies :class:`mismapi.auth.base.OIDCValidator`. The
@@ -93,12 +93,8 @@ def _get_helx_execution_client(container: ContainerDep) -> HelxExecutionClient:
     return container.helx_execution_client
 
 
-def _get_session_factory(container: ContainerDep) -> sessionmaker[Session]:
-    return container.session_factory
-
-
 def get_registry_service(
-    factory: Annotated[sessionmaker[Session], Depends(_get_session_factory)],
+    container: ContainerDep,
 ) -> Generator[RegistryService, None, None]:
     """
     Open a per-request SQLAlchemy session and yield a RegistryService bound to it.
@@ -107,11 +103,8 @@ def get_registry_service(
     responsibility. Exposed at module scope so tests can target it via
     `app.dependency_overrides`.
     """
-    session = factory()
-    try:
+    with container.open_session() as session:
         yield RegistryService(PostgresRegistry(session), session)
-    finally:
-        session.close()
 
 
 SettingsDep = Annotated[Settings, Depends(_get_settings)]

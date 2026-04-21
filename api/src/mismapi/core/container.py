@@ -10,6 +10,8 @@ read from the container; nothing else should.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -37,13 +39,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, kw_only=True)
 class AppContainer:
     """Owns every app-scoped collaborator and knows how to tear them down."""
 
     settings: Settings
-    engine: Engine
-    session_factory: sessionmaker[Session]
     redis: Redis
     session_store: SessionStore
     upload_client: UploadServiceClient
@@ -52,6 +52,22 @@ class AppContainer:
     oidc_discovery_cache: OIDCDiscoveryCache
     oidc_service: OIDCService
     session_refresher: SessionRefresher
+    _engine: Engine
+    _session_factory: sessionmaker[Session]
+
+    @contextmanager
+    def open_session(self) -> Iterator[Session]:
+        """
+        Open a SQLAlchemy session and yield it.
+
+        The one blessed way to get a `Session`. Commits/rollbacks remain the
+        caller's responsibility; this only owns the session lifecycle.
+        """
+        session = self._session_factory()
+        try:
+            yield session
+        finally:
+            session.close()
 
     @classmethod
     def build(cls, settings: Settings) -> AppContainer:
@@ -106,8 +122,6 @@ class AppContainer:
 
         return cls(
             settings=settings,
-            engine=engine,
-            session_factory=session_factory,
             redis=redis_client,
             session_store=session_store,
             upload_client=upload_client,
@@ -116,6 +130,8 @@ class AppContainer:
             oidc_discovery_cache=oidc_discovery_cache,
             oidc_service=oidc_service,
             session_refresher=session_refresher,
+            _engine=engine,
+            _session_factory=session_factory,
         )
 
     async def prime(self) -> None:
@@ -145,6 +161,6 @@ class AppContainer:
                 logger.exception("container_close_failed component=%s", name)
 
         try:
-            self.engine.dispose()
+            self._engine.dispose()
         except Exception:
             logger.exception("container_close_failed component=engine")
