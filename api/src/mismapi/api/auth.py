@@ -1,7 +1,6 @@
 import logging
 import secrets
 import time
-from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -14,6 +13,7 @@ from mismapi.core.deps import (
     SettingsDep,
 )
 from mismapi.core.errors import APIError
+from mismapi.utils import merge_query_params
 
 logger = logging.getLogger(__name__)
 
@@ -73,10 +73,8 @@ async def callback(
         params: dict[str, str] = {"auth_error": idp_error}
         if desc_trunc:
             params["auth_error_description"] = desc_trunc
-        base = (settings.oidc_post_login_redirect_uri or "").strip() or LOGIN_PATH
-        sep = "&" if "?" in base else "?"
-        redirect_url = f"{base}{sep}{urlencode(params)}"
-        return RedirectResponse(url=redirect_url, status_code=302)
+        base = settings.oidc_post_login_redirect_uri or LOGIN_PATH
+        return RedirectResponse(url=merge_query_params(base, params), status_code=302)
 
     if not code or not state:
         raise APIError(
@@ -115,7 +113,10 @@ async def callback(
         }
     )
 
-    response = RedirectResponse(url=settings.oidc_post_login_redirect_uri, status_code=302)
+    response = RedirectResponse(
+        url=settings.oidc_post_login_redirect_uri or LOGIN_PATH,
+        status_code=302,
+    )
     response.set_cookie(
         key=settings.session_cookie_name,
         value=session_id,

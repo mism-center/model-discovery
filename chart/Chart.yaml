@@ -1,10 +1,11 @@
 apiVersion: v2
 name: model-discovery
 description: >
-  MISM Discovery Platform – Helm chart deploying the Discovery Gateway REST API,
-  Search Service, Upload Service, ACL Server (AUTHo), OIDC (AUTHe),
-  Storage Interface (iRODS / LakeFS), Metadata Store, Blob Storage, ACL DB,
-  and Redis (sessions / cache for the gateway API).
+  MISM Model Discovery Platform – Deploys the Discovery Gateway API (FastAPI),
+  Search Service, Upload Service, Storage Interface (iRODS / LakeFS), a
+  PostgreSQL metadata store, and Redis (sessions / cache for the gateway API). 
+  Includes a Helm-hook Job for Alembic schema migrations, network policies, 
+  HPA autoscaling, and External Secrets Operator integration.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

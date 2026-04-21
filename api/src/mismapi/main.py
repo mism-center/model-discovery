@@ -21,9 +21,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     avoid mutating `os.environ` and bouncing the settings cache (by default,
     `get_settings()` returns the cached instance).
     """
-    resolved_settings = settings if settings is not None else get_settings()
-    configure_root_logger(log_level=resolved_settings.log_level)
-    install_uvicorn_access_formatter(resolved_settings)
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -35,6 +32,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield
         finally:
             await container.aclose()
+
+    resolved_settings = settings if settings is not None else get_settings()
+    configure_root_logger(log_level=resolved_settings.log_level)
+    install_uvicorn_access_formatter(resolved_settings)
 
     app = FastAPI(
         title="MISM Gateway API",
@@ -56,3 +57,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 app: FastAPI = create_app()
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=9999)

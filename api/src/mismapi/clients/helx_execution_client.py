@@ -28,8 +28,7 @@ def _coerce_execution_id(data: dict[str, object]) -> str | None:
 
 class HelxExecutionClient:
     def __init__(self, base_url: str, timeout_seconds: float, stub_upstream: bool = False) -> None:
-        normalized = base_url.rstrip("/")
-        self._client = httpx.AsyncClient(base_url=normalized, timeout=timeout_seconds)
+        self._client = httpx.AsyncClient(base_url=base_url, timeout=timeout_seconds)
         self._stub_upstream = stub_upstream
 
     async def close(self) -> None:

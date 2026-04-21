@@ -17,7 +17,7 @@ async def execute_run(
     helx_client: HelxExecutionClientDep,
     payload: ExecutionStartRequest | None = None,
 ) -> ExecutionStartResponse:
-    if not settings.stub_upstream_services and not settings.helx_exec_platform_base_url.strip():
+    if not settings.stub_upstream_services and not settings.helx_exec_platform_base_url:
         raise APIError(
             status_code=503,
             code="execution_exec_platform_unconfigured",

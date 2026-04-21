@@ -74,6 +74,14 @@ async def require_principal(
     session_refresher: SessionRefresherDep,
     credentials: HTTPAuthorizationCredentials | None = bearer_dependency,
 ) -> AuthenticatedPrincipal:
+    if settings.disable_auth:
+        return AuthenticatedPrincipal(
+            subject="anonymous",
+            issuer="local",
+            audience="local",
+            scopes=set(),
+        )
+
     if credentials is not None and credentials.scheme.lower() == "bearer":
         return await validator.validate_token(credentials.credentials)
 

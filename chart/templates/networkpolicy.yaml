@@ -10,18 +10,9 @@
     Ingress controller  → Gateway
     Gateway             → Search Service
     Gateway             → Upload Service
-    Gateway             → OIDC Service
     Gateway             → Redis (when bundled subchart is enabled)
-    Search Service      → Metadata Store (MongoDB)
+    Gateway / Migrate   → Metadata Store (PostgreSQL)
     Upload Service      → Storage Interface
-    Upload Service      → ACL Server
-    ACL Server          → ACL DB (PostgreSQL)
-    Storage Interface   → Blob Storage (MinIO)
-    OIDC Service        → (no downstream services in this namespace)
-
-  All other intra-namespace connections are denied.
-  Egress is left unrestricted by default (DNS, external iRODS/LakeFS, etc.).
-  Set networkPolicy.restrictEgress: true to also lock down egress.
   ─────────────────────────────────────────────────────────────────────────────
 */}}
 
@@ -33,10 +24,9 @@ metadata:
   labels:
     {{- include "model-discovery.labels" . | nindent 4 }}
 spec:
-  podSelector: {}        # applies to every pod in the namespace
+  podSelector: {}
   policyTypes:
     - Ingress
-  # No ingress rules → all inbound traffic denied unless another policy allows it
 
 ---
 # ── 1. Discovery Gateway – accepts traffic from the Ingress controller only ───
@@ -54,8 +44,6 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # Allow the nginx ingress controller (adjust namespaceSelector if your
-    # controller runs in a different namespace, e.g. ingress-nginx)
     - from:
         - namespaceSelector:
             matchLabels:
@@ -146,68 +134,7 @@ spec:
 {{- end }}
 
 ---
-# ── 4. OIDC Service – accepts traffic from Gateway and Ingress controller ─────
-{{- if .Values.oidcService.enabled }}
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-to-oidc
-  labels:
-    {{- include "model-discovery.labels" . | nindent 4 }}
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/component: oidc-service
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/component: gateway
-      ports:
-        - protocol: TCP
-          port: {{ .Values.oidcService.service.port }}
-    # Allow the ingress controller to reach /auth directly
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressControllerNamespace | default "ingress-nginx" }}
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: ingress-nginx
-      ports:
-        - protocol: TCP
-          port: {{ .Values.oidcService.service.port }}
-{{- end }}
-
----
-# ── 5. ACL Server – accepts traffic from Upload Service only ──────────────────
-{{- if .Values.aclServer.enabled }}
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-upload-to-acl-server
-  labels:
-    {{- include "model-discovery.labels" . | nindent 4 }}
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/component: acl-server
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/component: upload-service
-      ports:
-        - protocol: TCP
-          port: {{ .Values.aclServer.service.port }}
-{{- end }}
-
----
-# ── 6. Storage Interface – accepts traffic from Upload Service only ────────────
+# ── 4. Storage Interface – accepts traffic from Upload Service only ────────────
 {{- if .Values.storageInterface.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -232,12 +159,12 @@ spec:
 {{- end }}
 
 ---
-# ── 7. Metadata Store (MongoDB) – accepts traffic from Search Service only ────
+# ── 5. Metadata Store (PostgreSQL) – accepts traffic from Gateway + Migrate ───
 {{- if .Values.metadataStore.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-search-to-metadata-store
+  name: allow-gateway-to-db
   labels:
     {{- include "model-discovery.labels" . | nindent 4 }}
 spec:
@@ -248,79 +175,22 @@ spec:
     - Ingress
   ingress:
     - from:
+        # Gateway pods
         - podSelector:
             matchLabels:
-              app.kubernetes.io/component: search-service
+              app.kubernetes.io/component: gateway
+        # Migration Job pods
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: migrate
       ports:
         - protocol: TCP
           port: {{ .Values.metadataStore.service.port }}
 {{- end }}
 
----
-# ── 8. ACL DB (PostgreSQL) – accepts traffic from ACL Server only ─────────────
-{{- if .Values.aclDb.enabled }}
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-acl-server-to-acl-db
-  labels:
-    {{- include "model-discovery.labels" . | nindent 4 }}
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/component: acl-db
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/component: acl-server
-      ports:
-        - protocol: TCP
-          port: {{ .Values.aclDb.service.port }}
-{{- end }}
-
----
-# ── 9. Blob Storage (MinIO) – accepts traffic from Storage Interface + Ingress ─
-{{- if .Values.blobStorage.enabled }}
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-to-blob-storage
-  labels:
-    {{- include "model-discovery.labels" . | nindent 4 }}
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/component: blob-storage
-  policyTypes:
-    - Ingress
-  ingress:
-    # S3 API – Storage Interface only
-    - from:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/component: storage-interface
-      ports:
-        - protocol: TCP
-          port: {{ .Values.blobStorage.service.apiPort }}
-    # MinIO console – Ingress controller only
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressControllerNamespace | default "ingress-nginx" }}
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: ingress-nginx
-      ports:
-        - protocol: TCP
-          port: {{ .Values.blobStorage.service.consolePort }}
-{{- end }}
-
 {{- if .Values.networkPolicy.restrictEgress }}
 ---
-# ── 10. Restrict egress – allow only DNS + known intra-namespace targets ──────
+# ── 6. Restrict egress – allow only DNS + known intra-namespace targets ──────
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -332,18 +202,15 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # DNS resolution (kube-dns)
     - ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
           port: 53
-    # All intra-namespace traffic (pods talk to each other's ClusterIP Services)
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: {{ .Release.Namespace }}
-    # kube-apiserver (needed by some operators / sidecars)
     - to:
         - namespaceSelector:
             matchLabels:

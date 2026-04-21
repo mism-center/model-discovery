@@ -1,8 +1,22 @@
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import AfterValidator, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _strip_trailing_slash(value: str) -> str:
+    return value.rstrip("/")
+
+
+BaseUrl = Annotated[str, AfterValidator(_strip_trailing_slash)]
+"""URL used as a prefix for path joining: trailing-slash-stripped.
+
+Do not use for identifiers where trailing slashes are semantically significant
+(e.g., OIDC issuer URLs, OAuth redirect URIs).
+
+Whitespace is stripped globally via ``str_strip_whitespace``.
+"""
 
 
 class Settings(BaseSettings):
@@ -11,14 +25,17 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         populate_by_name=True,
+        str_strip_whitespace=True,
     )
 
     mism_env: str = Field(default="local", alias="MISM_ENV")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    database_url: str = Field(
+        default="postgresql+psycopg://postgres:postgres@localhost/mism",
+        alias="DATABASE_URL",
+    )
 
-    search_service_url: str = Field(default="http://localhost:8100", alias="SEARCH_SERVICE_URL")
-    upload_service_url: str = Field(default="http://localhost:8200", alias="UPLOAD_SERVICE_URL")
-    search_timeout_seconds: float = Field(default=10.0, alias="SEARCH_TIMEOUT_SECONDS")
+    upload_service_url: BaseUrl = Field(default="http://localhost:8200", alias="UPLOAD_SERVICE_URL")
     upload_timeout_seconds: float = Field(default=60.0, alias="UPLOAD_TIMEOUT_SECONDS")
 
     upload_chunk_size_bytes: int = Field(default=5 * 1024 * 1024, alias="UPLOAD_CHUNK_SIZE_BYTES")
@@ -29,7 +46,8 @@ class Settings(BaseSettings):
         alias="UPLOAD_RETRY_TRAILING_BUFFER_BYTES",
     )
 
-    auth_mode: Literal["jwt", "oidc"] = Field(default="oidc", alias="AUTH_MODE")
+    auth_mode: Literal["jwt", "oidc"] = Field(default="jwt", alias="AUTH_MODE")
+    disable_auth: bool = Field(default=False, alias="DISABLE_AUTH")
     stub_upstream_services: bool = Field(default=False, alias="STUB_UPSTREAM_SERVICES")
 
     jwt_issuer: str = Field(default="", alias="JWT_ISSUER")
@@ -50,7 +68,7 @@ class Settings(BaseSettings):
     oidc_post_login_redirect_uri: str = Field(default="", alias="OIDC_POST_LOGIN_REDIRECT_URI")
     oidc_post_logout_redirect_uri: str = Field(default="", alias="OIDC_POST_LOGOUT_REDIRECT_URI")
     oidc_jwt_leeway_seconds: int = Field(default=30, alias="OIDC_JWT_LEEWAY_SECONDS")
-    helx_exec_platform_base_url: str = Field(
+    helx_exec_platform_base_url: BaseUrl = Field(
         default="",
         alias="HELX_EXEC_PLATFORM_BASE_URL",
         description="Base URL of the HeLx Execution Platform (server-to-server calls).",

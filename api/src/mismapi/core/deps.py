@@ -13,13 +13,17 @@ every other provider derives from it.
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from typing import TYPE_CHECKING, Annotated, cast
 
 from fastapi import Depends, Request
+from mism_registry.backends.postgres import PostgresRegistry
+from sqlalchemy.orm import Session, sessionmaker
 
 from mismapi.core.container import AppContainer
 from mismapi.core.errors import APIError
 from mismapi.core.settings import Settings
+from mismapi.services.registry_service import RegistryService
 
 if TYPE_CHECKING:
     from mismapi.auth.oidc_discovery import OIDCDiscoveryCache
@@ -28,7 +32,6 @@ if TYPE_CHECKING:
     from mismapi.auth.session_refresh import SessionRefresher
     from mismapi.auth.validator import AuthValidator, OIDCValidator
     from mismapi.clients.helx_execution_client import HelxExecutionClient
-    from mismapi.clients.search_client import SearchServiceClient
     from mismapi.clients.upload_client import UploadServiceClient
 
 
@@ -82,16 +85,33 @@ def _get_session_refresher(container: ContainerDep) -> SessionRefresher:
     return container.session_refresher
 
 
-def _get_search_client(container: ContainerDep) -> SearchServiceClient:
-    return container.search_client
-
-
 def _get_upload_client(container: ContainerDep) -> UploadServiceClient:
     return container.upload_client
 
 
 def _get_helx_execution_client(container: ContainerDep) -> HelxExecutionClient:
     return container.helx_execution_client
+
+
+def _get_session_factory(container: ContainerDep) -> sessionmaker[Session]:
+    return container.session_factory
+
+
+def get_registry_service(
+    factory: Annotated[sessionmaker[Session], Depends(_get_session_factory)],
+) -> Generator[RegistryService, None, None]:
+    """
+    Open a per-request SQLAlchemy session and yield a RegistryService bound to it.
+
+    The session is always closed on teardown; commits/rollbacks are the service's
+    responsibility. Exposed at module scope so tests can target it via
+    `app.dependency_overrides`.
+    """
+    session = factory()
+    try:
+        yield RegistryService(PostgresRegistry(session), session)
+    finally:
+        session.close()
 
 
 SettingsDep = Annotated[Settings, Depends(_get_settings)]
@@ -101,6 +121,6 @@ OIDCValidatorDep = Annotated["OIDCValidator", Depends(_get_oidc_validator)]
 OIDCDiscoveryCacheDep = Annotated["OIDCDiscoveryCache", Depends(_get_oidc_discovery_cache)]
 OIDCServiceDep = Annotated["OIDCService", Depends(_get_oidc_service)]
 SessionRefresherDep = Annotated["SessionRefresher", Depends(_get_session_refresher)]
-SearchClientDep = Annotated["SearchServiceClient", Depends(_get_search_client)]
 UploadClientDep = Annotated["UploadServiceClient", Depends(_get_upload_client)]
 HelxExecutionClientDep = Annotated["HelxExecutionClient", Depends(_get_helx_execution_client)]
+RegistryServiceDep = Annotated[RegistryService, Depends(get_registry_service)]

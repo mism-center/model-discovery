@@ -51,10 +51,10 @@ def _ensure_oidc_config(settings: Settings) -> None:
 
     for attribute_name, env_name in _REQUIRED_OIDC_FIELDS:
         value = getattr(settings, attribute_name, "")
-        if not isinstance(value, str) or not value.strip():
+        if not isinstance(value, str) or not value:
             missing_env_names.append(env_name)
 
-    if not settings.oidc_issuer_url.strip() and not settings.oidc_discovery_url.strip():
+    if not settings.oidc_issuer_url and not settings.oidc_discovery_url:
         missing_env_names.append("OIDC_ISSUER_URL or OIDC_DISCOVERY_URL")
 
     if not missing_env_names:
