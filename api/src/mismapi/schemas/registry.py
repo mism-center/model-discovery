@@ -23,6 +23,8 @@ class RegisterModelResponse(BaseModel):
     execution_type: str | None = None
     version: str = ""
     status: str
+    owner: str = ""
+    description: str = ""
     created_at: datetime
 
 

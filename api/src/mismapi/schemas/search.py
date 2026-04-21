@@ -20,7 +20,6 @@ class ModelListItem(BaseModel):
 
 
 class ModelListResponse(BaseModel):
-    total: int = Field(ge=0)
     results: list[ModelListItem]
 
 

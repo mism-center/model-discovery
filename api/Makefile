@@ -43,16 +43,30 @@ run:
 dev:
 	$(UV) run uvicorn --app-dir src $(APP) --host 0.0.0.0 --port $(PORT) --reload
 
-## Run the test suite (pytest)
+## Run the unit tests (pytest)
 test-unit:
 	$(UV) run pytest tests/unit/*.py -v
 
-## Run the integration test suite (pytest)
+## Run the integration tests (pytest)
 test-integration:
 	$(UV) run pytest tests/integration/*.py -v
 
-## Run the test suite (pytest)
-test: test-unit test-integration
+functional-up:
+	docker compose -f ../docker-compose.test.yaml up -d --build --wait
+
+functional-down:
+	docker compose -f ../docker-compose.test.yaml down -v
+
+## Run the functional tests (pytest)
+test-functional: functional-up
+	$(UV) run pytest tests/functional/*.py -m integration -v
+	$(MAKE) functional-down
+
+## Run the test suite (including functional tests)
+test: test-unit test-integration test-functional
+
+## Run the test suite for CI
+test-ci: test-unit test-integration
 
 ## Run Ruff linter
 lint:
@@ -74,11 +88,10 @@ typecheck:
 clean:
 	rm -rf .pytest_cache .ruff_cache .mypy_cache
 
-integration-up:
-	docker compose -f ../docker-compose.test.yaml up -d --build --wait
+
 
 integration-test: integration-up
-	$(UV) run pytest tests/test_integration.py -m integration -v
+	
 
 integration-down:
 	docker compose -f ../docker-compose.test.yaml down -v

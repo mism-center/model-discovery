@@ -8,8 +8,7 @@ from mismapi.clients.upload_client import UploadSession
 from mismapi.core.deps import _get_upload_client
 from mismapi.core.settings import Settings
 from mismapi.main import create_app
-
-from .conftest import make_settings
+from tests.conftest import make_settings
 
 TEST_MODEL_ID = "AbC123xYz890"
 CREATED_MODEL_ID = "Cr8ModelID12"

@@ -94,16 +94,15 @@ async def list_datasets(
     offset: int = Query(default=0, ge=0),
 ) -> ModelListResponse:
 
-    resources = service.list_datasets(
+    page = service.list_datasets(
         name_contains=name,
         owner=owner,
         tags=tags,
         organisms=organisms,
         scales=scales,
+        limit=limit,
+        offset=offset,
     )
-
-    total = len(resources)
-    page = resources[offset : offset + limit]
 
     results = [
         ModelListItem(
@@ -121,4 +120,4 @@ async def list_datasets(
         for r in page
     ]
 
-    return ModelListResponse(total=total, results=results)
+    return ModelListResponse(results=results)

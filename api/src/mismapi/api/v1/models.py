@@ -30,16 +30,15 @@ async def list_models(
     offset: int = Query(default=0, ge=0),
 ) -> ModelListResponse:
 
-    resources = service.list_models(
+    page = service.list_models(
         name_contains=name,
         owner=owner,
         tags=tags,
         organisms=organisms,
         scales=scales,
+        limit=limit,
+        offset=offset,
     )
-
-    total = len(resources)
-    page = resources[offset : offset + limit]
 
     results = [
         ModelListItem(
@@ -57,7 +56,7 @@ async def list_models(
         for r in page
     ]
 
-    return ModelListResponse(total=total, results=results)
+    return ModelListResponse(results=results)
 
 
 @router.post("/models", response_model=RegisterModelResponse, status_code=201)
@@ -86,6 +85,8 @@ async def create_model(
         execution_type=resource.execution_type.value if resource.execution_type else None,
         version=resource.version,
         status=resource.status.value,
+        owner=resource.owner,
+        description=resource.description,
         created_at=resource.created_at,
     )
 
@@ -118,6 +119,8 @@ async def update_model(
         execution_type=resource.execution_type.value if resource.execution_type else None,
         version=resource.version,
         status=resource.status.value,
+        owner=resource.owner,
+        description=resource.description,
         created_at=resource.created_at,
     )
 
