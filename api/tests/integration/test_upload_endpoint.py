@@ -8,19 +8,10 @@ from mismapi.clients.upload_client import UploadSession
 from mismapi.core.deps import _get_upload_client
 from mismapi.core.settings import Settings
 from mismapi.main import create_app
-from tests.conftest import make_settings
+from tests.conftest import minimal_oidc_settings
 
 TEST_MODEL_ID = "AbC123xYz890"
 CREATED_MODEL_ID = "Cr8ModelID12"
-
-
-def _test_settings(**overrides: Any) -> Settings:
-    base: dict[str, Any] = {
-        "AUTH_MODE": "oidc",
-        "UPLOAD_RETRY_BACKOFF_SECONDS": 0.0,
-    }
-    base.update(overrides)
-    return make_settings(**base)
 
 
 async def _allow_principal() -> AuthenticatedPrincipal:
@@ -105,7 +96,7 @@ class MultiPartRetryUploadClient:
 
 
 def test_upload_retries_chunk_after_transient_error() -> None:
-    app = create_app(settings=_test_settings())
+    app = create_app(settings=minimal_oidc_settings())
     fake_upload_client = FakeUploadClient()
     app.dependency_overrides[require_principal] = _allow_principal
     app.dependency_overrides[_get_upload_client] = lambda: fake_upload_client
@@ -134,7 +125,7 @@ def test_upload_retries_chunk_after_transient_error() -> None:
 
 
 def test_upload_retry_retries_only_failing_part() -> None:
-    app = create_app(settings=_test_settings(UPLOAD_CHUNK_SIZE_BYTES=4))
+    app = create_app(settings=minimal_oidc_settings(UPLOAD_CHUNK_SIZE_BYTES=4))
     fake_upload_client = MultiPartRetryUploadClient()
     app.dependency_overrides[require_principal] = _allow_principal
     app.dependency_overrides[_get_upload_client] = lambda: fake_upload_client
