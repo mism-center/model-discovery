@@ -512,6 +512,7 @@ def test_search_response_shape(api: httpx.Client) -> None:
     item = r.json()["results"][0]
 
     expected_keys = {
+        # Identity & description
         "id",
         "name",
         "resource_type",
@@ -519,17 +520,302 @@ def test_search_response_shape(api: httpx.Client) -> None:
         "description",
         "version",
         "status",
+        # Authorship & attribution
         "owner",
-        "execution_type",
+        "authors",
+        "organization",
+        "contact_email",
+        "publications",
+        "funding",
+        # Scientific context
         "organisms",
         "domains",
         "modeling_scales",
+        "date_published",
+        # Location & integrity
         "format_tags",
+        "digest_sha256",
+        "size_bytes",
+        "external_ids",
+        "license",
+        # Execution
+        "execution_type",
+        "execution_ref",
+        "io_spec",
+        # System
+        "metadata",
         "created_at",
         "updated_at",
         "score",
     }
     assert set(item.keys()) == expected_keys
+
+
+def test_search_response_new_fields_default_values(api: httpx.Client) -> None:
+    """New fields return correct defaults when not supplied at creation."""
+    fixtures = _seed_search_fixtures(api)
+
+    r = api.post(
+        "/api/v1/search",
+        json={"filters": [{"field": "owner", "op": "eq", "value": fixtures["owner"]}]},
+    )
+    assert r.status_code == 200
+    item = r.json()["results"][0]
+
+    assert item["authors"] == []
+    assert item["publications"] == []
+    assert item["funding"] == []
+    assert item["organization"] == ""
+    assert item["contact_email"] == ""
+    assert item["organisms"] == []
+    assert item["domains"] == []
+    assert item["modeling_scales"] == []
+    assert item["date_published"] is None
+    assert item["digest_sha256"] == ""
+    assert item["size_bytes"] is None
+    assert item["external_ids"] == {}
+    assert item["license"] == ""
+    assert item["io_spec"] is None
+    assert isinstance(item["metadata"], dict)
+
+
+def test_create_model_with_full_fields_roundtrip(api: httpx.Client) -> None:
+    """Create model with all new fields and verify they appear in the response."""
+    name = _unique("full-model")
+    r = api.post(
+        "/api/v1/models",
+        json={
+            "name": name,
+            "location_uri": "https://example.com/model",
+            "execution_type": "docker",
+            "description": "Full-field model",
+            "authors": [
+                {
+                    "name": "Jane Doe",
+                    "orcid": "0000-0001-2345-6789",
+                    "affiliation": "RENCI",
+                    "role": "developer",
+                }
+            ],
+            "organization": "RENCI",
+            "contact_email": "jane@renci.org",
+            "publications": [
+                {"title": "A paper", "doi": "10.1234/test", "url": "", "citation": ""}
+            ],
+            "funding": ["NIH R01", "NSF 2345"],
+            "modeling_scales": ["cellular", "tissue"],
+            "organisms": ["human", "mouse"],
+            "domains": ["cardiology"],
+            "date_published": "2024-03-15",
+            "format_tags": ["onnx"],
+            "digest_sha256": "abc123",
+            "size_bytes": 4096,
+            "external_ids": {"biomodels": "MODEL001"},
+            "license": "MIT",
+            "io_spec": {
+                "inputs": [
+                    {
+                        "name": "voltage",
+                        "tags": ["scalar"],
+                        "required": True,
+                        "description": "Membrane voltage",
+                    }
+                ],
+                "outputs": [
+                    {
+                        "name": "current",
+                        "tags": ["scalar"],
+                        "required": True,
+                        "description": "Ion current",
+                    }
+                ],
+            },
+        },
+    )
+    assert r.status_code == 201
+    m = r.json()
+
+    assert m["authors"] == [
+        {
+            "name": "Jane Doe",
+            "orcid": "0000-0001-2345-6789",
+            "affiliation": "RENCI",
+            "role": "developer",
+        }
+    ]
+    assert m["organization"] == "RENCI"
+    assert m["contact_email"] == "jane@renci.org"
+    assert m["publications"] == [
+        {"title": "A paper", "doi": "10.1234/test", "url": "", "citation": ""}
+    ]
+    assert m["funding"] == ["NIH R01", "NSF 2345"]
+    assert set(m["modeling_scales"]) == {"cellular", "tissue"}
+    assert set(m["organisms"]) == {"human", "mouse"}
+    assert m["domains"] == ["cardiology"]
+    assert m["date_published"] == "2024-03-15"
+    assert "onnx" in m["format_tags"]
+    assert m["digest_sha256"] == "abc123"
+    assert m["size_bytes"] == 4096
+    assert m["external_ids"] == {"biomodels": "MODEL001"}
+    assert m["license"] == "MIT"
+    assert m["io_spec"]["inputs"][0]["name"] == "voltage"
+    assert m["io_spec"]["outputs"][0]["name"] == "current"
+    assert "updated_at" in m
+
+
+def test_create_dataset_with_full_fields_roundtrip(api: httpx.Client) -> None:
+    """Create dataset with all new fields and verify they appear in the response."""
+    name = _unique("full-dataset")
+    r = api.post(
+        "/api/v1/datasets",
+        json={
+            "name": name,
+            "location_uri": "s3://bucket/data.csv",
+            "description": "Full-field dataset",
+            "authors": [
+                {"name": "Bob Smith", "orcid": "", "affiliation": "UNC", "role": "curator"}
+            ],
+            "organization": "UNC",
+            "contact_email": "bob@unc.edu",
+            "publications": [
+                {"title": "Dataset paper", "doi": "10.5678/data", "url": "", "citation": ""}
+            ],
+            "funding": ["NIH P41"],
+            "modeling_scales": ["organ"],
+            "organisms": ["rat"],
+            "domains": ["neuroscience"],
+            "date_published": "2023-11-01",
+            "format_tags": ["csv", "hdf5"],
+            "digest_sha256": "def456",
+            "size_bytes": 1048576,
+            "external_ids": {"zenodo": "123456"},
+            "license": "CC-BY-4.0",
+        },
+    )
+    assert r.status_code == 201
+    d = r.json()
+
+    assert d["authors"] == [
+        {"name": "Bob Smith", "orcid": "", "affiliation": "UNC", "role": "curator"}
+    ]
+    assert d["organization"] == "UNC"
+    assert d["contact_email"] == "bob@unc.edu"
+    assert d["publications"] == [
+        {"title": "Dataset paper", "doi": "10.5678/data", "url": "", "citation": ""}
+    ]
+    assert d["funding"] == ["NIH P41"]
+    assert d["organisms"] == ["rat"]
+    assert d["domains"] == ["neuroscience"]
+    assert d["date_published"] == "2023-11-01"
+    assert d["digest_sha256"] == "def456"
+    assert d["size_bytes"] == 1048576
+    assert d["external_ids"] == {"zenodo": "123456"}
+    assert d["license"] == "CC-BY-4.0"
+    assert "updated_at" in d
+
+
+def test_update_model_new_fields(api: httpx.Client) -> None:
+    """PUT /models/{id} updates new fields correctly."""
+    name = _unique("upd-model-new")
+    r = api.post(
+        "/api/v1/models",
+        json={"name": name, "location_uri": "https://example.com/m", "execution_type": "python"},
+    )
+    assert r.status_code == 201
+    model_id = r.json()["id"]
+
+    r = api.put(
+        f"/api/v1/models/{model_id}",
+        json={
+            "organization": "Updated Org",
+            "contact_email": "new@org.com",
+            "organisms": ["zebrafish"],
+            "license": "Apache-2.0",
+            "digest_sha256": "newdigest",
+        },
+    )
+    assert r.status_code == 200
+    m = r.json()
+    assert m["organization"] == "Updated Org"
+    assert m["contact_email"] == "new@org.com"
+    assert m["organisms"] == ["zebrafish"]
+    assert m["license"] == "Apache-2.0"
+    assert m["digest_sha256"] == "newdigest"
+
+
+def test_update_dataset_new_fields(api: httpx.Client) -> None:
+    """PUT /datasets/{id} updates new fields correctly."""
+    name = _unique("upd-dataset-new")
+    r = api.post(
+        "/api/v1/datasets",
+        json={"name": name, "location_uri": "s3://bucket/f.csv"},
+    )
+    assert r.status_code == 201
+    dataset_id = r.json()["id"]
+
+    r = api.put(
+        f"/api/v1/datasets/{dataset_id}",
+        json={
+            "authors": [{"name": "Alice", "orcid": "", "affiliation": "MIT", "role": "author"}],
+            "funding": ["DOE"],
+            "modeling_scales": ["population"],
+            "size_bytes": 512,
+        },
+    )
+    assert r.status_code == 200
+    d = r.json()
+    assert d["authors"] == [{"name": "Alice", "orcid": "", "affiliation": "MIT", "role": "author"}]
+    assert d["funding"] == ["DOE"]
+    assert d["modeling_scales"] == ["population"]
+    assert d["size_bytes"] == 512
+
+
+def test_list_models_response_includes_new_fields(api: httpx.Client) -> None:
+    """GET /models results include all new Resource fields."""
+    name = _unique("list-model-new")
+    r = api.post(
+        "/api/v1/models",
+        json={
+            "name": name,
+            "location_uri": "https://example.com/m",
+            "execution_type": "docker",
+            "organization": "TestOrg",
+            "organisms": ["human"],
+        },
+    )
+    assert r.status_code == 201
+
+    r = api.get("/api/v1/models", params={"name": name})
+    assert r.status_code == 200
+    item = r.json()["results"][0]
+    assert item["organization"] == "TestOrg"
+    assert item["organisms"] == ["human"]
+    assert "authors" in item
+    assert "updated_at" in item
+    assert "io_spec" in item
+
+
+def test_list_datasets_response_includes_new_fields(api: httpx.Client) -> None:
+    """GET /datasets results include all new Resource fields."""
+    name = _unique("list-dataset-new")
+    r = api.post(
+        "/api/v1/datasets",
+        json={
+            "name": name,
+            "location_uri": "s3://bucket/f.csv",
+            "license": "MIT",
+            "size_bytes": 100,
+        },
+    )
+    assert r.status_code == 201
+
+    r = api.get("/api/v1/datasets", params={"name": name})
+    assert r.status_code == 200
+    item = r.json()["results"][0]
+    assert item["license"] == "MIT"
+    assert item["size_bytes"] == 100
+    assert "authors" in item
+    assert "updated_at" in item
 
 
 def test_search_invalid_filter_field_returns_400(api: httpx.Client) -> None:

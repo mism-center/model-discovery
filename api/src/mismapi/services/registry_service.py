@@ -1,4 +1,5 @@
 import logging
+from datetime import date
 from typing import Any
 
 from mism_registry import (
@@ -26,6 +27,7 @@ from mism_registry.search import (
     SearchQuery,
     SearchResult,
 )
+from mism_registry.types import Author, IOSpec, Publication
 from sqlalchemy.orm import Session
 
 from mismapi.auth.base import AuthenticatedPrincipal
@@ -51,10 +53,25 @@ class RegistryService:
         location_uri: str,
         execution_type: ExecutionType,
         execution_ref: str = "",
+        io_spec: IOSpec | None = None,
         description: str = "",
         version: str = "",
+        format_tags: list[str] | None = None,
+        digest_sha256: str = "",
+        size_bytes: int | None = None,
+        external_ids: dict[str, str] | None = None,
+        license: str = "",
         owner: str = "",
         metadata: dict[str, Any] | None = None,
+        authors: list[Author] | None = None,
+        organization: str = "",
+        contact_email: str = "",
+        publications: list[Publication] | None = None,
+        funding: list[str] | None = None,
+        modeling_scales: list[str] | None = None,
+        organisms: list[str] | None = None,
+        domains: list[str] | None = None,
+        date_published: date | None = None,
     ) -> Resource:
         try:
             resource = register_model(
@@ -64,9 +81,24 @@ class RegistryService:
                 execution_type=execution_type,
                 description=description,
                 version=version,
+                format_tags=format_tags or [],
+                digest_sha256=digest_sha256,
+                size_bytes=size_bytes,
+                external_ids=external_ids or {},
+                license=license,
                 owner=owner or principal.subject,
                 metadata=metadata or {},
                 execution_ref=execution_ref,
+                io_spec=io_spec,
+                authors=authors or [],
+                organization=organization,
+                contact_email=contact_email,
+                publications=publications or [],
+                funding=funding or [],
+                modeling_scales=modeling_scales or [],
+                organisms=organisms or [],
+                domains=domains or [],
+                date_published=date_published,
             )
             # FUTURE: fga.write_tuple(user=principal.subject,
             #   relation="owner", object=f"model:{resource.id}")
@@ -90,7 +122,22 @@ class RegistryService:
         location_uri: str | None = None,
         execution_type: ExecutionType | None = None,
         execution_ref: str | None = None,
+        io_spec: IOSpec | None = None,
+        format_tags: list[str] | None = None,
+        digest_sha256: str | None = None,
+        size_bytes: int | None = None,
+        external_ids: dict[str, str] | None = None,
+        license: str | None = None,
         metadata: dict[str, Any] | None = None,
+        authors: list[Author] | None = None,
+        organization: str | None = None,
+        contact_email: str | None = None,
+        publications: list[Publication] | None = None,
+        funding: list[str] | None = None,
+        modeling_scales: list[str] | None = None,
+        organisms: list[str] | None = None,
+        domains: list[str] | None = None,
+        date_published: date | None = None,
     ) -> Resource:
         try:
             resource = self._registry.get_resource(model_id)
@@ -114,8 +161,38 @@ class RegistryService:
             resource.execution_type = execution_type
         if execution_ref is not None:
             resource.execution_ref = execution_ref
+        if io_spec is not None:
+            resource.io_spec = io_spec
+        if format_tags is not None:
+            resource.format_tags = format_tags
+        if digest_sha256 is not None:
+            resource.digest_sha256 = digest_sha256
+        if size_bytes is not None:
+            resource.size_bytes = size_bytes
+        if external_ids is not None:
+            resource.external_ids = external_ids
+        if license is not None:
+            resource.license = license
         if metadata is not None:
             resource.metadata = metadata
+        if authors is not None:
+            resource.authors = authors
+        if organization is not None:
+            resource.organization = organization
+        if contact_email is not None:
+            resource.contact_email = contact_email
+        if publications is not None:
+            resource.publications = publications
+        if funding is not None:
+            resource.funding = funding
+        if modeling_scales is not None:
+            resource.modeling_scales = modeling_scales
+        if organisms is not None:
+            resource.organisms = organisms
+        if domains is not None:
+            resource.domains = domains
+        if date_published is not None:
+            resource.date_published = date_published
 
         try:
             updated = self._registry.update_resource(resource)
@@ -256,7 +333,20 @@ class RegistryService:
         version: str = "",
         owner: str = "",
         format_tags: list[str] | None = None,
+        digest_sha256: str = "",
+        size_bytes: int | None = None,
+        external_ids: dict[str, str] | None = None,
+        license: str = "",
         metadata: dict[str, Any] | None = None,
+        authors: list[Author] | None = None,
+        organization: str = "",
+        contact_email: str = "",
+        publications: list[Publication] | None = None,
+        funding: list[str] | None = None,
+        modeling_scales: list[str] | None = None,
+        organisms: list[str] | None = None,
+        domains: list[str] | None = None,
+        date_published: date | None = None,
     ) -> Resource:
         try:
             resource = register_dataset(
@@ -267,7 +357,20 @@ class RegistryService:
                 version=version,
                 owner=owner or principal.subject,
                 format_tags=format_tags or [],
+                digest_sha256=digest_sha256,
+                size_bytes=size_bytes,
+                external_ids=external_ids or {},
+                license=license,
                 metadata=metadata or {},
+                authors=authors or [],
+                organization=organization,
+                contact_email=contact_email,
+                publications=publications or [],
+                funding=funding or [],
+                modeling_scales=modeling_scales or [],
+                organisms=organisms or [],
+                domains=domains or [],
+                date_published=date_published,
             )
             # FUTURE: fga.write_tuple(user=principal.subject,
             #   relation="owner", object=f"dataset:{resource.id}")
@@ -292,7 +395,20 @@ class RegistryService:
         owner: str | None = None,
         location_uri: str | None = None,
         format_tags: list[str] | None = None,
+        digest_sha256: str | None = None,
+        size_bytes: int | None = None,
+        external_ids: dict[str, str] | None = None,
+        license: str | None = None,
         metadata: dict[str, Any] | None = None,
+        authors: list[Author] | None = None,
+        organization: str | None = None,
+        contact_email: str | None = None,
+        publications: list[Publication] | None = None,
+        funding: list[str] | None = None,
+        modeling_scales: list[str] | None = None,
+        organisms: list[str] | None = None,
+        domains: list[str] | None = None,
+        date_published: date | None = None,
     ) -> Resource:
         try:
             resource = self._registry.get_resource(dataset_id)
@@ -314,8 +430,34 @@ class RegistryService:
             resource.location_uri = location_uri
         if format_tags is not None:
             resource.format_tags = format_tags
+        if digest_sha256 is not None:
+            resource.digest_sha256 = digest_sha256
+        if size_bytes is not None:
+            resource.size_bytes = size_bytes
+        if external_ids is not None:
+            resource.external_ids = external_ids
+        if license is not None:
+            resource.license = license
         if metadata is not None:
             resource.metadata = metadata
+        if authors is not None:
+            resource.authors = authors
+        if organization is not None:
+            resource.organization = organization
+        if contact_email is not None:
+            resource.contact_email = contact_email
+        if publications is not None:
+            resource.publications = publications
+        if funding is not None:
+            resource.funding = funding
+        if modeling_scales is not None:
+            resource.modeling_scales = modeling_scales
+        if organisms is not None:
+            resource.organisms = organisms
+        if domains is not None:
+            resource.domains = domains
+        if date_published is not None:
+            resource.date_published = date_published
 
         try:
             updated = self._registry.update_resource(resource)

@@ -8,6 +8,10 @@ from mismapi.schemas.registry import (
     RegisterDatasetRequest,
     RegisterDatasetResponse,
     UpdateDatasetRequest,
+    author_from_dto,
+    author_to_dto,
+    pub_from_dto,
+    pub_to_dto,
 )
 from mismapi.schemas.search import ModelListItem, ModelListResponse
 from mismapi.services.registry_service import RegistryService
@@ -15,6 +19,71 @@ from mismapi.services.registry_service import RegistryService
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _dataset_list_item(r) -> ModelListItem:
+    from mismapi.schemas.registry import io_spec_to_dto
+
+    return ModelListItem(
+        id=r.id,
+        name=r.name,
+        resource_type=r.resource_type.value,
+        location_uri=r.location_uri,
+        description=r.description,
+        version=r.version,
+        status=r.status.value,
+        owner=r.owner,
+        execution_type=r.execution_type.value if r.execution_type else None,
+        execution_ref=r.execution_ref,
+        io_spec=io_spec_to_dto(r.io_spec) if r.io_spec else None,
+        format_tags=list(r.format_tags),
+        authors=[author_to_dto(a) for a in r.authors],
+        organization=r.organization,
+        contact_email=r.contact_email,
+        publications=[pub_to_dto(p) for p in r.publications],
+        funding=list(r.funding),
+        modeling_scales=list(r.modeling_scales),
+        organisms=list(r.organisms),
+        domains=list(r.domains),
+        date_published=r.date_published,
+        digest_sha256=r.digest_sha256,
+        size_bytes=r.size_bytes,
+        external_ids=dict(r.external_ids),
+        license=r.license,
+        metadata=dict(r.metadata),
+        created_at=r.created_at,
+        updated_at=r.updated_at,
+    )
+
+
+def _dataset_response(r) -> RegisterDatasetResponse:
+    return RegisterDatasetResponse(
+        id=r.id,
+        name=r.name,
+        resource_type=r.resource_type.value,
+        location_uri=r.location_uri,
+        description=r.description,
+        version=r.version,
+        status=r.status.value,
+        owner=r.owner,
+        format_tags=list(r.format_tags),
+        authors=[author_to_dto(a) for a in r.authors],
+        organization=r.organization,
+        contact_email=r.contact_email,
+        publications=[pub_to_dto(p) for p in r.publications],
+        funding=list(r.funding),
+        modeling_scales=list(r.modeling_scales),
+        organisms=list(r.organisms),
+        domains=list(r.domains),
+        date_published=r.date_published,
+        digest_sha256=r.digest_sha256,
+        size_bytes=r.size_bytes,
+        external_ids=dict(r.external_ids),
+        license=r.license,
+        metadata=dict(r.metadata),
+        created_at=r.created_at,
+        updated_at=r.updated_at,
+    )
 
 
 @router.post("/datasets", response_model=RegisterDatasetResponse, status_code=201)
@@ -32,21 +101,23 @@ async def create_dataset(
         version=payload.version,
         owner=payload.owner,
         format_tags=payload.format_tags,
+        digest_sha256=payload.digest_sha256,
+        size_bytes=payload.size_bytes,
+        external_ids=payload.external_ids,
+        license=payload.license,
         metadata=payload.metadata,
+        authors=[author_from_dto(a) for a in payload.authors],
+        organization=payload.organization,
+        contact_email=payload.contact_email,
+        publications=[pub_from_dto(p) for p in payload.publications],
+        funding=payload.funding,
+        modeling_scales=payload.modeling_scales,
+        organisms=payload.organisms,
+        domains=payload.domains,
+        date_published=payload.date_published,
     )
 
-    return RegisterDatasetResponse(
-        id=resource.id,
-        name=resource.name,
-        resource_type=resource.resource_type.value,
-        location_uri=resource.location_uri,
-        description=resource.description,
-        version=resource.version,
-        status=resource.status.value,
-        owner=resource.owner,
-        format_tags=list(resource.format_tags),
-        created_at=resource.created_at,
-    )
+    return _dataset_response(resource)
 
 
 @router.put("/datasets/{dataset_id}", response_model=RegisterDatasetResponse)
@@ -66,21 +137,27 @@ async def update_dataset(
         owner=payload.owner,
         location_uri=payload.location_uri,
         format_tags=payload.format_tags,
+        digest_sha256=payload.digest_sha256,
+        size_bytes=payload.size_bytes,
+        external_ids=payload.external_ids,
+        license=payload.license,
         metadata=payload.metadata,
+        authors=[author_from_dto(a) for a in payload.authors]
+        if payload.authors is not None
+        else None,
+        organization=payload.organization,
+        contact_email=payload.contact_email,
+        publications=[pub_from_dto(p) for p in payload.publications]
+        if payload.publications is not None
+        else None,
+        funding=payload.funding,
+        modeling_scales=payload.modeling_scales,
+        organisms=payload.organisms,
+        domains=payload.domains,
+        date_published=payload.date_published,
     )
 
-    return RegisterDatasetResponse(
-        id=resource.id,
-        name=resource.name,
-        resource_type=resource.resource_type.value,
-        location_uri=resource.location_uri,
-        description=resource.description,
-        version=resource.version,
-        status=resource.status.value,
-        owner=resource.owner,
-        format_tags=list(resource.format_tags),
-        created_at=resource.created_at,
-    )
+    return _dataset_response(resource)
 
 
 @router.get("/datasets", response_model=ModelListResponse)
@@ -106,20 +183,4 @@ async def list_datasets(
     total = len(resources)
     page = resources[offset : offset + limit]
 
-    results = [
-        ModelListItem(
-            id=r.id,
-            name=r.name,
-            resource_type=r.resource_type.value,
-            location_uri=r.location_uri,
-            execution_type=r.execution_type.value if r.execution_type else None,
-            version=r.version,
-            status=r.status.value,
-            owner=r.owner,
-            description=r.description,
-            created_at=r.created_at,
-        )
-        for r in page
-    ]
-
-    return ModelListResponse(total=total, results=results)
+    return ModelListResponse(total=total, results=[_dataset_list_item(r) for r in page])

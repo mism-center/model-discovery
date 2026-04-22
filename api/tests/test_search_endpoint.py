@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 from mism_registry.enums import ExecutionType, ResourceStatus, ResourceType
 from mism_registry.resource import Resource
+from mism_registry.search import SearchResult
 
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
 from mismapi.dependencies.registry import get_registry_service
@@ -140,3 +141,166 @@ def test_list_models_response_shape() -> None:
     assert item["owner"] == "user-1"
     assert item["description"] == "A test model"
     assert "created_at" in item
+
+
+# ── POST /search — new fields ─────────────────────────────────────
+
+
+def _make_search_result(resources: list[Resource]) -> SearchResult:
+    return SearchResult(resources=resources, total=len(resources), scores=None, aggs={})
+
+
+def test_search_result_includes_all_new_fields() -> None:
+    """POST /search result items expose all Resource fields."""
+    service = MagicMock(spec=RegistryService)
+    service.search.return_value = _make_search_result([_make_resource()])
+
+    client = _make_app_with_service(service)
+    response = client.post("/api/v1/search", json={})
+
+    assert response.status_code == 200
+    item = response.json()["results"][0]
+
+    # New attribution fields
+    assert "authors" in item
+    assert "organization" in item
+    assert "contact_email" in item
+    assert "publications" in item
+    assert "funding" in item
+    # New scientific fields
+    assert "modeling_scales" in item
+    assert "domains" in item
+    assert "date_published" in item
+    # New integrity fields
+    assert "digest_sha256" in item
+    assert "size_bytes" in item
+    assert "external_ids" in item
+    assert "license" in item
+    # New execution fields
+    assert "execution_ref" in item
+    assert "io_spec" in item
+    # System
+    assert "metadata" in item
+    assert "updated_at" in item
+
+
+def test_search_result_new_fields_default_correctly() -> None:
+    """New fields default to empty/None when not set on Resource."""
+    service = MagicMock(spec=RegistryService)
+    service.search.return_value = _make_search_result([_make_resource()])
+
+    client = _make_app_with_service(service)
+    response = client.post("/api/v1/search", json={})
+
+    assert response.status_code == 200
+    item = response.json()["results"][0]
+
+    assert item["authors"] == []
+    assert item["publications"] == []
+    assert item["funding"] == []
+    assert item["organization"] == ""
+    assert item["contact_email"] == ""
+    assert item["modeling_scales"] == []
+    assert item["domains"] == []
+    assert item["date_published"] is None
+    assert item["digest_sha256"] == ""
+    assert item["size_bytes"] is None
+    assert item["external_ids"] == {}
+    assert item["license"] == ""
+    assert item["execution_ref"] == ""
+    assert item["io_spec"] is None
+    assert item["metadata"] == {}
+
+
+def test_search_result_with_rich_resource() -> None:
+    """POST /search correctly serializes a fully-populated Resource."""
+    from mism_registry.types import Author, IOSlot, IOSpec, Publication
+
+    resource = Resource(
+        id="r-rich",
+        name="Rich Model",
+        resource_type=ResourceType.MODEL,
+        location_uri="https://example.com/rich",
+        execution_type=ExecutionType.DOCKER,
+        execution_ref="docker://rich:1",
+        description="Fully populated",
+        version="2.0",
+        status=ResourceStatus.ACTIVE,
+        owner="user-1",
+        authors=[
+            Author(name="Jane", orcid="0000-0001-2345-6789", affiliation="RENCI", role="lead")
+        ],
+        organization="RENCI",
+        contact_email="jane@renci.org",
+        publications=[Publication(title="Paper", doi="10.1/x")],
+        funding=["NIH"],
+        modeling_scales=["cellular"],
+        organisms=["human"],
+        domains=["cardiology"],
+        io_spec=IOSpec(
+            inputs=(IOSlot(name="v", tags=("scalar",)),),
+            outputs=(IOSlot(name="i"),),
+        ),
+        digest_sha256="abc",
+        size_bytes=1024,
+        external_ids={"biomodels": "M001"},
+        license="MIT",
+        metadata={"key": "value"},
+        created_at=datetime(2025, 1, 1, tzinfo=UTC),
+    )
+    service = MagicMock(spec=RegistryService)
+    service.search.return_value = _make_search_result([resource])
+
+    client = _make_app_with_service(service)
+    response = client.post("/api/v1/search", json={})
+
+    assert response.status_code == 200
+    item = response.json()["results"][0]
+
+    assert item["authors"] == [
+        {"name": "Jane", "orcid": "0000-0001-2345-6789", "affiliation": "RENCI", "role": "lead"}
+    ]
+    assert item["organization"] == "RENCI"
+    assert item["contact_email"] == "jane@renci.org"
+    assert item["publications"] == [{"title": "Paper", "doi": "10.1/x", "url": "", "citation": ""}]
+    assert item["funding"] == ["NIH"]
+    assert item["modeling_scales"] == ["cellular"]
+    assert item["organisms"] == ["human"]
+    assert item["domains"] == ["cardiology"]
+    assert item["execution_ref"] == "docker://rich:1"
+    assert item["io_spec"]["inputs"][0]["name"] == "v"
+    assert item["io_spec"]["inputs"][0]["tags"] == ["scalar"]
+    assert item["io_spec"]["outputs"][0]["name"] == "i"
+    assert item["digest_sha256"] == "abc"
+    assert item["size_bytes"] == 1024
+    assert item["external_ids"] == {"biomodels": "M001"}
+    assert item["license"] == "MIT"
+    assert item["metadata"] == {"key": "value"}
+
+
+def test_list_models_response_includes_new_fields() -> None:
+    """GET /models results include all new Resource fields."""
+    service = MagicMock(spec=RegistryService)
+    service.list_models.return_value = [_make_resource()]
+
+    client = _make_app_with_service(service)
+    response = client.get("/api/v1/models")
+
+    item = response.json()["results"][0]
+    assert "updated_at" in item
+    assert "authors" in item
+    assert "organization" in item
+    assert "contact_email" in item
+    assert "publications" in item
+    assert "funding" in item
+    assert "modeling_scales" in item
+    assert "organisms" in item
+    assert "domains" in item
+    assert "date_published" in item
+    assert "digest_sha256" in item
+    assert "size_bytes" in item
+    assert "external_ids" in item
+    assert "license" in item
+    assert "execution_ref" in item
+    assert "io_spec" in item
+    assert "metadata" in item

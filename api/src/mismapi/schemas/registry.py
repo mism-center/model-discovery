@@ -1,17 +1,128 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from mism_registry import ExecutionType
+from mism_registry.types import Author, IOSlot, IOSpec, Publication
 from pydantic import BaseModel, Field
 
+# ── Nested DTOs ──────────────────────────────────────────────────────
 
-class RegisterModelRequest(BaseModel):
+
+class AuthorDTO(BaseModel):
+    name: str
+    orcid: str = ""
+    affiliation: str = ""
+    role: str = ""
+
+
+class PublicationDTO(BaseModel):
+    title: str
+    doi: str = ""
+    url: str = ""
+    citation: str = ""
+
+
+class IOSlotDTO(BaseModel):
+    name: str
+    tags: list[str] = Field(default_factory=list)
+    required: bool = True
+    description: str = ""
+
+
+class IOSpecDTO(BaseModel):
+    inputs: list[IOSlotDTO] = Field(default_factory=list)
+    outputs: list[IOSlotDTO] = Field(default_factory=list)
+    parameters_schema: dict[str, Any] | None = None
+
+
+# ── DTO ↔ dataclass converters ───────────────────────────────────────
+
+
+def author_from_dto(dto: AuthorDTO) -> Author:
+    return Author(name=dto.name, orcid=dto.orcid, affiliation=dto.affiliation, role=dto.role)
+
+
+def pub_from_dto(dto: PublicationDTO) -> Publication:
+    return Publication(title=dto.title, doi=dto.doi, url=dto.url, citation=dto.citation)
+
+
+def io_slot_from_dto(dto: IOSlotDTO) -> IOSlot:
+    return IOSlot(
+        name=dto.name, tags=tuple(dto.tags), required=dto.required, description=dto.description
+    )
+
+
+def io_spec_from_dto(dto: IOSpecDTO) -> IOSpec:
+    return IOSpec(
+        inputs=tuple(io_slot_from_dto(s) for s in dto.inputs),
+        outputs=tuple(io_slot_from_dto(s) for s in dto.outputs),
+        parameters_schema=dto.parameters_schema,
+    )
+
+
+def author_to_dto(a: Author) -> AuthorDTO:
+    return AuthorDTO(name=a.name, orcid=a.orcid, affiliation=a.affiliation, role=a.role)
+
+
+def pub_to_dto(p: Publication) -> PublicationDTO:
+    return PublicationDTO(title=p.title, doi=p.doi, url=p.url, citation=p.citation)
+
+
+def io_slot_to_dto(s: IOSlot) -> IOSlotDTO:
+    return IOSlotDTO(name=s.name, tags=list(s.tags), required=s.required, description=s.description)
+
+
+def io_spec_to_dto(spec: IOSpec) -> IOSpecDTO:
+    return IOSpecDTO(
+        inputs=[io_slot_to_dto(s) for s in spec.inputs],
+        outputs=[io_slot_to_dto(s) for s in spec.outputs],
+        parameters_schema=spec.parameters_schema,
+    )
+
+
+# ── Shared field mixin (used in request & response bodies) ───────────
+
+
+class _AttributionFields(BaseModel):
+    """Authorship & attribution fields shared across create/update requests."""
+
+    authors: list[AuthorDTO] = Field(default_factory=list)
+    organization: str = ""
+    contact_email: str = ""
+    publications: list[PublicationDTO] = Field(default_factory=list)
+    funding: list[str] = Field(default_factory=list)
+
+
+class _ScientificFields(BaseModel):
+    """Scientific-context fields shared across create/update requests."""
+
+    modeling_scales: list[str] = Field(default_factory=list)
+    organisms: list[str] = Field(default_factory=list)
+    domains: list[str] = Field(default_factory=list)
+    date_published: date | None = None
+
+
+class _IntegrityFields(BaseModel):
+    """Location & integrity fields shared across create/update requests."""
+
+    digest_sha256: str = ""
+    size_bytes: int | None = None
+    external_ids: dict[str, str] = Field(default_factory=dict)
+    license: str = ""
+
+
+# ── Model schemas ────────────────────────────────────────────────────
+
+
+class RegisterModelRequest(_AttributionFields, _ScientificFields, _IntegrityFields):
     name: str
     location_uri: str
     execution_type: ExecutionType
     execution_ref: str | None = None
+    io_spec: IOSpecDTO | None = None
     description: str = ""
     version: str = ""
+    format_tags: list[str] = Field(default_factory=list)
     owner: str = ""
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -21,25 +132,69 @@ class RegisterModelResponse(BaseModel):
     name: str
     resource_type: str
     location_uri: str
-    execution_type: str | None = None
-    execution_ref: str | None = None
+    description: str = ""
     version: str = ""
     status: str
+    owner: str = ""
+    execution_type: str | None = None
+    execution_ref: str = ""
+    io_spec: IOSpecDTO | None = None
+    format_tags: list[str] = Field(default_factory=list)
+    # Authorship & attribution
+    authors: list[AuthorDTO] = Field(default_factory=list)
+    organization: str = ""
+    contact_email: str = ""
+    publications: list[PublicationDTO] = Field(default_factory=list)
+    funding: list[str] = Field(default_factory=list)
+    # Scientific context
+    modeling_scales: list[str] = Field(default_factory=list)
+    organisms: list[str] = Field(default_factory=list)
+    domains: list[str] = Field(default_factory=list)
+    date_published: date | None = None
+    # Integrity
+    digest_sha256: str = ""
+    size_bytes: int | None = None
+    external_ids: dict[str, str] = Field(default_factory=dict)
+    license: str = ""
+    # System
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
+    updated_at: datetime
 
 
-class UpdateModelRequest(BaseModel):
+class UpdateModelRequest(_AttributionFields, _ScientificFields, _IntegrityFields):
     name: str | None = None
     description: str | None = None
     version: str | None = None
     owner: str | None = None
     location_uri: str | None = None
     execution_type: ExecutionType | None = None
-    metadata: dict[str, Any] | None = None
     execution_ref: str | None = None
+    io_spec: IOSpecDTO | None = None
+    format_tags: list[str] | None = None
+    metadata: dict[str, Any] | None = None
+    # Attribution nullables (None = no-op, same pattern as other optional update fields)
+    authors: list[AuthorDTO] | None = None  # type: ignore[assignment]
+    organization: str | None = None  # type: ignore[assignment]
+    contact_email: str | None = None  # type: ignore[assignment]
+    publications: list[PublicationDTO] | None = None  # type: ignore[assignment]
+    funding: list[str] | None = None  # type: ignore[assignment]
+    # Scientific nullables
+    modeling_scales: list[str] | None = None  # type: ignore[assignment]
+    organisms: list[str] | None = None  # type: ignore[assignment]
+    domains: list[str] | None = None  # type: ignore[assignment]
+    date_published: date | None = None
+    # Integrity nullables
+    digest_sha256: str | None = None  # type: ignore[assignment]
+    size_bytes: int | None = None
+    external_ids: dict[str, str] | None = None  # type: ignore[assignment]
+    license: str | None = None  # type: ignore[assignment]
 
 
-class RegisterDatasetRequest(BaseModel):
+# ── Dataset schemas ──────────────────────────────────────────────────
+
+
+class RegisterDatasetRequest(_AttributionFields, _ScientificFields, _IntegrityFields):
     name: str
     location_uri: str
     description: str = ""
@@ -59,10 +214,29 @@ class RegisterDatasetResponse(BaseModel):
     status: str
     owner: str = ""
     format_tags: list[str] = Field(default_factory=list)
+    # Authorship & attribution
+    authors: list[AuthorDTO] = Field(default_factory=list)
+    organization: str = ""
+    contact_email: str = ""
+    publications: list[PublicationDTO] = Field(default_factory=list)
+    funding: list[str] = Field(default_factory=list)
+    # Scientific context
+    modeling_scales: list[str] = Field(default_factory=list)
+    organisms: list[str] = Field(default_factory=list)
+    domains: list[str] = Field(default_factory=list)
+    date_published: date | None = None
+    # Integrity
+    digest_sha256: str = ""
+    size_bytes: int | None = None
+    external_ids: dict[str, str] = Field(default_factory=dict)
+    license: str = ""
+    # System
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
+    updated_at: datetime
 
 
-class UpdateDatasetRequest(BaseModel):
+class UpdateDatasetRequest(_AttributionFields, _ScientificFields, _IntegrityFields):
     name: str | None = None
     description: str | None = None
     version: str | None = None
@@ -70,6 +244,25 @@ class UpdateDatasetRequest(BaseModel):
     location_uri: str | None = None
     format_tags: list[str] | None = None
     metadata: dict[str, Any] | None = None
+    # Attribution nullables
+    authors: list[AuthorDTO] | None = None  # type: ignore[assignment]
+    organization: str | None = None  # type: ignore[assignment]
+    contact_email: str | None = None  # type: ignore[assignment]
+    publications: list[PublicationDTO] | None = None  # type: ignore[assignment]
+    funding: list[str] | None = None  # type: ignore[assignment]
+    # Scientific nullables
+    modeling_scales: list[str] | None = None  # type: ignore[assignment]
+    organisms: list[str] | None = None  # type: ignore[assignment]
+    domains: list[str] | None = None  # type: ignore[assignment]
+    date_published: date | None = None
+    # Integrity nullables
+    digest_sha256: str | None = None  # type: ignore[assignment]
+    size_bytes: int | None = None
+    external_ids: dict[str, str] | None = None  # type: ignore[assignment]
+    license: str | None = None  # type: ignore[assignment]
+
+
+# ── Run schemas ──────────────────────────────────────────────────────
 
 
 class CreateRunRequest(BaseModel):
@@ -128,7 +321,30 @@ class ResourceSummaryItem(BaseModel):
     status: str
     owner: str = ""
     format_tags: list[str] = Field(default_factory=list)
+    # Authorship & attribution
+    authors: list[AuthorDTO] = Field(default_factory=list)
+    organization: str = ""
+    contact_email: str = ""
+    publications: list[PublicationDTO] = Field(default_factory=list)
+    funding: list[str] = Field(default_factory=list)
+    # Scientific context
+    modeling_scales: list[str] = Field(default_factory=list)
+    organisms: list[str] = Field(default_factory=list)
+    domains: list[str] = Field(default_factory=list)
+    date_published: date | None = None
+    # Integrity
+    digest_sha256: str = ""
+    size_bytes: int | None = None
+    external_ids: dict[str, str] = Field(default_factory=dict)
+    license: str = ""
+    # Execution
+    execution_type: str | None = None
+    execution_ref: str = ""
+    io_spec: IOSpecDTO | None = None
+    # System
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
+    updated_at: datetime
 
 
 class RunDetailItem(BaseModel):

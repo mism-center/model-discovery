@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from mism_registry.search import FieldFilter, SearchQuery
 
 from mismapi.dependencies.registry import get_registry_service
+from mismapi.schemas.registry import author_to_dto, io_spec_to_dto, pub_to_dto
 from mismapi.schemas.search import (
     AggBucketDTO,
     AggResultDTO,
@@ -48,10 +49,23 @@ async def search_resources(
             status=r.status.value,
             owner=r.owner,
             execution_type=r.execution_type.value if r.execution_type else None,
-            organisms=r.organisms,
-            domains=r.domains,
-            modeling_scales=r.modeling_scales,
-            format_tags=r.format_tags,
+            execution_ref=r.execution_ref,
+            io_spec=io_spec_to_dto(r.io_spec) if r.io_spec else None,
+            format_tags=list(r.format_tags),
+            authors=[author_to_dto(a) for a in r.authors],
+            organization=r.organization,
+            contact_email=r.contact_email,
+            publications=[pub_to_dto(p) for p in r.publications],
+            funding=list(r.funding),
+            organisms=list(r.organisms),
+            domains=list(r.domains),
+            modeling_scales=list(r.modeling_scales),
+            date_published=r.date_published,
+            digest_sha256=r.digest_sha256,
+            size_bytes=r.size_bytes,
+            external_ids=dict(r.external_ids),
+            license=r.license,
+            metadata=dict(r.metadata),
             created_at=r.created_at,
             updated_at=r.updated_at,
             score=result.scores[i] if result.scores else None,
