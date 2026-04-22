@@ -1,12 +1,9 @@
-from typing import Any
-
 import httpx
 from fastapi.testclient import TestClient
 
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
 from mismapi.clients.upload_client import UploadSession
 from mismapi.core.deps import _get_upload_client
-from mismapi.core.settings import Settings
 from mismapi.main import create_app
 from tests.conftest import minimal_oidc_settings
 
