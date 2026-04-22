@@ -517,7 +517,7 @@ dev = [
 [[package]]
 name = "mism-registry"
 version = "0.1.0"
-source = { git = "https://github.com/mism-center/metadata-schema.git?rev=feature%2Frun-details#ff9b6f77295dfe3599833923cc8b968433db3007" }
+source = { git = "https://github.com/mism-center/metadata-schema.git?rev=feature%2Frun-details#5288716aded4483b382f5a3f6e5dcfc7a7bd078e" }
 
 [package.optional-dependencies]
 postgres = [
