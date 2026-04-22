@@ -47,12 +47,8 @@ services:
         condition: service_completed_successfully
     environment:
       DATABASE_URL: "postgresql+psycopg://postgres:postgres@db:5432/mism_test"
+      DISABLE_AUTH: "true"
       STUB_UPSTREAM_SERVICES: "true"
-      OIDC_ISSUER_URL: "https://issuer.example.com"
-      OIDC_AUDIENCE: "discovery-api"
-      OIDC_CLIENT_ID: "discovery-api"
-      OIDC_CLIENT_SECRET: "x"
-      OIDC_REDIRECT_URI: "https://gateway.example.com/api/auth/callback"
     volumes:
       - ./data/uploads:/data/uploads
     ports:
