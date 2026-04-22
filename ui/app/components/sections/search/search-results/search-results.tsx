@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { Pagination } from '@heroui/react';
-import { useSearch } from '~/contexts/search-context';
+import { useSearch } from '~/search/context/search-context';
+import { ApiErrorDisplay } from '~/components/common/api-error-display';
 import { SearchResult } from './search-result';
 import { ResultSkeleton } from './skeleton';
 import { SearchResultsHeader } from './search-header';
@@ -12,19 +13,21 @@ const motionTransition = {
 } as const;
 
 function SearchResultsContent() {
-  const { resultType, models, datasets } = useSearch();
-  const active = resultType === 'models' ? models : datasets;
+  const { state, data, isLoading, error, refetch } = useSearch();
 
-  if (active.error) return <span>Encountered an unexpected search error.</span>;
-  if (!active.isLoading && !active.results) return null;
+  if (error) {
+    return (
+      <ApiErrorDisplay error={error} title="Search failed" onRetry={refetch} />
+    );
+  }
 
   return (
     <motion.div
-      key={resultType}
+      key={state.resourceType}
       transition={motionTransition}
       className="flex flex-col gap-2"
     >
-      {active.isLoading &&
+      {isLoading &&
         Array.from({ length: 5 }).map((_, i) => (
           <motion.div
             key={i}
@@ -36,25 +39,21 @@ function SearchResultsContent() {
             <ResultSkeleton />
           </motion.div>
         ))}
-      {!active.isLoading &&
-        active.results?.map((result) => (
-          <SearchResult
-            key={result.id}
-            result={result}
-            resultType={resultType}
-          />
+      {!isLoading &&
+        data?.results.map((result) => (
+          <SearchResult key={result.id} result={result} />
         ))}
     </motion.div>
   );
 }
 
 function SearchResultsPagination() {
-  const { resultType, models, datasets, setPage } = useSearch();
-  const active = resultType === 'models' ? models : datasets;
+  const { state, data, isLoading, setOffset } = useSearch();
 
-  if (!active.pagination || active.isLoading) return null;
+  if (!data || isLoading) return null;
 
-  const { offset, limit, total } = active.pagination;
+  const { total } = data;
+  const { offset, limit } = state;
   const totalPages = Math.ceil(total / limit);
 
   if (totalPages <= 1) return null;
@@ -66,7 +65,7 @@ function SearchResultsPagination() {
       <Pagination
         total={totalPages}
         page={currentPage}
-        onChange={(page) => setPage((page - 1) * limit)}
+        onChange={(page) => setOffset((page - 1) * limit)}
         showControls
         classNames={{
           cursor: 'bg-primary text-white font-bold',

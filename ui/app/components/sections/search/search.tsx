@@ -1,4 +1,4 @@
-import { SearchProvider } from '~/contexts/search-context';
+import { SearchProvider } from '~/search/context/search-context';
 import { SearchBar } from './search-bar/search-bar';
 import { SearchSidebar } from './search-sidebar';
 import { SearchResults } from './search-results/search-results';
