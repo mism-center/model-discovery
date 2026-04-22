@@ -74,7 +74,9 @@ async def search_resources(
     ]
 
     aggs = {
-        field_name: AggResultDTO(buckets=[AggBucketDTO(key=b.key, count=b.count) for b in buckets])
+        field_name: AggResultDTO(
+            buckets=[AggBucketDTO(key=b.key, count=b.count) for b in buckets if b.key]
+        )
         for field_name, buckets in result.aggs.items()
     }
 

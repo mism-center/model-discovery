@@ -51,7 +51,7 @@ class ModelListResponse(BaseModel):
 
 # ── Full-text search schemas ─────────────────────────────────────────
 
-FilterOp = Literal["eq", "overlap", "contains", "gte", "lte"]
+FilterOp = Literal["eq", "in", "overlap", "contains", "gte", "lte"]
 SortField = Literal["_score", "name", "created_at", "updated_at"]
 SortOrder = Literal["asc", "desc"]
 
