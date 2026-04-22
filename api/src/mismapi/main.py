@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from mism_registry.backends.postgres import create_session_factory
 
 from mismapi.api.router import build_api_router
@@ -13,6 +14,11 @@ from mismapi.core.logging import configure_root_logger
 from mismapi.core.service_resolver import EnvServiceResolver
 from mismapi.core.settings import get_settings
 from mismapi.middleware.request_context import RequestContextMiddleware
+
+_DEV_CORS_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+]
 
 
 @asynccontextmanager
@@ -53,6 +59,15 @@ def create_app() -> FastAPI:
         description="Gateway API for searching, uploading, and managing model assets.",
         lifespan=lifespan,
     )
+
+    if settings.mism_env in ("local", "development"):
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=_DEV_CORS_ORIGINS,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     app.add_middleware(RequestContextMiddleware)
     app.include_router(build_api_router())
