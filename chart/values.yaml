@@ -176,6 +176,30 @@ migration:
   backoffLimit: 3
 
 # ────────────────────────────────────────────────────────────
+# UI Service  (React Router 7 frontend)
+# ────────────────────────────────────────────────────────────
+ui:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: mism/ui
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  env:
+    # API base URL for backend communication
+    VITE_API_BASE_URL: "http://discovery-gateway:8000"
+
+# ────────────────────────────────────────────────────────────
 # Ingress
 # ────────────────────────────────────────────────────────────
 ingress:
@@ -245,3 +269,12 @@ hpa:
     targetMemoryUtilizationPercentage: ""
     scaleUpStabilizationWindowSeconds: 30 # scale up fast for burst uploads
     scaleDownStabilizationWindowSeconds: 600 # keep pods longer; transfers may be in-flight
+
+  ui:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: ""
+    scaleUpStabilizationWindowSeconds: 60
+    scaleDownStabilizationWindowSeconds: 300
