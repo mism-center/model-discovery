@@ -1,11 +1,12 @@
-"""Pure, dependency-free auth value type.
+"""
+Dependency-free authentication principal value type.
 
-:class:`AuthenticatedPrincipal` lives here (rather than in
-:mod:`mismapi.auth.validator` or :mod:`mismapi.auth.base`) so validator
+`AuthenticatedPrincipal` lives here (rather than in
+`mismapi.auth.validator` or `mismapi.auth.base`) so validator
 implementations can import it without pulling in any validator class or
 request-path glue. The validator protocols (`AuthValidator`, `OIDCValidator`)
-and the stand-alone ``JWTAuthValidator`` live in
-:mod:`mismapi.auth.validator`.
+and the OIDC validator (`OIDCAuthValidator`) live in
+`mismapi.auth.validator`.
 """
 
 from __future__ import annotations

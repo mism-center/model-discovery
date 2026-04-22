@@ -16,7 +16,7 @@ CREATED_MODEL_ID = "Cr8ModelID12"
 
 def _test_settings(**overrides: Any) -> Settings:
     base: dict[str, Any] = {
-        "AUTH_MODE": "jwt",
+        "AUTH_MODE": "oidc",
         "UPLOAD_RETRY_BACKOFF_SECONDS": 0.0,
     }
     base.update(overrides)

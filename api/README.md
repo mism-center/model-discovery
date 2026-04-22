@@ -1,6 +1,6 @@
 # MISM Gateway API
 
-Gateway REST API for MISM, built with FastAPI. It fronts internal microservices for search and uploads, and supports configurable bearer-token auth (`jwt` or `oidc`).
+Gateway REST API for MISM, built with FastAPI. It fronts internal microservices for search and uploads, and supports configurable bearer-token auth (only `oidc` currently).
 
 ## Prerequisites
 
@@ -25,7 +25,7 @@ Gateway REST API for MISM, built with FastAPI. It fronts internal microservices 
 3. Update `.env` values for your local services:
    - `SEARCH_SERVICE_URL`
    - `UPLOAD_SERVICE_URL`
-   - auth settings (`AUTH_MODE`, JWT/OIDC fields)
+   - auth settings (`AUTH_MODE`)
 
 4. Run the app:
 
@@ -65,35 +65,10 @@ Gateway REST API for MISM, built with FastAPI. It fronts internal microservices 
 
 Set `AUTH_MODE` in `.env`:
 
-- `AUTH_MODE=jwt`
-  - Validates bearer tokens directly with configured JWT issuer/audience.
-  - Configure either `JWT_JWKS_URL` or `JWT_PUBLIC_KEY`.
 - `AUTH_MODE=oidc`
   - Uses OIDC discovery and JWKS retrieval.
   - Configure `OIDC_ISSUER_URL` (or `OIDC_DISCOVERY_URL`) and `OIDC_AUDIENCE`.
   - Optionally enforce scopes with `OIDC_REQUIRED_SCOPES`.
-
-If you'd like to test one of the authenticated endpoints, you can generate a JWT for yourself right now by doing the following:
-
-  1. Set the following in your .env file
-  ```
-  AUTH_MODE=jwt
-  JWT_ISSUER=https://dev-issuer.local
-  JWT_AUDIENCE=mism-api
-  JWT_ALGORITHMS=HS256
-  JWT_JWKS_URL=
-  JWT_PUBLIC_KEY=local-dev-secret-1234567890-abcdef
-  ```
-  2. Start the Gateway API locally using `make run`
-  3. In another terminal, run the following command:
-  ```
-  uv run python -c "import jwt, time; secret='local-dev-secret-1234567890-abcdef'; print(jwt.encode({'iss':'https://dev-issuer.local','aud':'mism-api','sub':'postman-dev-user','scope':'read write','exp':int(time.time())+3600}, secret, algorithm='HS256'))"
-  ```
-  This will output a JWT for you that you can use in authentication in the next step.
-  4. In Postman or however you're making a request to the API, include the following header:
-  ```
-  Authorization: Bearer <jwt from last step>
-  ```
 
 
 ## Upstream Service Stubbing
@@ -112,7 +87,7 @@ If you'd like to test one of the authenticated endpoints, you can generate a JWT
 ```text
 src/
   api/          # FastAPI routers
-  auth/         # JWT/OIDC auth validators
+  auth/         # OIDC auth validators
   clients/      # Upstream service clients
   core/         # settings, errors, logging, service resolution
   middleware/   # request context middleware

@@ -9,7 +9,7 @@ from mismapi.auth.base import build_auth_validator
 from mismapi.auth.jwks_cache import JWKSCache
 from mismapi.auth.oidc_discovery import OIDCDiscoveryCache
 from mismapi.auth.oidc_types import OIDCDiscoveryDocument
-from mismapi.auth.validator import JWTAuthValidator, OIDCAuthValidator
+from mismapi.auth.validator import OIDCAuthValidator
 from mismapi.core.settings import Settings
 
 
@@ -17,39 +17,9 @@ def _settings(**overrides: Any) -> Settings:
     return Settings(_env_file=None, **overrides)  # type: ignore[call-arg]
 
 
-def test_build_auth_validator_selects_jwt() -> None:
-    validator = build_auth_validator(settings=_settings(AUTH_MODE="jwt"))
-    assert isinstance(validator, JWTAuthValidator)
-
-
 def test_build_auth_validator_selects_oidc() -> None:
     validator = build_auth_validator(settings=_settings(AUTH_MODE="oidc"))
     assert isinstance(validator, OIDCAuthValidator)
-
-
-async def test_jwt_auth_validator_validates_token() -> None:
-    settings = _settings(
-        AUTH_MODE="jwt",
-        JWT_ISSUER="https://issuer.example.com",
-        JWT_AUDIENCE="mism-api",
-        JWT_ALGORITHMS="HS256",
-        JWT_PUBLIC_KEY="0123456789abcdef0123456789abcdef",
-    )
-    validator = JWTAuthValidator(settings=settings)
-    token = jwt.encode(
-        payload={
-            "iss": "https://issuer.example.com",
-            "aud": "mism-api",
-            "sub": "user-1",
-            "scope": "read write",
-        },
-        key="0123456789abcdef0123456789abcdef",
-        algorithm="HS256",
-    )
-
-    principal = await validator.validate_token(token=token)
-    assert principal.subject == "user-1"
-    assert "read" in principal.scopes
 
 
 async def test_oidc_auth_validator_validates_token_with_cached_jwks() -> None:

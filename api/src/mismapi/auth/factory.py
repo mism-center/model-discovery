@@ -11,7 +11,7 @@ module removes the need for that.
 from __future__ import annotations
 
 from mismapi.auth.oidc_discovery import OIDCDiscoveryCache
-from mismapi.auth.validator import AuthValidator, JWTAuthValidator, OIDCAuthValidator
+from mismapi.auth.validator import AuthValidator, OIDCAuthValidator
 from mismapi.core.settings import Settings
 
 
@@ -24,4 +24,4 @@ def build_auth_validator(
         cache = discovery_cache or OIDCDiscoveryCache(settings=settings)
         return OIDCAuthValidator(settings=settings, discovery_cache=cache)
 
-    return JWTAuthValidator(settings=settings)
+    raise ValueError(f"Invalid auth mode: {settings.auth_mode}")

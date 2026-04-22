@@ -3,7 +3,7 @@ FastAPI-level auth glue.
 
 `AuthenticatedPrincipal` lives in `mismapi.auth.principal` (a pure,
 dependency-free value type) and the `AuthValidator` / `OIDCValidator`
-protocols live alongside the stand-alone `JWTAuthValidator` in
+protocols live alongside the OIDC validator (`OIDCAuthValidator`) in
 `mismapi.auth.validator`, so validator implementations can import them
 without dragging in the request-path helpers below. This module re-exports
 them so existing callers keep working.

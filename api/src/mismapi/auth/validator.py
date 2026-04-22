@@ -4,7 +4,6 @@ Consolidates the validator side of the auth module:
 
 * `AuthValidator` / `OIDCValidator` — Protocols that describe what the
   request path depends on.
-* `JWTAuthValidator` — stand-alone JWT bearer validation (`AUTH_MODE=jwt`).
 * `OIDCAuthValidator` — OIDC access/id token validation backed by shared
   discovery + JWKS caches (`AUTH_MODE=oidc`).
 
@@ -49,80 +48,6 @@ class OIDCValidator(AuthValidator, Protocol):
 
     async def verify_identity(self, id_token: str) -> str:
         raise NotImplementedError
-
-
-@dataclass(slots=True)
-class JWTAuthValidator:
-    """Validates stand-alone JWTs against either a static public key or a shared JWKS cache."""
-
-    settings: Settings
-    jwks_cache: JWKSCache | None = None
-
-    def __post_init__(self) -> None:
-        if self.jwks_cache is None and self.settings.jwt_jwks_url:
-
-            async def _uri() -> str:
-                return self.settings.jwt_jwks_url
-
-            self.jwks_cache = JWKSCache(
-                uri_supplier=_uri,
-                ttl_seconds=300,
-            )
-
-    async def validate_token(self, token: str) -> AuthenticatedPrincipal:
-        unverified_header = jwt.get_unverified_header(token)
-        key: Any = await self._resolve_verification_key(unverified_header=unverified_header)
-        payload = jwt.decode(
-            token,
-            key=key,
-            algorithms=self.settings.jwt_algorithm_list,
-            audience=self.settings.jwt_audience,
-            issuer=self.settings.jwt_issuer,
-            leeway=self.settings.jwt_leeway_seconds,
-        )
-        scopes = _parse_scope_claim(payload)
-        subject = str(payload.get("sub", ""))
-        if not subject:
-            raise APIError(
-                status_code=401,
-                code="auth_invalid_sub",
-                detail="Token subject is missing.",
-            )
-
-        return AuthenticatedPrincipal(
-            subject=subject,
-            issuer=str(payload.get("iss", "")),
-            audience=self.settings.jwt_audience,
-            scopes=scopes,
-        )
-
-    async def _resolve_verification_key(self, unverified_header: dict[str, str]) -> Any:
-        if self.jwks_cache is not None:
-            keys = await self.jwks_cache.get()
-            kid = unverified_header.get("kid", "")
-            if not kid:
-                raise APIError(
-                    status_code=401,
-                    code="auth_missing_kid",
-                    detail="Token kid header missing.",
-                )
-            jwk_payload = keys.get(kid)
-            if jwk_payload is None:
-                raise APIError(
-                    status_code=401,
-                    code="auth_unknown_kid",
-                    detail="Unrecognized token key id.",
-                )
-            return RSAAlgorithm.from_jwk(json.dumps(jwk_payload))
-
-        if self.settings.jwt_public_key:
-            return self.settings.jwt_public_key
-
-        raise APIError(
-            status_code=500,
-            code="auth_misconfigured",
-            detail="JWT validation is not configured with jwks_url or public key.",
-        )
 
 
 @dataclass(slots=True)

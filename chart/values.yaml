@@ -44,11 +44,6 @@ gateway:
     OIDC_AUDIENCE: ""
     OIDC_REQUIRED_SCOPES: ""
     OIDC_JWKS_TTL_SECONDS: "300"
-    # JWT – alternative auth mode
-    JWT_ISSUER: ""
-    JWT_AUDIENCE: ""
-    JWT_ALGORITHMS: "RS256"
-    JWT_JWKS_URL: ""
 
 irods:
   # PersistentVolumeClaim

@@ -9,14 +9,12 @@ def _strip_trailing_slash(value: str) -> str:
     return value.rstrip("/")
 
 
-BaseUrl = Annotated[str, AfterValidator(_strip_trailing_slash)]
-"""URL used as a prefix for path joining: trailing-slash-stripped.
-
-Do not use for identifiers where trailing slashes are semantically significant
-(e.g., OIDC issuer URLs, OAuth redirect URIs).
-
-Whitespace is stripped globally via ``str_strip_whitespace``.
 """
+URL used as a prefix for path joining (trailing slash stripped).
+
+Whitespace is stripped globally via Pydantic's `str_strip_whitespace`.
+"""
+BaseUrl = Annotated[str, AfterValidator(_strip_trailing_slash)]
 
 
 class Settings(BaseSettings):
@@ -46,16 +44,9 @@ class Settings(BaseSettings):
         alias="UPLOAD_RETRY_TRAILING_BUFFER_BYTES",
     )
 
-    auth_mode: Literal["jwt", "oidc"] = Field(default="jwt", alias="AUTH_MODE")
+    auth_mode: Literal["oidc"] = Field(default="oidc", alias="AUTH_MODE")
     disable_auth: bool = Field(default=False, alias="DISABLE_AUTH")
     stub_upstream_services: bool = Field(default=False, alias="STUB_UPSTREAM_SERVICES")
-
-    jwt_issuer: str = Field(default="", alias="JWT_ISSUER")
-    jwt_audience: str = Field(default="", alias="JWT_AUDIENCE")
-    jwt_algorithms: str = Field(default="RS256", alias="JWT_ALGORITHMS")
-    jwt_jwks_url: str = Field(default="", alias="JWT_JWKS_URL")
-    jwt_public_key: str = Field(default="", alias="JWT_PUBLIC_KEY")
-    jwt_leeway_seconds: int = Field(default=0, alias="JWT_LEEWAY_SECONDS")
 
     oidc_issuer_url: str = Field(default="", alias="OIDC_ISSUER_URL")
     oidc_discovery_url: str = Field(default="", alias="OIDC_DISCOVERY_URL")
@@ -83,10 +74,6 @@ class Settings(BaseSettings):
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
     session_ttl_seconds: int = Field(default=3600, alias="SESSION_TTL_SECONDS")
     session_cookie_name: str = Field(default="mism_session", alias="SESSION_COOKIE_NAME")
-
-    @property
-    def jwt_algorithm_list(self) -> list[str]:
-        return [alg.strip() for alg in self.jwt_algorithms.split(",") if alg.strip()]
 
     @property
     def oidc_required_scope_list(self) -> list[str]:

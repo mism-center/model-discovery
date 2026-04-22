@@ -10,10 +10,6 @@ def _settings(**overrides: Any) -> Settings:
     return Settings(_env_file=None, **overrides)  # type: ignore[call-arg]
 
 
-def test_jwt_mode_does_not_validate_oidc_settings() -> None:
-    ensure_startup_config(_settings(AUTH_MODE="jwt"))
-
-
 def test_oidc_mode_reports_all_missing_fields_at_once() -> None:
     with pytest.raises(OIDCConfigurationError) as excinfo:
         ensure_startup_config(
