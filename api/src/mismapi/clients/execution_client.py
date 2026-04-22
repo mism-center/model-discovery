@@ -1,4 +1,5 @@
 import logging
+from typing import Any, cast
 from uuid import uuid4
 
 import httpx
@@ -30,7 +31,7 @@ class ExecutionClient:
 
     # ── Batch execution ─────────────────────────────────────────────
 
-    async def launch_batch(self, run_id: str) -> dict:
+    async def launch_batch(self, run_id: str) -> dict[str, Any]:
         """POST /api/v1/runs  →  trigger headless execution."""
         if self._stub_upstream:
             logger.info("Execution service (stub) launch_batch run_id=%s", run_id)
@@ -40,7 +41,7 @@ class ExecutionClient:
 
     # ── Interactive session ─────────────────────────────────────────
 
-    async def launch_interactive(self, run_id: str) -> dict:
+    async def launch_interactive(self, run_id: str) -> dict[str, Any]:
         """POST /api/v1/runs/{run_id}/interactive  →  start interactive session."""
         if self._stub_upstream:
             sid = f"stub-sid-{uuid4().hex[:8]}"
@@ -51,7 +52,7 @@ class ExecutionClient:
 
     # ── Status polling ──────────────────────────────────────────────
 
-    async def get_status(self, run_id: str) -> dict:
+    async def get_status(self, run_id: str) -> dict[str, Any]:
         """GET /api/v1/runs/{run_id}  →  current status + phase."""
         if self._stub_upstream:
             return {"run_id": run_id, "status": "completed", "phase": "stub", "stub": True}
@@ -59,7 +60,7 @@ class ExecutionClient:
         try:
             response = await self._client.get(f"/api/v1/runs/{run_id}")
             response.raise_for_status()
-            return response.json()
+            return cast(dict[str, Any], response.json())
         except httpx.TimeoutException as exc:
             raise APIError(
                 status_code=504,
@@ -90,9 +91,9 @@ class ExecutionClient:
     async def _post(
         self,
         url: str,
-        json: dict | None = None,
+        json: dict[str, Any] | None = None,
         expected: int = 201,
-    ) -> dict:
+    ) -> dict[str, Any]:
         action = url.rsplit("/", 1)[-1] or "runs"
         try:
             response = await self._client.post(url, json=json, follow_redirects=True)
@@ -118,6 +119,6 @@ class ExecutionClient:
             ) from exc
 
         try:
-            return response.json()
+            return cast(dict[str, Any], response.json())
         except ValueError:
             return {"status_code": response.status_code}

@@ -18,14 +18,14 @@ def _make_run(
     id: str = "run-1",
     model_id: str = "model-1",
     model_version: str = "0.1.0",
-    input_resource_ids: tuple[str, ...] = ("ds-1",),
+    input_resource_ids: list[str] | None = None,
 ) -> Run:
     return Run(
         id=id,
         model_id=model_id,
         model_version=model_version,
         status=RunStatus.REGISTERED,
-        input_resource_ids=input_resource_ids,
+        input_resource_ids=input_resource_ids or ["ds-1"],
         parameters={"condition": "both"},
         triggered_by="user-1",
         notes="test run",

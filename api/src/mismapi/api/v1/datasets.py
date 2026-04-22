@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, Query
+from mism_registry.resource import Resource
 
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
 from mismapi.dependencies.registry import get_registry_service
@@ -10,6 +11,7 @@ from mismapi.schemas.registry import (
     UpdateDatasetRequest,
     author_from_dto,
     author_to_dto,
+    io_spec_to_dto,
     pub_from_dto,
     pub_to_dto,
 )
@@ -21,9 +23,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _dataset_list_item(r) -> ModelListItem:
-    from mismapi.schemas.registry import io_spec_to_dto
-
+def _dataset_list_item(r: Resource) -> ModelListItem:
     return ModelListItem(
         id=r.id,
         name=r.name,
@@ -56,7 +56,7 @@ def _dataset_list_item(r) -> ModelListItem:
     )
 
 
-def _dataset_response(r) -> RegisterDatasetResponse:
+def _dataset_response(r: Resource) -> RegisterDatasetResponse:
     return RegisterDatasetResponse(
         id=r.id,
         name=r.name,
