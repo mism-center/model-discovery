@@ -25,7 +25,7 @@ Gateway REST API for MISM, built with FastAPI. It fronts internal microservices 
 3. Update `.env` values for your local services:
    - `SEARCH_SERVICE_URL`
    - `UPLOAD_SERVICE_URL`
-   - auth settings (`AUTH_MODE`)
+   - auth settings, if auth is enabled (`OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_AUDIENCE`, `OIDC_REDIRECT_URI`)
 
 4. Run the app:
 
@@ -42,7 +42,10 @@ Gateway REST API for MISM, built with FastAPI. It fronts internal microservices 
 - Install/update deps: `make install`
 - Run local server: `make run`
 - Run auto-reload server: `make dev`
-- Run tests: `make test`
+- Run all tests: `make test`
+- Run only unit tests: `make test-unit`
+- Run only integration tests: `make test-integration`
+- Run both unit and integration tests (what you can run without a live app run): `make test-ci`
 - Lint: `make lint`
 - Format: `make format`
 - Type check: `make typecheck`
