@@ -38,12 +38,11 @@ def ensure_startup_config(settings: Settings) -> None:
     """
     Validate cross-field settings constraints before app wiring.
 
-    Currently only validates OIDC-mode configuration.
+    Currently only validates OIDC-mode configuration. If in the future we add another auth mode,
+    we will need to add different validation here.
     """
-    if settings.auth_mode == "oidc":
+    if not settings.disable_auth:
         _ensure_oidc_config(settings)
-    else:
-        raise ValueError(f"Invalid auth mode: {settings.auth_mode}")
 
 
 def _ensure_oidc_config(settings: Settings) -> None:
@@ -62,6 +61,6 @@ def _ensure_oidc_config(settings: Settings) -> None:
 
     joined = ", ".join(missing_env_names)
     raise OIDCConfigurationError(
-        "AUTH_MODE=oidc but required OIDC configuration is missing or empty: "
+        "OIDC authentication is enabled but required OIDC configuration is missing or empty: "
         f"{joined}. Set these environment variables before starting the API."
     )

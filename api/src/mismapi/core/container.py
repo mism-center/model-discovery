@@ -1,4 +1,5 @@
-"""Application container wiring all long-lived collaborators.
+"""
+Application container wiring all long-lived collaborators.
 
 The container is constructed once per app, during `lifespan`. Everything the
 request path needs is reachable through this object; the container itself is
@@ -137,15 +138,14 @@ class AppContainer:
     async def prime(self) -> None:
         """Best-effort warm-up of collaborators whose first-use latency hurts.
 
-        Currently primes the OIDC discovery cache in OIDC mode. Failures are logged and
-        swallowed — the first real request will retry.
+        Failures are logged and swallowed — the first real request will retry.
         """
-        if self.settings.auth_mode != "oidc":
-            return
         try:
+            if self.settings.disable_auth:
+                return
             await self.oidc_discovery_cache.get()
-        except APIError:
-            logger.warning("oidc_discovery_prime_failed")
+        except APIError as exc:
+            logger.warning("oidc_discovery_prime_failed error=%s", exc)
 
     async def aclose(self) -> None:
         """Tear down every collaborator, best-effort. Errors are logged, never raised."""
