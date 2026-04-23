@@ -1,0 +1,57 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@700;800&family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap');
+@import 'tailwindcss';
+
+@plugin "./hero.ts";
+@source "../../node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}";
+
+@theme {
+  --font-sans:
+    'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-headline: 'Manrope', system-ui, sans-serif;
+}
+
+@layer base {
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+@utility bg-primary-gradient {
+  background-color: hsl(var(--heroui-primary) / 1);
+  background-image:
+    radial-gradient(circle at 100% 0%, #0e3a8c 0%, transparent 40%),
+    radial-gradient(circle at 0% 100%, #001233 0%, transparent 40%);
+}
+
+@utility text-gradient-success-secondary {
+  color: transparent;
+  background-clip: text;
+  background-image: linear-gradient(
+    to bottom right,
+    hsl(var(--heroui-success) / 1),
+    #4ade80,
+    hsl(var(--heroui-secondary) / 1)
+  );
+  -webkit-text-fill-color: transparent;
+}
+
+@utility shadow-glass {
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.25);
+}
+
+@utility biological-mesh {
+  background-image: radial-gradient(
+    circle at 2px 2px,
+    rgba(169, 214, 8, 0.05) 1px,
+    transparent 0
+  );
+  background-size: 32px 32px;
+}
+
+@utility glass-panel {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
