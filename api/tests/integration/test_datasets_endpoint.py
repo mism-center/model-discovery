@@ -6,7 +6,7 @@ from mism_registry.enums import ResourceStatus, ResourceType
 from mism_registry.resource import Resource
 
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
-from mismapi.core.deps import get_registry_service
+from mismapi.core.deps import _get_registry_service
 from mismapi.main import create_app
 from mismapi.services.registry_service import RegistryService
 
@@ -45,7 +45,7 @@ async def _allow_principal() -> AuthenticatedPrincipal:
 def _make_app_with_service(service: RegistryService) -> TestClient:
     app = create_app()
     app.dependency_overrides[require_principal] = _allow_principal
-    app.dependency_overrides[get_registry_service] = lambda: service
+    app.dependency_overrides[_get_registry_service] = lambda: service
     return TestClient(app)
 
 

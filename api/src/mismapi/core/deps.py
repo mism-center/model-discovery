@@ -93,15 +93,14 @@ def _get_helx_execution_client(container: ContainerDep) -> HelxExecutionClient:
     return container.helx_execution_client
 
 
-def get_registry_service(
+def _get_registry_service(
     container: ContainerDep,
 ) -> Generator[RegistryService, None, None]:
     """
     Open a per-request SQLAlchemy session and yield a RegistryService bound to it.
 
     The session is always closed on teardown; commits/rollbacks are the service's
-    responsibility. Exposed at module scope so tests can target it via
-    `app.dependency_overrides`.
+    responsibility.
     """
     with container.open_session() as session:
         yield RegistryService(PostgresRegistry(session), session)
@@ -116,4 +115,4 @@ OIDCServiceDep = Annotated["OIDCService", Depends(_get_oidc_service)]
 SessionRefresherDep = Annotated["SessionRefresher", Depends(_get_session_refresher)]
 UploadClientDep = Annotated["UploadServiceClient", Depends(_get_upload_client)]
 HelxExecutionClientDep = Annotated["HelxExecutionClient", Depends(_get_helx_execution_client)]
-RegistryServiceDep = Annotated[RegistryService, Depends(get_registry_service)]
+RegistryServiceDep = Annotated[RegistryService, Depends(_get_registry_service)]
