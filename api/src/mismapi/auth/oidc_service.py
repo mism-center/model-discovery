@@ -236,14 +236,10 @@ class OIDCService:
             invalid_access_token_code=REFRESH_ERRORS.invalid_response,
         )
 
-    async def build_end_session_url(self, *, id_token_hint: str) -> str:
+    async def build_end_session_url(self, *, id_token_hint: str) -> str | None:
         discovery = await self._discovery.get()
         if not discovery.end_session_endpoint:
-            raise APIError(
-                status_code=503,
-                code="auth_end_session_unavailable",
-                detail="OIDC provider does not advertise an end_session_endpoint.",
-            )
+            return None
         params: dict[str, str] = {
             "id_token_hint": id_token_hint,
             "client_id": self._settings.oidc_client_id,

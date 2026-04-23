@@ -153,11 +153,8 @@ async def logout(
         return resp
 
     if id_token_hint:
-        try:
-            logout_url = await oidc_service.build_end_session_url(id_token_hint=id_token_hint)
-        except APIError:
-            logout_url = ""
-        if logout_url:
+        logout_url = await oidc_service.build_end_session_url(id_token_hint=id_token_hint)
+        if logout_url is not None:
             return _cleared_cookie_response(RedirectResponse(url=logout_url, status_code=302))
 
     return _cleared_cookie_response(JSONResponse(content={"status": "logged_out"}))
