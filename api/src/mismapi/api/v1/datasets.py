@@ -1,8 +1,8 @@
 import logging
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 
-from mismapi.auth.base import AuthenticatedPrincipal, require_principal
+from mismapi.auth.base import AuthenticatedPrincipalDep
 from mismapi.core.deps import RegistryServiceDep
 from mismapi.schemas.registry import (
     RegisterDatasetRequest,
@@ -20,7 +20,7 @@ router = APIRouter()
 async def create_dataset(
     payload: RegisterDatasetRequest,
     service: RegistryServiceDep,
-    principal: AuthenticatedPrincipal = Depends(require_principal),
+    principal: AuthenticatedPrincipalDep,
 ) -> RegisterDatasetResponse:
 
     resource = service.create_dataset(
@@ -53,7 +53,7 @@ async def update_dataset(
     dataset_id: str,
     payload: UpdateDatasetRequest,
     service: RegistryServiceDep,
-    principal: AuthenticatedPrincipal = Depends(require_principal),
+    principal: AuthenticatedPrincipalDep,
 ) -> RegisterDatasetResponse:
 
     resource = service.update_dataset(

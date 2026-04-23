@@ -1,8 +1,8 @@
 import logging
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 
-from mismapi.auth.base import AuthenticatedPrincipal, require_principal
+from mismapi.auth.base import AuthenticatedPrincipalDep
 from mismapi.core.deps import RegistryServiceDep
 from mismapi.schemas.registry import (
     CreateRunRequest,
@@ -64,7 +64,7 @@ async def list_models(
 async def create_model(
     payload: RegisterModelRequest,
     service: RegistryServiceDep,
-    principal: AuthenticatedPrincipal = Depends(require_principal),
+    principal: AuthenticatedPrincipalDep,
 ) -> RegisterModelResponse:
 
     resource = service.create_model(
@@ -97,7 +97,7 @@ async def update_model(
     model_id: str,
     payload: UpdateModelRequest,
     service: RegistryServiceDep,
-    principal: AuthenticatedPrincipal = Depends(require_principal),
+    principal: AuthenticatedPrincipalDep,
 ) -> RegisterModelResponse:
 
     resource = service.update_model(
@@ -135,7 +135,7 @@ async def create_run(
     model_id: str,
     payload: CreateRunRequest,
     service: RegistryServiceDep,
-    principal: AuthenticatedPrincipal = Depends(require_principal),
+    principal: AuthenticatedPrincipalDep,
 ) -> CreateRunResponse:
 
     run = service.create_run(

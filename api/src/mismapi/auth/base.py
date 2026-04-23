@@ -21,6 +21,7 @@ What remains here is strictly request-path stuff:
 from __future__ import annotations
 
 import logging
+from typing import Annotated
 
 import jwt
 from fastapi import Depends, Request
@@ -151,3 +152,6 @@ async def _principal_from_session_cookie(
                 detail="Session has expired or is invalid.",
             ) from None
         return await validator.validate_token(merged["access_token"])
+
+
+AuthenticatedPrincipalDep = Annotated[AuthenticatedPrincipal, Depends(require_principal)]

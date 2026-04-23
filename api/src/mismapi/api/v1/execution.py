@@ -1,8 +1,7 @@
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 
-from mismapi.auth.base import AuthenticatedPrincipal, require_principal
 from mismapi.core.deps import HelxExecutionClientDep, SettingsDep
 from mismapi.core.errors import APIError
 from mismapi.schemas.execution import ExecutionStartRequest, ExecutionStartResponse
@@ -12,7 +11,6 @@ router = APIRouter()
 
 @router.post("/executions", response_model=ExecutionStartResponse)
 async def execute_run(
-    _principal: Annotated[AuthenticatedPrincipal, Depends(require_principal)],
     settings: SettingsDep,
     helx_client: HelxExecutionClientDep,
     payload: ExecutionStartRequest | None = None,
