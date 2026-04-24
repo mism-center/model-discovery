@@ -115,7 +115,7 @@ async def _principal_from_session_cookie(
             detail="Session has expired or is invalid.",
         )
 
-    access_token = session_data.get("access_token", "")
+    access_token = session_data.access_token
     if not access_token:
         raise APIError(
             status_code=401,
@@ -132,8 +132,7 @@ async def _principal_from_session_cookie(
                 code="auth_session_expired",
                 detail="Session token has expired.",
             ) from None
-        refresh_token = session_data.get("refresh_token", "")
-        if not refresh_token:
+        if not session_data.refresh_token:
             raise APIError(
                 status_code=401,
                 code="auth_session_expired",
@@ -143,7 +142,6 @@ async def _principal_from_session_cookie(
             merged = await session_refresher.refresh(
                 session_id=session_id,
                 session_data=session_data,
-                refresh_token=refresh_token,
             )
         except APIError:
             raise APIError(
@@ -151,7 +149,7 @@ async def _principal_from_session_cookie(
                 code="auth_session_expired",
                 detail="Session has expired or is invalid.",
             ) from None
-        return await validator.validate_token(merged["access_token"])
+        return await validator.validate_token(merged.access_token)
 
 
 AuthenticatedPrincipalDep = Annotated[AuthenticatedPrincipal, Depends(require_principal)]

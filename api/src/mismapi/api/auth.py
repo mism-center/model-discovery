@@ -13,6 +13,7 @@ from mismapi.core.deps import (
     SettingsDep,
 )
 from mismapi.core.errors import APIError
+from mismapi.schemas.auth import OidcSessionRecord
 from mismapi.utils import merge_query_params
 
 logger = logging.getLogger(__name__)
@@ -105,12 +106,12 @@ async def callback(
     expires_at = str(int(time.time()) + ttl_sec)
 
     session_id = await session_store.create(
-        {
-            "access_token": token_response.access_token,
-            "refresh_token": token_response.refresh_token,
-            "id_token": token_response.id_token,
-            "expires_at": expires_at,
-        }
+        OidcSessionRecord(
+            access_token=token_response.access_token,
+            refresh_token=token_response.refresh_token,
+            id_token=token_response.id_token,
+            expires_at=expires_at,
+        )
     )
 
     response = RedirectResponse(
@@ -140,7 +141,7 @@ async def logout(
     if session_id:
         session_data = await session_store.get(session_id)
         if session_data:
-            id_token_hint = session_data.get("id_token") or session_data.get("access_token") or ""
+            id_token_hint = session_data.id_token or session_data.access_token or ""
         await session_store.delete(session_id)
 
     def _cleared_cookie_response(resp: Response) -> Response:
