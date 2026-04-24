@@ -9,6 +9,8 @@ IMAGE_TAG ?= $(IMAGE_REPO)/$(IMAGE_NAME):$(TAG)
 IMAGE_RUN_ARGS ?=
 PORT ?= 8000
 
+COMPOSE_TEST ?= docker compose -f ../docker-compose.test.yaml
+
 .PHONY: help install lock run dev test lint format format-check typecheck clean image-build image-run image-push
 
 ## Show available targets (default)
@@ -52,13 +54,16 @@ test-integration:
 	$(UV) run pytest tests/integration/*.py -v
 
 functional-up:
-	docker compose -f ../docker-compose.test.yaml up -d --build --wait
+	$(COMPOSE_TEST) up -d --build --wait
 
 functional-down:
-	docker compose -f ../docker-compose.test.yaml down -v
+	$(COMPOSE_TEST) down -v
 
-## Run the functional tests (pytest)
-test-functional: functional-up
+## Run the functional tests (checking if the services are already running)
+test-functional:
+	@if [ -z "$$($(COMPOSE_TEST) ps --status running -q api 2>/dev/null)" ]; then \
+		$(MAKE) functional-up; \
+	fi
 	$(UV) run pytest tests/functional/*.py -m integration -v
 	$(MAKE) functional-down
 
