@@ -59,15 +59,6 @@ class Settings(BaseSettings):
     oidc_post_login_redirect_uri: str = Field(default="", alias="OIDC_POST_LOGIN_REDIRECT_URI")
     oidc_post_logout_redirect_uri: str = Field(default="", alias="OIDC_POST_LOGOUT_REDIRECT_URI")
     oidc_jwt_leeway_seconds: int = Field(default=30, alias="OIDC_JWT_LEEWAY_SECONDS")
-    helx_exec_platform_base_url: BaseUrl = Field(
-        default="",
-        alias="HELX_EXEC_PLATFORM_BASE_URL",
-        description="Base URL of the HeLx Execution Platform (server-to-server calls).",
-    )
-    helx_exec_platform_timeout_seconds: float = Field(
-        default=60.0,
-        alias="HELX_EXEC_PLATFORM_TIMEOUT_SECONDS",
-    )
 
     production_mode: bool = Field(default=False, alias="PRODUCTION_MODE")
 

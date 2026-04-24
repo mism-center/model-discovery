@@ -26,7 +26,6 @@ from mismapi.auth.oidc_discovery import OIDCDiscoveryCache
 from mismapi.auth.oidc_service import OIDCService
 from mismapi.auth.session import RedisSessionStore, SessionStore
 from mismapi.auth.session_refresh import SessionRefresher
-from mismapi.clients.helx_execution_client import HelxExecutionClient
 from mismapi.clients.upload_client import UploadServiceClient
 from mismapi.core.config_validation import ensure_startup_config
 from mismapi.core.errors import APIError
@@ -48,7 +47,6 @@ class AppContainer:
     redis: Redis
     session_store: SessionStore
     upload_client: UploadServiceClient
-    helx_execution_client: HelxExecutionClient
     auth_validator: AuthValidator
     oidc_discovery_cache: OIDCDiscoveryCache
     oidc_service: OIDCService
@@ -88,11 +86,6 @@ class AppContainer:
             timeout_seconds=settings.upload_timeout_seconds,
             stub_upstream=settings.stub_upstream_services,
         )
-        helx_execution_client = HelxExecutionClient(
-            base_url=settings.helx_exec_platform_base_url or "http://localhost",
-            timeout_seconds=settings.helx_exec_platform_timeout_seconds,
-            stub_upstream=settings.stub_upstream_services,
-        )
 
         redis_client: Redis = Redis.from_url(  # type: ignore[type-arg]
             settings.redis_url,
@@ -123,7 +116,6 @@ class AppContainer:
             redis=redis_client,
             session_store=session_store,
             upload_client=upload_client,
-            helx_execution_client=helx_execution_client,
             auth_validator=auth_validator,
             oidc_discovery_cache=oidc_discovery_cache,
             oidc_service=oidc_service,
@@ -148,7 +140,6 @@ class AppContainer:
         """Tear down every collaborator, best-effort. Errors are logged, never raised."""
         for name, close in (
             ("upload_client", self.upload_client.close),
-            ("helx_execution_client", self.helx_execution_client.close),
             ("oidc_service", self.oidc_service.aclose),
             ("redis", self.redis.aclose),
         ):

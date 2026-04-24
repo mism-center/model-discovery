@@ -30,7 +30,6 @@ if TYPE_CHECKING:
     from mismapi.auth.session import SessionStore
     from mismapi.auth.session_refresh import SessionRefresher
     from mismapi.auth.validator import AuthValidator, OIDCValidator
-    from mismapi.clients.helx_execution_client import HelxExecutionClient
     from mismapi.clients.upload_client import UploadServiceClient
 
 
@@ -89,10 +88,6 @@ def _get_upload_client(container: ContainerDep) -> UploadServiceClient:
     return container.upload_client
 
 
-def _get_helx_execution_client(container: ContainerDep) -> HelxExecutionClient:
-    return container.helx_execution_client
-
-
 def _get_registry_service(
     container: ContainerDep,
 ) -> Generator[RegistryService, None, None]:
@@ -114,5 +109,4 @@ OIDCDiscoveryCacheDep = Annotated["OIDCDiscoveryCache", Depends(_get_oidc_discov
 OIDCServiceDep = Annotated["OIDCService", Depends(_get_oidc_service)]
 SessionRefresherDep = Annotated["SessionRefresher", Depends(_get_session_refresher)]
 UploadClientDep = Annotated["UploadServiceClient", Depends(_get_upload_client)]
-HelxExecutionClientDep = Annotated["HelxExecutionClient", Depends(_get_helx_execution_client)]
 RegistryServiceDep = Annotated[RegistryService, Depends(_get_registry_service)]
