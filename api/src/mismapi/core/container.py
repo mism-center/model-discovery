@@ -60,9 +60,6 @@ class AppContainer:
     def open_session(self) -> Iterator[Session]:
         """
         Open a SQLAlchemy session and yield it.
-
-        The one blessed way to get a `Session`. Commits/rollbacks remain the
-        caller's responsibility; this only owns the session lifecycle.
         """
         session = self._session_factory()
         try:
