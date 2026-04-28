@@ -50,6 +50,9 @@ gateway:
     JWT_AUDIENCE: ""
     JWT_ALGORITHMS: "RS256"
     JWT_JWKS_URL: ""
+    # Exection API
+    EXECUTION_API_URL: ""
+    EXECUTION_TIMEOUT_SECONDS: "120"
 
 irods:
   # PersistentVolumeClaim
@@ -59,7 +62,7 @@ irods:
     storage: "5Gi"
     accessMode: "ReadWriteMany"
     mountPath: "/irods"
-    subPath: "/"
+    subPath: ""
 
   # StorageClass
   storageClass:
@@ -70,7 +73,7 @@ irods:
 # ────────────────────────────────────────────────────────────
 searchService:
   enabled: true
-  replicaCount: 2
+  replicaCount: 0
   image:
     repository: mism/search-service
     tag: "1.0.0"
@@ -93,7 +96,7 @@ searchService:
 # ────────────────────────────────────────────────────────────
 uploadService:
   enabled: true
-  replicaCount: 2
+  replicaCount: 0
   image:
     repository: mism/upload-service
     tag: "1.0.0"
@@ -117,7 +120,7 @@ uploadService:
 # ────────────────────────────────────────────────────────────
 storageInterface:
   enabled: true
-  replicaCount: 1
+  replicaCount: 0
   image:
     repository: mism/storage-interface
     tag: "1.0.0"
@@ -145,6 +148,8 @@ storageInterface:
 # ────────────────────────────────────────────────────────────
 metadataStore:
   enabled: true
+  # azure has lost+found dir that causes init to fall .
+  pgData: /var/lib/postgresql/data/pgdata
   image:
     repository: postgres
     tag: "17-alpine"
