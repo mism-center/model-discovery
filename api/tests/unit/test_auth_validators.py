@@ -5,7 +5,6 @@ import jwt
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt import PyJWKClient
 from jwt.algorithms import RSAAlgorithm
-from jwt.api_jwk import PyJWKSet
 
 from mismapi.auth.validator import OIDCAuthValidator
 from mismapi.core.settings import Settings
@@ -21,7 +20,7 @@ def _seeded_jwk_client(
     """Build a `PyJWKClient` with its JWKS cache pre-seeded so no HTTP fetch happens."""
     client = PyJWKClient(uri, cache_jwk_set=True, lifespan=lifespan)
     assert client.jwk_set_cache is not None
-    client.jwk_set_cache.put(PyJWKSet.from_dict(jwk_payload))
+    client.jwk_set_cache.put({"keys": [jwk_payload]})  # type: ignore[arg-type]
     return client
 
 
