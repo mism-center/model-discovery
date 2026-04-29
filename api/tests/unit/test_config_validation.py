@@ -30,6 +30,7 @@ def test_oidc_mode_reports_all_missing_fields_at_once() -> None:
         "OIDC_CLIENT_SECRET",
         "OIDC_AUDIENCE",
         "OIDC_REDIRECT_URI",
+        "OIDC_COOKIE_SIGNING_SECRET",
         "OIDC_ISSUER_URL or OIDC_DISCOVERY_URL",
     ):
         assert name in message
@@ -45,6 +46,7 @@ def test_oidc_mode_accepts_discovery_url_in_lieu_of_issuer_url() -> None:
             OIDC_CLIENT_SECRET="x",
             OIDC_AUDIENCE="discovery-api",
             OIDC_REDIRECT_URI="https://gateway.example.com/api/auth/callback",
+            OIDC_COOKIE_SIGNING_SECRET="test-cookie-signing-secret",
         )
     )
 
@@ -59,6 +61,7 @@ def test_oidc_mode_rejects_whitespace_only_values() -> None:
                 OIDC_CLIENT_SECRET="x",
                 OIDC_AUDIENCE="discovery-api",
                 OIDC_REDIRECT_URI="https://gateway.example.com/api/auth/callback",
+                OIDC_COOKIE_SIGNING_SECRET="test-cookie-signing-secret",
             )
         )
 

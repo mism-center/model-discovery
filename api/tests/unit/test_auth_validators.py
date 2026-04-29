@@ -5,21 +5,13 @@ import jwt
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt.algorithms import RSAAlgorithm
 
-from mismapi.auth.base import build_auth_validator
 from mismapi.auth.jwks_cache import JWKSCache
-from mismapi.auth.oidc_discovery import OIDCDiscoveryCache
-from mismapi.auth.oidc_types import OIDCDiscoveryDocument
 from mismapi.auth.validator import OIDCAuthValidator
 from mismapi.core.settings import Settings
 
 
 def _settings(**overrides: Any) -> Settings:
     return Settings(_env_file=None, **overrides)  # type: ignore[call-arg]
-
-
-def test_build_auth_validator_selects_oidc() -> None:
-    validator = build_auth_validator(settings=_settings(AUTH_MODE="oidc"))
-    assert isinstance(validator, OIDCAuthValidator)
 
 
 async def test_oidc_auth_validator_validates_token_with_cached_jwks() -> None:
@@ -33,17 +25,18 @@ async def test_oidc_auth_validator_validates_token_with_cached_jwks() -> None:
         OIDC_AUDIENCE="mism-api",
         OIDC_REQUIRED_SCOPES="read",
     )
-    discovery_cache = OIDCDiscoveryCache(settings=settings)
-    discovery_cache.seed(
-        OIDCDiscoveryDocument(
-            issuer="https://issuer.example.com",
-            authorization_endpoint="",
-            token_endpoint="",
-            jwks_uri="https://issuer.example.com/jwks",
-            end_session_endpoint="",
-        )
+
+    async def issuer_loader() -> str:
+        return "https://issuer.example.com"
+
+    async def jwks_uri_loader() -> str:
+        return "https://issuer.example.com/jwks"
+
+    validator = OIDCAuthValidator(
+        settings=settings,
+        issuer_loader=issuer_loader,
+        jwks_uri_loader=jwks_uri_loader,
     )
-    validator = OIDCAuthValidator(settings=settings, discovery_cache=discovery_cache)
     validator.jwks_cache = JWKSCache.from_keys({"key-1": jwk_payload})
 
     token = jwt.encode(

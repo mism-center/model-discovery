@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from starlette.middleware.sessions import SessionMiddleware
 
 from mismapi.api.router import build_api_router
 from mismapi.core.container import AppContainer
@@ -10,6 +11,14 @@ from mismapi.core.logging import configure_root_logger
 from mismapi.core.settings import Settings, get_settings
 from mismapi.core.uvicorn_access_log import install_uvicorn_access_formatter
 from mismapi.middleware.request_context import RequestContextMiddleware
+
+OAUTH_STATE_COOKIE_PATH = "/api/auth"
+"""
+Scope the OAuth-state cookie to the auth router. The blob is only ever read
+by `/api/auth/callback` (and written by `/api/auth/login`), so there is no
+reason to ship it on every authenticated API request. Must stay aligned with
+the auth router prefix in `mismapi.api.router`.
+"""
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -45,6 +54,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     app.state.settings = resolved_settings
+    if not resolved_settings.disable_auth:
+        app.add_middleware(
+            SessionMiddleware,
+            secret_key=resolved_settings.oidc_cookie_signing_secret,
+            session_cookie=resolved_settings.oauth_state_cookie_name,
+            max_age=resolved_settings.oauth_state_cookie_max_age_seconds,
+            path=OAUTH_STATE_COOKIE_PATH,
+            same_site="lax",
+            https_only=resolved_settings.production_mode,
+        )
     app.add_middleware(RequestContextMiddleware)
     app.include_router(build_api_router())
     register_exception_handlers(app)

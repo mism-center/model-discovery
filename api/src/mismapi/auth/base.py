@@ -2,11 +2,11 @@
 FastAPI-level auth glue.
 
 `AuthenticatedPrincipal` lives in `mismapi.auth.principal` (a pure,
-dependency-free value type) and the `AuthValidator` / `OIDCValidator`
-protocols live alongside the OIDC validator (`OIDCAuthValidator`) in
-`mismapi.auth.validator`, so validator implementations can import them
-without dragging in the request-path helpers below. This module re-exports
-them so existing callers keep working.
+dependency-free value type) and the `AuthValidator` protocol lives alongside
+the OIDC validator (`OIDCAuthValidator`) in `mismapi.auth.validator`, so
+validator implementations can import them without dragging in the
+request-path helpers below. This module re-exports them so existing callers
+keep working.
 
 Session token refreshing logic lives in `mismapi.auth.session_refresh` as the
 `SessionRefresher` collaborator.
@@ -31,7 +31,7 @@ from mismapi.auth.factory import build_auth_validator
 from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.auth.session import SessionStore
 from mismapi.auth.session_refresh import SessionRefresher
-from mismapi.auth.validator import AuthValidator, OIDCValidator
+from mismapi.auth.validator import AuthValidator
 from mismapi.core.deps import (
     AuthValidatorDep,
     SessionRefresherDep,
@@ -44,7 +44,6 @@ from mismapi.core.settings import Settings
 __all__ = [
     "AuthenticatedPrincipal",
     "AuthValidator",
-    "OIDCValidator",
     "bearer_token_from_request_header",
     "build_auth_validator",
     "require_principal",

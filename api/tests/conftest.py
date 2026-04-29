@@ -35,6 +35,7 @@ def minimal_oidc_settings(**overrides: Any) -> Settings:
         "OIDC_CLIENT_ID": "discovery-api",
         "OIDC_CLIENT_SECRET": "x",
         "OIDC_REDIRECT_URI": "https://gateway.example.com/api/auth/callback",
+        "OIDC_COOKIE_SIGNING_SECRET": "test-cookie-signing-secret-please-change",
     }
     base.update(overrides)
     return make_settings(**base)

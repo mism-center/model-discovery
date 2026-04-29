@@ -31,6 +31,7 @@ _REQUIRED_OIDC_FIELDS: tuple[tuple[str, str], ...] = (
     ("oidc_client_secret", "OIDC_CLIENT_SECRET"),
     ("oidc_audience", "OIDC_AUDIENCE"),
     ("oidc_redirect_uri", "OIDC_REDIRECT_URI"),
+    ("oidc_cookie_signing_secret", "OIDC_COOKIE_SIGNING_SECRET"),
 )
 
 

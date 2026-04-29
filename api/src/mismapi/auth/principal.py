@@ -4,9 +4,8 @@ Dependency-free authentication principal value type.
 `AuthenticatedPrincipal` lives here (rather than in
 `mismapi.auth.validator` or `mismapi.auth.base`) so validator
 implementations can import it without pulling in any validator class or
-request-path glue. The validator protocols (`AuthValidator`, `OIDCValidator`)
-and the OIDC validator (`OIDCAuthValidator`) live in
-`mismapi.auth.validator`.
+request-path glue. The validator protocol (`AuthValidator`) and the OIDC
+validator (`OIDCAuthValidator`) live in `mismapi.auth.validator`.
 """
 
 from __future__ import annotations

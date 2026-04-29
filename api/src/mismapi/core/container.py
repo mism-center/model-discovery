@@ -22,7 +22,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from mismapi.auth.factory import build_auth_validator
-from mismapi.auth.oidc_discovery import OIDCDiscoveryCache
+from mismapi.auth.oauth_registry import build_oauth_registry, get_oidc_client
 from mismapi.auth.oidc_service import OIDCService
 from mismapi.auth.session import RedisSessionStore, SessionStore
 from mismapi.auth.session_refresh import SessionRefresher
@@ -32,6 +32,7 @@ from mismapi.core.errors import APIError
 from mismapi.core.settings import Settings
 
 if TYPE_CHECKING:
+    from authlib.integrations.starlette_client import StarletteOAuth2App
     from sqlalchemy.orm import Session
 
     from mismapi.auth.validator import AuthValidator
@@ -48,7 +49,7 @@ class AppContainer:
     session_store: SessionStore
     upload_client: UploadServiceClient
     auth_validator: AuthValidator
-    oidc_discovery_cache: OIDCDiscoveryCache
+    oidc_client: StarletteOAuth2App
     oidc_service: OIDCService
     session_refresher: SessionRefresher
     _engine: Engine
@@ -96,14 +97,11 @@ class AppContainer:
             session_ttl_seconds=settings.session_ttl_seconds,
         )
 
-        oidc_discovery_cache = OIDCDiscoveryCache(settings=settings)
+        oidc_client = get_oidc_client(build_oauth_registry(settings))
+        oidc_service = OIDCService(settings=settings, client=oidc_client)
         auth_validator = build_auth_validator(
             settings=settings,
-            discovery_cache=oidc_discovery_cache,
-        )
-        oidc_service = OIDCService(
-            settings=settings,
-            discovery=oidc_discovery_cache,
+            oidc_service=oidc_service,
         )
         session_refresher = SessionRefresher(
             settings=settings,
@@ -117,7 +115,7 @@ class AppContainer:
             session_store=session_store,
             upload_client=upload_client,
             auth_validator=auth_validator,
-            oidc_discovery_cache=oidc_discovery_cache,
+            oidc_client=oidc_client,
             oidc_service=oidc_service,
             session_refresher=session_refresher,
             _engine=engine,
@@ -132,15 +130,16 @@ class AppContainer:
         try:
             if self.settings.disable_auth:
                 return
-            await self.oidc_discovery_cache.get()
+            await self.oidc_service.prime_metadata()
         except APIError as exc:
             logger.warning("oidc_discovery_prime_failed error=%s", exc)
+        except Exception:
+            logger.exception("oidc_discovery_prime_failed_unexpected")
 
     async def aclose(self) -> None:
         """Tear down every collaborator, best-effort. Errors are logged, never raised."""
         for name, close in (
             ("upload_client", self.upload_client.close),
-            ("oidc_service", self.oidc_service.aclose),
             ("redis", self.redis.aclose),
         ):
             try:

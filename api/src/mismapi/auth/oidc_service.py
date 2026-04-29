@@ -1,30 +1,30 @@
 """
-Unified OIDC flow service.
+OIDC flow facade backed by an Authlib Starlette OAuth client.
 
-Single entry point for every OIDC flow the API performs: building the
-authorization URL, exchanging an authorization code, refreshing tokens,
-and constructing the end-session URL.
+Wraps `StarletteOAuth2App` so handlers and the session refresher get a single
+async-friendly interface.
 
-The service owns **one** long-lived `AsyncOAuth2Client`. All flows are
-issued through that client, keeping the connection pool warm and removing the
-per-call client construction churn that plagued the old free-function API.
+This module owns only the error mapping and the small bits Authlib does not
+cover directly (RP-initiated logout URL construction, normalizing
+`expires_in`, exposing the validated `userinfo` dict on `TokenResponse`).
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, NoReturn, cast
+from typing import TYPE_CHECKING, NoReturn
 from urllib.parse import urlencode
 
 import httpx
-from authlib.integrations.base_client.errors import OAuthError
-from authlib.integrations.httpx_client import AsyncOAuth2Client
-from authlib.oauth2.rfc6749.errors import MismatchingStateException
+from authlib.integrations.base_client.errors import MismatchingStateError, OAuthError
+from pydantic import ValidationError
+from starlette.responses import RedirectResponse
 
 from mismapi.auth.oidc_types import (
     CODE_EXCHANGE_ERRORS,
     REFRESH_ERRORS,
     TOKEN_ERROR_BODY_MAX_LEN,
+    IdpServerMetadata,
     OIDCErrorCodes,
     TokenResponse,
 )
@@ -33,13 +33,10 @@ from mismapi.core.settings import Settings
 from mismapi.utils import get_string_or_empty_from_dict
 
 if TYPE_CHECKING:
-    from mismapi.auth.oidc_discovery import OIDCDiscoveryCache
+    from authlib.integrations.starlette_client import StarletteOAuth2App
+    from starlette.requests import Request
 
 logger = logging.getLogger(__name__)
-
-
-def _build_authorization_callback_url(settings: Settings, *, code: str, state: str) -> str:
-    return f"{settings.oidc_redirect_uri}?{urlencode({'code': code, 'state': state})}"
 
 
 def _normalize_expires_in_to_seconds(value: object) -> int:
@@ -70,7 +67,7 @@ def _normalize_expires_in_to_seconds(value: object) -> int:
     return 0
 
 
-def _build_authlib_token_response(
+def _build_token_response(
     token: dict[str, object],
     *,
     invalid_access_token_code: str = "auth_token_exchange_invalid",
@@ -139,64 +136,43 @@ def _raise_oauth_error(
 
 
 class OIDCService:
-    """All OIDC flows, backed by a single long-lived authlib client."""
+    """All OIDC flows, delegated to an Authlib `StarletteOAuth2App`.
 
-    def __init__(
-        self,
-        *,
-        settings: Settings,
-        discovery: OIDCDiscoveryCache,
-    ) -> None:
+    The client is resolved once from the OAuth registry at container-build
+    time and passed in, so per-request methods don't pay the registry-lookup
+    cost on every call.
+    """
+
+    def __init__(self, *, settings: Settings, client: StarletteOAuth2App) -> None:
         self._settings = settings
-        self._discovery = discovery
-        self._client = AsyncOAuth2Client(
-            client_id=settings.oidc_client_id,
-            client_secret=settings.oidc_client_secret,
-            redirect_uri=settings.oidc_redirect_uri,
-            scope="openid",
-            code_challenge_method="S256",
-            token_endpoint_auth_method="client_secret_post",
-            timeout=httpx.Timeout(15.0),
+        self._client = client
+
+    async def authorize_redirect(self, request: Request) -> RedirectResponse:
+        result = await self._client.authorize_redirect(
+            request,
+            self._settings.oidc_redirect_uri,
         )
-
-    async def aclose(self) -> None:
-        await cast(httpx.AsyncClient, self._client).aclose()
-
-    async def build_authorization_url(self, *, state: str, code_verifier: str) -> str:
-        discovery = await self._discovery.get()
-        url, _ = self._client.create_authorization_url(
-            discovery.authorization_endpoint,
-            state=state,
-            code_verifier=code_verifier,
-        )
-        return str(url)
-
-    async def exchange_code(
-        self,
-        *,
-        code: str,
-        code_verifier: str,
-        state: str,
-    ) -> TokenResponse:
-        discovery = await self._discovery.get()
-        try:
-            token = await self._client.fetch_token(
-                discovery.token_endpoint,
-                authorization_response=_build_authorization_callback_url(
-                    self._settings,
-                    code=code,
-                    state=state,
-                ),
-                code_verifier=code_verifier,
-                state=state,
-            )
-        except MismatchingStateException as exc:
-            logger.warning("oidc_mismatching_state error=%s", exc)
+        if not isinstance(result, RedirectResponse):
             raise APIError(
-                status_code=400,
-                code="auth_callback_invalid",
-                detail="OAuth state did not match.",
-            ) from exc
+                status_code=500,
+                code="auth_authorize_redirect_invalid",
+                detail="Authlib did not return a redirect response.",
+            )
+        return result
+
+    async def authorize_access_token(self, request: Request) -> TokenResponse:
+        """
+        Validate state, exchange the authorization code, and validate the ID
+        token. Returns the parsed token plus validated `userinfo` claims.
+
+        `MismatchingStateError` is intentionally **not** caught here.
+        Handlers map it to a redirect-to-login so an expired or replayed state
+        cookie produces a graceful re-auth instead of a 4xx.
+        """
+        try:
+            token = await self._client.authorize_access_token(request)
+        except MismatchingStateError:
+            raise
         except OAuthError as exc:
             _raise_oauth_error("oidc_token_exchange_failed", CODE_EXCHANGE_ERRORS, exc)
         except httpx.HTTPError as exc:
@@ -206,6 +182,13 @@ class OIDCService:
                 exc,
             )
 
+        if not isinstance(token, dict):
+            raise APIError(
+                status_code=502,
+                code=CODE_EXCHANGE_ERRORS.invalid_response,
+                detail="OIDC token response is malformed.",
+            )
+
         id_token = token.get("id_token")
         if not isinstance(id_token, str) or not id_token:
             raise APIError(
@@ -213,13 +196,12 @@ class OIDCService:
                 code=CODE_EXCHANGE_ERRORS.invalid_response,
                 detail="OIDC token response is missing required fields.",
             )
-        return _build_authlib_token_response(dict(token))
+        return _build_token_response(dict(token))
 
     async def refresh(self, *, refresh_token: str) -> TokenResponse:
-        discovery = await self._discovery.get()
         try:
-            token = await self._client.refresh_token(
-                discovery.token_endpoint,
+            token = await self._client.fetch_access_token(
+                grant_type="refresh_token",
                 refresh_token=refresh_token,
             )
         except OAuthError as exc:
@@ -231,14 +213,43 @@ class OIDCService:
                 exc,
             )
 
-        return _build_authlib_token_response(
+        return _build_token_response(
             dict(token),
             invalid_access_token_code=REFRESH_ERRORS.invalid_response,
         )
 
+    async def load_metadata(self) -> IdpServerMetadata:
+        """
+        Fetch and validate the OIDC discovery document.
+
+        Authlib caches the raw payload internally for the lifetime of the
+        client (no TTL); this method re-validates the cached payload through
+        `IdpServerMetadata` on every call so all downstream consumers get a
+        typed, shape-checked document instead of an untyped `dict[str, Any]`.
+
+        Validation cost is bounded — the underlying HTTP fetch only happens
+        on the first call.
+        """
+        raw = await self._client.load_server_metadata()
+        try:
+            return IdpServerMetadata.model_validate(raw)
+        except ValidationError as exc:
+            logger.error("oidc_discovery_invalid errors=%s", exc.errors())
+            raise APIError(
+                status_code=503,
+                code="auth_oidc_discovery_invalid",
+                detail="OIDC discovery payload failed validation.",
+            ) from exc
+
     async def build_end_session_url(self, *, id_token_hint: str) -> str | None:
-        discovery = await self._discovery.get()
-        if not discovery.end_session_endpoint:
+        """
+        Build the RP-initiated logout URL from the cached server metadata.
+
+        Returns `None` when the provider does not advertise an end-session
+        endpoint, so the handler can fall back to a plain JSON logout.
+        """
+        metadata = await self.load_metadata()
+        if not metadata.end_session_endpoint:
             return None
         params: dict[str, str] = {
             "id_token_hint": id_token_hint,
@@ -246,4 +257,25 @@ class OIDCService:
         }
         if self._settings.oidc_post_logout_redirect_uri:
             params["post_logout_redirect_uri"] = self._settings.oidc_post_logout_redirect_uri
-        return f"{discovery.end_session_endpoint}?{urlencode(params)}"
+        return f"{metadata.end_session_endpoint}?{urlencode(params)}"
+
+    async def load_jwks_uri(self) -> str:
+        """Return the JWKS URI from validated server metadata, for the inbound validator."""
+        metadata = await self.load_metadata()
+        return metadata.jwks_uri
+
+    async def load_issuer(self) -> str:
+        """Return the issuer claim from validated server metadata."""
+        metadata = await self.load_metadata()
+        return metadata.issuer
+
+    async def prime_metadata(self) -> None:
+        """Best-effort warm-up of the server metadata cache (with validation)."""
+        await self.load_metadata()
+
+
+__all__ = [
+    "OIDCService",
+    "_normalize_expires_in_to_seconds",
+    "_build_token_response",
+]

@@ -1,14 +1,12 @@
 import logging
-import secrets
 import time
 
+from authlib.integrations.base_client.errors import MismatchingStateError
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from mismapi.auth.oidc_types import generate_code_verifier
 from mismapi.core.deps import (
     OIDCServiceDep,
-    OIDCValidatorDep,
     SessionStoreDep,
     SettingsDep,
 )
@@ -20,36 +18,16 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
-PKCE_STATE_TTL_SECONDS = 300
 LOGIN_PATH = "/api/auth/login"
 AUTH_ERROR_DESCRIPTION_MAX_LEN = 120
 
 
-def _redact_oauth_state_for_log(state: str) -> str:
-    if len(state) <= 8:
-        return "…"
-    return f"{state[:8]}…"
-
-
 @router.get("/login")
 async def login(
-    session_store: SessionStoreDep,
+    request: Request,
     oidc_service: OIDCServiceDep,
 ) -> RedirectResponse:
-    state = secrets.token_urlsafe(32)
-    code_verifier = generate_code_verifier()
-
-    await session_store.set_ephemeral(
-        key=state,
-        value=code_verifier,
-        ttl_seconds=PKCE_STATE_TTL_SECONDS,
-    )
-
-    authorize_url = await oidc_service.build_authorization_url(
-        state=state,
-        code_verifier=code_verifier,
-    )
-    return RedirectResponse(url=authorize_url, status_code=302)
+    return await oidc_service.authorize_redirect(request)
 
 
 @router.get("/callback")
@@ -58,7 +36,6 @@ async def callback(
     settings: SettingsDep,
     session_store: SessionStoreDep,
     oidc_service: OIDCServiceDep,
-    auth_validator: OIDCValidatorDep,
     code: str = "",
     state: str = "",
 ) -> RedirectResponse:
@@ -84,21 +61,11 @@ async def callback(
             detail="Missing code or state parameter.",
         )
 
-    code_verifier = await session_store.get_ephemeral(key=state)
-    if code_verifier is None:
-        logger.warning(
-            "auth_state_invalid_or_expired state=%s",
-            _redact_oauth_state_for_log(state),
-        )
+    try:
+        token_response = await oidc_service.authorize_access_token(request)
+    except MismatchingStateError as exc:
+        logger.warning("auth_state_invalid_or_expired error=%s", exc)
         return RedirectResponse(url=LOGIN_PATH, status_code=302)
-
-    token_response = await oidc_service.exchange_code(
-        code=code,
-        code_verifier=code_verifier,
-        state=state,
-    )
-
-    await auth_validator.verify_identity(token_response.id_token)
 
     ttl_sec = (
         token_response.expires_in if token_response.expires_in > 0 else settings.session_ttl_seconds
@@ -122,7 +89,7 @@ async def callback(
         key=settings.session_cookie_name,
         value=session_id,
         httponly=True,
-        secure=True,
+        secure=settings.production_mode,
         samesite="lax",
         max_age=settings.session_ttl_seconds,
     )
@@ -148,7 +115,7 @@ async def logout(
         resp.delete_cookie(
             key=settings.session_cookie_name,
             httponly=True,
-            secure=True,
+            secure=settings.production_mode,
             samesite="lax",
         )
         return resp

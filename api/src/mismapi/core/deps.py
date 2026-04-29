@@ -14,22 +14,20 @@ every other provider derives from it.
 from __future__ import annotations
 
 from collections.abc import Generator
-from typing import TYPE_CHECKING, Annotated, cast
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends, Request
 from mism_registry.backends.postgres import PostgresRegistry
 
 from mismapi.core.container import AppContainer
-from mismapi.core.errors import APIError
 from mismapi.core.settings import Settings
 from mismapi.services.registry_service import RegistryService
 
 if TYPE_CHECKING:
-    from mismapi.auth.oidc_discovery import OIDCDiscoveryCache
     from mismapi.auth.oidc_service import OIDCService
     from mismapi.auth.session import SessionStore
     from mismapi.auth.session_refresh import SessionRefresher
-    from mismapi.auth.validator import AuthValidator, OIDCValidator
+    from mismapi.auth.validator import AuthValidator
     from mismapi.clients.upload_client import UploadServiceClient
 
 
@@ -51,29 +49,6 @@ def _get_session_store(container: ContainerDep) -> SessionStore:
 
 def _get_auth_validator(container: ContainerDep) -> AuthValidator:
     return container.auth_validator
-
-
-def _get_oidc_validator(container: ContainerDep) -> OIDCValidator:
-    """
-    Resolve the active validator as an ``OIDCValidator`` or raise 503 in non-OIDC mode.
-
-    In OIDC mode the container always wires an ``OIDCAuthValidator``, which
-    structurally satisfies :class:`mismapi.auth.base.OIDCValidator`. The
-    ``settings.auth_mode`` gate is the runtime guarantee; handlers can then
-    call ``verify_identity`` without ``isinstance``-branching on the concrete
-    class.
-    """
-    if container.settings.auth_mode != "oidc":
-        raise APIError(
-            status_code=503,
-            code="oidc_validator_required",
-            detail="Operation requires OIDC authentication mode.",
-        )
-    return cast("OIDCValidator", container.auth_validator)
-
-
-def _get_oidc_discovery_cache(container: ContainerDep) -> OIDCDiscoveryCache:
-    return container.oidc_discovery_cache
 
 
 def _get_oidc_service(container: ContainerDep) -> OIDCService:
@@ -104,8 +79,6 @@ def _get_registry_service(
 SettingsDep = Annotated[Settings, Depends(_get_settings)]
 SessionStoreDep = Annotated["SessionStore", Depends(_get_session_store)]
 AuthValidatorDep = Annotated["AuthValidator", Depends(_get_auth_validator)]
-OIDCValidatorDep = Annotated["OIDCValidator", Depends(_get_oidc_validator)]
-OIDCDiscoveryCacheDep = Annotated["OIDCDiscoveryCache", Depends(_get_oidc_discovery_cache)]
 OIDCServiceDep = Annotated["OIDCService", Depends(_get_oidc_service)]
 SessionRefresherDep = Annotated["SessionRefresher", Depends(_get_session_refresher)]
 UploadClientDep = Annotated["UploadServiceClient", Depends(_get_upload_client)]

@@ -20,13 +20,8 @@ class SessionStore(Protocol):
 
     async def delete(self, session_id: str) -> None: ...
 
-    async def set_ephemeral(self, key: str, value: str, ttl_seconds: int) -> None: ...
-
-    async def get_ephemeral(self, key: str) -> str | None: ...
-
 
 SESSION_KEY_PREFIX = "session:"
-OIDC_STATE_KEY_PREFIX = "oidc_state:"
 
 
 @dataclass(slots=True)
@@ -62,17 +57,3 @@ class RedisSessionStore:
     async def delete(self, session_id: str) -> None:
         key = f"{SESSION_KEY_PREFIX}{session_id}"
         await self.redis.delete(key)
-
-    async def set_ephemeral(self, key: str, value: str, ttl_seconds: int) -> None:
-        redis_key = f"{OIDC_STATE_KEY_PREFIX}{key}"
-        await self.redis.set(redis_key, value, ex=ttl_seconds)
-
-    async def get_ephemeral(self, key: str) -> str | None:
-        """Fetch and atomically delete an ephemeral key so state is single-use."""
-        redis_key = f"{OIDC_STATE_KEY_PREFIX}{key}"
-        raw = await self.redis.getdel(redis_key)
-        if raw is None:
-            return None
-        if isinstance(raw, bytes):
-            return raw.decode("utf-8")
-        return str(raw)

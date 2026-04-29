@@ -1,32 +1,64 @@
 """
 OIDC value types and flow-level constants.
 
-All OIDC flow logic (authorization URL, code-for-token exchange, refresh,
-end-session) lives in `mismapi.auth.oidc_service`. Discovery-document
-caching lives in `mismapi.auth.oidc_discovery`. This module is deliberately
-kept to pure data classes and small pure helpers so that it can be imported
-from anywhere without dragging in `authlib` or `httpx` client machinery.
+OIDC discovery, JWKS handling, and the actual OAuth flow are owned by
+Authlib via `mismapi.auth.oidc_service.OIDCService`. This module is
+deliberately kept to pure value types so it can be imported anywhere
+without dragging in `authlib` or `httpx`.
 """
 
 from __future__ import annotations
 
-import secrets
 from dataclasses import dataclass
+
+from pydantic import BaseModel, ConfigDict, Field
 
 TOKEN_ERROR_BODY_MAX_LEN = 256
 
 
-@dataclass(frozen=True, slots=True)
-class OIDCDiscoveryDocument:
-    issuer: str
-    authorization_endpoint: str
-    token_endpoint: str
-    jwks_uri: str
-    end_session_endpoint: str
+class IdpServerMetadata(BaseModel):
+    """Validated subset of an OIDC discovery document.
+
+    Mirrors the OpenID Connect Discovery 1.0 spec plus the common
+    OAuth 2.0 Authorization Server Metadata (RFC 8414) and RP-Initiated
+    Logout extensions. Required fields are the ones our flows actually
+    depend on (`issuer`, `authorization_endpoint`, `token_endpoint`,
+    `jwks_uri`); empty strings are rejected via `min_length=1` because
+    those flows would silently break on an empty value.
+
+    Provider-specific extras (Microsoft Entra's `tenant_region_scope`,
+    Keycloak's `frontchannel_logout_supported`, Authlib's `_loaded_at`
+    sentinel, etc.) are accepted via `extra="allow"` so we never reject a
+    well-formed payload that simply happens to include unfamiliar keys.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    issuer: str = Field(min_length=1)
+    authorization_endpoint: str = Field(min_length=1)
+    token_endpoint: str = Field(min_length=1)
+    jwks_uri: str = Field(min_length=1)
+
+    userinfo_endpoint: str | None = None
+    end_session_endpoint: str | None = None
+    revocation_endpoint: str | None = None
+    introspection_endpoint: str | None = None
+
+    response_types_supported: list[str] | None = None
+    response_modes_supported: list[str] | None = None
+    grant_types_supported: list[str] | None = None
+    subject_types_supported: list[str] | None = None
+    scopes_supported: list[str] | None = None
+    claims_supported: list[str] | None = None
+    id_token_signing_alg_values_supported: list[str] | None = None
+    token_endpoint_auth_methods_supported: list[str] | None = None
+    code_challenge_methods_supported: list[str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class TokenResponse:
+    """Normalized result of a token exchange or refresh."""
+
     access_token: str
     refresh_token: str
     id_token: str
@@ -59,8 +91,3 @@ REFRESH_ERRORS = OIDCErrorCodes(
     detail_failed="OIDC token refresh failed.",
     detail_unavailable="OIDC token endpoint is unavailable.",
 )
-
-
-def generate_code_verifier() -> str:
-    """PKCE `code_verifier` (high-entropy secret)."""
-    return secrets.token_urlsafe(96)
