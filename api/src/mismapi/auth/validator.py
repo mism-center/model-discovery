@@ -4,12 +4,13 @@
 * `OIDCAuthValidator` — Validates inbound OIDC-issued JWT access tokens
   against the IdP's signing keys and our configured audience/scopes.
 
-The validator no longer owns OIDC discovery: it pulls `issuer` and
-`jwks_uri` from a metadata loader callback supplied at construction time
-(in practice, `OIDCService.load_issuer` / `load_jwks_uri`, which delegate
-to Authlib's cached `load_server_metadata`). This keeps a single discovery
-cache for the whole app instead of running the inbound validator and the
-outbound OAuth client on parallel ones.
+JWKS fetching and caching are delegated to PyJWT's `PyJWKClient`, which
+provides TTL caching, single-flight kid lookup with auto-refresh on miss,
+and key parsing in one component. The validator builds the client lazily
+on first use because the JWKS URI is resolved through an async loader
+(in practice `OIDCService.load_jwks_uri`, backed by Authlib's cached
+`load_server_metadata`). `PyJWKClient.get_signing_key` is synchronous
+(`urllib`-based), so calls are dispatched via `asyncio.to_thread`.
 
 `AuthenticatedPrincipal` stays in `mismapi.auth.principal` as a pure,
 dependency-free value type.
@@ -17,16 +18,16 @@ dependency-free value type.
 
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import jwt
-from jwt.algorithms import RSAAlgorithm
+from jwt import PyJWKClient
+from jwt.exceptions import PyJWKClientConnectionError, PyJWKClientError
 
-from mismapi.auth.jwks_cache import JWKSCache
 from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.core.errors import APIError
 from mismapi.core.settings import Settings
@@ -52,13 +53,8 @@ class OIDCAuthValidator:
     settings: Settings
     issuer_loader: IssuerLoader
     jwks_uri_loader: JwksUriLoader
-    jwks_cache: JWKSCache = field(init=False)
-
-    def __post_init__(self) -> None:
-        self.jwks_cache = JWKSCache(
-            uri_supplier=self.jwks_uri_loader,
-            ttl_seconds=self.settings.oidc_jwks_ttl_seconds,
-        )
+    jwk_client: PyJWKClient | None = None
+    _client_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
 
     async def validate_token(self, token: str) -> AuthenticatedPrincipal:
         """Validate an access_token: signature, issuer, audience, scopes."""
@@ -100,7 +96,6 @@ class OIDCAuthValidator:
 
     async def _resolve_key(self, unverified_header: dict[str, str]) -> Any:
         """Resolve the JWK for a given token's `kid` header."""
-        keys = await self.jwks_cache.get()
         kid = unverified_header.get("kid", "")
         if not kid:
             raise APIError(
@@ -109,15 +104,45 @@ class OIDCAuthValidator:
                 detail="Token kid header missing.",
             )
 
-        jwk_payload = keys.get(kid)
-        if jwk_payload is None:
+        client = await self._get_client()
+        try:
+            signing_key = await asyncio.to_thread(client.get_signing_key, kid)
+        except PyJWKClientConnectionError as exc:
+            raise APIError(
+                status_code=503,
+                code="auth_jwks_unavailable",
+                detail="JWKS fetch failed.",
+            ) from exc
+        except PyJWKClientError as exc:
+            # Covers unknown-kid (after refresh) and malformed JWKS responses.
             raise APIError(
                 status_code=401,
                 code="auth_unknown_kid",
                 detail="Unrecognized token key id.",
-            )
+            ) from exc
 
-        return RSAAlgorithm.from_jwk(json.dumps(jwk_payload))
+        return signing_key.key
+
+    async def _get_client(self) -> PyJWKClient:
+        if self.jwk_client is not None:
+            return self.jwk_client
+        async with self._client_lock:
+            if self.jwk_client is not None:
+                return self.jwk_client
+            jwks_uri = await self.jwks_uri_loader()
+            if not jwks_uri:
+                raise APIError(
+                    status_code=500,
+                    code="auth_oidc_uninitialized",
+                    detail="JWKS URI is not configured.",
+                )
+            logger.info("building_jwk_client url=%s", jwks_uri)
+            self.jwk_client = PyJWKClient(
+                jwks_uri,
+                cache_jwk_set=True,
+                lifespan=self.settings.oidc_jwks_ttl_seconds,
+            )
+            return self.jwk_client
 
 
 def _parse_scope_claim(payload: dict[str, object]) -> set[str]:

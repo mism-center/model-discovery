@@ -5,9 +5,9 @@ Owns the single Authlib `OAuth` instance and the registered OIDC client used
 for every browser-side OAuth flow. The client wraps Authlib's `StarletteOAuth2App`.
 
 Discovery + JWKS caching for *outbound* flows is handled internally by Authlib
-via `server_metadata_url`. Inbound bearer-token validation continues to use
-`mismapi.auth.jwks_cache.JWKSCache`, sourcing its `jwks_uri` through the same
-registered client to avoid a second discovery cache.
+via `server_metadata_url`. Inbound bearer-token validation uses PyJWT's
+`PyJWKClient` (see `mismapi.auth.validator`), sourcing its `jwks_uri` through
+the same registered client to avoid a second discovery cache.
 """
 
 from __future__ import annotations
