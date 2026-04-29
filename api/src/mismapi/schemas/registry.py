@@ -384,3 +384,20 @@ class ModelRunDetailsResponse(BaseModel):
     total: int
 
     model_config = {"protected_namespaces": ()}
+
+
+class RunDetailResponse(BaseModel):
+    """Single run, hydrated, with the latest execution-service status snapshot.
+
+    Returned by GET /runs/{run_id}. The Discovery API calls the Execution API
+    first so the exec service can perform its lazy DAL refresh; the run record
+    here is then read from the DAL with that fresh state already applied.
+    """
+
+    run: RunDetailItem
+    input_resources: list[ResourceSummaryItem] = Field(default_factory=list)
+    output_resources: list[ResourceSummaryItem] = Field(default_factory=list)
+    execution_status: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Raw response from the Execution service /api/v1/runs/{run_id} call.",
+    )

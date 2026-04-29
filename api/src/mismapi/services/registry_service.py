@@ -238,6 +238,37 @@ class RegistryService:
         logger.info("Created run %s for model %s by %s", run.id, model_id, principal.subject)
         return run
 
+    def get_run(self, run_id: str) -> tuple[Run, list[Resource], list[Resource]]:
+        """Fetch a run plus its input/output resources, hydrated.
+
+        Used by GET /runs/{run_id}. The endpoint is expected to call the
+        Execution service first so the lazy DAL refresh has already run by the
+        time we read the Run record here — guaranteeing fresh status.
+        """
+        try:
+            run = self._registry.get_run(run_id)
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+        # Hydrate input/output resources. Skip any that 404 — a run may
+        # legitimately reference a resource that has since been deleted; we
+        # don't want a single missing resource to blow up the whole response.
+        input_resources: list[Resource] = []
+        for rid in run.input_resource_ids:
+            try:
+                input_resources.append(self._registry.get_resource(rid))
+            except ResourceNotFoundError:
+                logger.warning("Run %s references missing input resource %s", run_id, rid)
+
+        output_resources: list[Resource] = []
+        for rid in run.output_resource_ids:
+            try:
+                output_resources.append(self._registry.get_resource(rid))
+            except ResourceNotFoundError:
+                logger.warning("Run %s references missing output resource %s", run_id, rid)
+
+        return run, input_resources, output_resources
+
     def get_model_run_details(
         self,
         *,
