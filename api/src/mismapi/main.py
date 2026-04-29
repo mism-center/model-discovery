@@ -53,11 +53,16 @@ def create_app() -> FastAPI:
     settings = get_settings()
     configure_root_logger(log_level=settings.log_level)
 
+    # Pin Swagger/ReDoc/OpenAPI under the API prefix so a UI can own "/".
+    api_prefix = settings.api_prefix.rstrip("/")
     app = FastAPI(
         title="MISM Gateway API",
         version="0.1.0",
         description="Gateway API for searching, uploading, and managing model assets.",
         lifespan=lifespan,
+        docs_url=f"{api_prefix}/docs",
+        redoc_url=f"{api_prefix}/redoc",
+        openapi_url=f"{api_prefix}/openapi.json",
     )
 
     if settings.mism_env in ("local", "development"):

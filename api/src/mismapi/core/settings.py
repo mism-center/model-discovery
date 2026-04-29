@@ -15,6 +15,10 @@ class Settings(BaseSettings):
         alias="DATABASE_URL",
     )
 
+    # All API + docs are mounted under this prefix so the UI can sit at "/".
+    # Must start with "/" and not end with "/". Example: "/api".
+    api_prefix: str = Field(default="/api", alias="API_PATH_PREFIX")
+
     upload_service_url: str = Field(default="http://localhost:8200", alias="UPLOAD_SERVICE_URL")
     upload_timeout_seconds: float = Field(default=60.0, alias="UPLOAD_TIMEOUT_SECONDS")
 

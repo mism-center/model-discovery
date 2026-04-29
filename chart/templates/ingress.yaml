@@ -23,12 +23,21 @@ spec:
     - host: {{ .Values.ingress.host }}
       http:
         paths:
-          # Discovery Gateway REST API – main entry point
-          - path: /
+          # API + auto-docs live at {{ .Values.ui.apiPath }} so the UI can own "/".
+          # Longer prefix listed first so nginx matches it before "/".
+          - path: {{ .Values.gateway.env.API_PATH_PREFIX }}
             pathType: Prefix
             backend:
               service:
                 name: discovery-gateway
                 port:
                   name: http
+          # UI fallback — every non-API path goes to the UI service.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.ui.service.name }}
+                port:
+
 {{- end }}

@@ -32,6 +32,9 @@ gateway:
     AUTH_MODE: "oidc"
     DISABLE_AUTH: "false"
     STUB_UPSTREAM_SERVICES: "false"
+    # Subpath that hosts the API + Swagger/ReDoc/openapi.json.
+    # Docs land at {API_PATH_PREFIX}/docs. Set to "" to mount at root.
+    API_PATH_PREFIX: "/api"
     # Upload service
     UPLOAD_SERVICE_URL: "http://upload-service:8200"
     UPLOAD_TIMEOUT_SECONDS: "60.0"
@@ -179,6 +182,18 @@ metadataStore:
 migration:
   enabled: true
   backoffLimit: 3
+
+# ────────────────────────────────────────────────────────────
+# UI  (frontend served at "/" — chart only routes traffic; the
+# UI itself is deployed separately. Point .service.name at an
+# existing in-cluster Service.)
+# ────────────────────────────────────────────────────────────
+ui:
+  enabled: false
+  apiPath: "/api" # MUST match gateway.env.API_PATH_PREFIX
+  service:
+    name: "model-discovery-ui"
+    port: 80
 
 # ────────────────────────────────────────────────────────────
 # Ingress
