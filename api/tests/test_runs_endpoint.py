@@ -256,3 +256,117 @@ def test_get_run_refresh_default_is_true() -> None:
 
     assert response.status_code == 200
     exec_client.get_status.assert_awaited_once_with("run-1")
+
+
+# ── DELETE /runs/{run_id} ───────────────────────────────────────
+
+
+def test_cancel_run_calls_execution_then_dal() -> None:
+    """Endpoint must call execution_client.cancel_run BEFORE service.get_run."""
+    run = _make_run(status=RunStatus.CANCELLED)
+
+    call_order: list[str] = []
+
+    service = MagicMock(spec=RegistryService)
+
+    def _get_run(run_id: str) -> tuple[Run, list[Resource], list[Resource]]:
+        call_order.append("dal")
+        return run, [], []
+
+    service.get_run.side_effect = _get_run
+
+    exec_client = AsyncMock(spec=ExecutionClient)
+
+    async def _cancel(run_id: str) -> dict:
+        call_order.append("exec")
+        return {"run_id": run_id, "status": "cancelled"}
+
+    exec_client.cancel_run.side_effect = _cancel
+
+    client = _make_app(service, exec_client)
+    response = client.delete("/api/v1/runs/run-1")
+
+    assert response.status_code == 200
+    # Cancel must be issued BEFORE we read the new state from the DAL.
+    assert call_order == ["exec", "dal"]
+
+    exec_client.cancel_run.assert_awaited_once_with("run-1")
+    service.get_run.assert_called_once_with("run-1")
+
+
+def test_cancel_run_returns_hydrated_payload() -> None:
+    input_ds = _make_dataset(id="d-1", name="Input")
+    run = _make_run(
+        id="run-1",
+        status=RunStatus.CANCELLED,
+        input_resource_ids=("d-1",),
+    )
+
+    service = MagicMock(spec=RegistryService)
+    service.get_run.return_value = (run, [input_ds], [])
+
+    exec_client = AsyncMock(spec=ExecutionClient)
+    exec_client.cancel_run.return_value = {"run_id": "run-1", "status": "cancelled"}
+
+    client = _make_app(service, exec_client)
+    response = client.delete("/api/v1/runs/run-1")
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["run"]["id"] == "run-1"
+    assert payload["run"]["status"] == RunStatus.CANCELLED.value
+    assert len(payload["input_resources"]) == 1
+    assert payload["input_resources"][0]["id"] == "d-1"
+    assert payload["execution_status"] == {"run_id": "run-1", "status": "cancelled"}
+
+
+def test_cancel_run_propagates_execution_error() -> None:
+    """If exec service can't cancel, propagate — DAL must NOT be touched."""
+    service = MagicMock(spec=RegistryService)
+
+    exec_client = AsyncMock(spec=ExecutionClient)
+    exec_client.cancel_run.side_effect = APIError(
+        status_code=502,
+        code="execution_cancel_failed",
+        detail="Failed to reach execution service to cancel run run-1.",
+    )
+
+    client = _make_app(service, exec_client)
+    response = client.delete("/api/v1/runs/run-1")
+
+    assert response.status_code == 502
+    service.get_run.assert_not_called()
+
+
+def test_cancel_run_handles_execution_timeout_504() -> None:
+    service = MagicMock(spec=RegistryService)
+
+    exec_client = AsyncMock(spec=ExecutionClient)
+    exec_client.cancel_run.side_effect = APIError(
+        status_code=504,
+        code="execution_cancel_timeout",
+        detail="Execution service cancel timed out for run run-1.",
+    )
+
+    client = _make_app(service, exec_client)
+    response = client.delete("/api/v1/runs/run-1")
+
+    assert response.status_code == 504
+    service.get_run.assert_not_called()
+
+
+def test_cancel_run_not_found_returns_404() -> None:
+    """Run vanished from DAL after exec cancel → 404 propagated from service."""
+    service = MagicMock(spec=RegistryService)
+    service.get_run.side_effect = APIError(
+        status_code=404, code="not_found", detail="Run 'missing' not found"
+    )
+
+    exec_client = AsyncMock(spec=ExecutionClient)
+    exec_client.cancel_run.return_value = {"run_id": "missing", "status": "cancelled"}
+
+    client = _make_app(service, exec_client)
+    response = client.delete("/api/v1/runs/missing")
+
+    assert response.status_code == 404

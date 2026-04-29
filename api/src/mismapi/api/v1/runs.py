@@ -60,3 +60,35 @@ async def get_run(
         output_resources=[resource_summary(r) for r in output_resources],
         execution_status=execution_status,
     )
+
+
+@router.delete("/runs/{run_id}", response_model=RunDetailResponse)
+async def cancel_run(
+    run_id: str,
+    service: RegistryService = Depends(get_registry_service),
+    execution_client: ExecutionClient = Depends(get_execution_client),
+) -> RunDetailResponse:
+    """Cancel a run by proxying DELETE to the Execution service.
+
+    Order matters:
+      1. Call Execution API DELETE → it stops the run and updates DAL status
+         to CANCELLED.
+      2. Read the now-updated Run record from the DAL → reflects the cancel.
+
+    Returns the same shape as GET /runs/{run_id} so the UI can swap-in the
+    response without a second round-trip.
+    """
+    # 1. Ask exec to actually cancel — it owns the running container/process.
+    execution_status = await execution_client.cancel_run(run_id)
+
+    # 2. Read the canceled Run record (and hydrate referenced resources).
+    run, input_resources, output_resources = service.get_run(run_id)
+
+    logger.info("Cancelled run %s (final status=%s)", run_id, run.status.value)
+
+    return RunDetailResponse(
+        run=run_detail(run),
+        input_resources=[resource_summary(r) for r in input_resources],
+        output_resources=[resource_summary(r) for r in output_resources],
+        execution_status=execution_status,
+    )

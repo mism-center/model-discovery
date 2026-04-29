@@ -81,6 +81,47 @@ class ExecutionClient:
                 detail=f"Failed to reach execution service for run {run_id}.",
             ) from exc
 
+    # ── Cancellation ────────────────────────────────────────────────
+
+    async def cancel_run(self, run_id: str) -> dict[str, Any]:
+        """DELETE /api/v1/runs/{run_id}  →  cancel a running execution.
+
+        The exec service is expected to update the DAL run status to CANCELLED
+        as part of this call. Returns whatever the exec service responds with.
+        """
+        if self._stub_upstream:
+            logger.info("Execution service (stub) cancel_run run_id=%s", run_id)
+            return {"run_id": run_id, "status": "cancelled", "stub": True}
+
+        try:
+            response = await self._client.delete(f"/api/v1/runs/{run_id}")
+            response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise APIError(
+                status_code=504,
+                code="execution_cancel_timeout",
+                detail=f"Execution service cancel timed out for run {run_id}.",
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            status, code, detail = error_from_downstream_response(
+                exc.response,
+                fallback_code="execution_cancel_failed",
+                fallback_detail=f"Failed to cancel execution for run {run_id}.",
+            )
+            raise APIError(status_code=status, code=code, detail=detail) from exc
+        except httpx.HTTPError as exc:
+            raise APIError(
+                status_code=502,
+                code="execution_cancel_failed",
+                detail=f"Failed to reach execution service to cancel run {run_id}.",
+            ) from exc
+
+        # 204 No Content is valid; tolerate empty body.
+        try:
+            return cast(dict[str, Any], response.json())
+        except ValueError:
+            return {"run_id": run_id, "status_code": response.status_code}
+
     # ── Lifecycle ───────────────────────────────────────────────────
 
     async def close(self) -> None:
