@@ -1,9 +1,9 @@
 import logging
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 
-from mismapi.auth.base import AuthenticatedPrincipal, require_principal
-from mismapi.dependencies.registry import get_registry_service
+from mismapi.auth.base import AuthenticatedPrincipalDep
+from mismapi.core.deps import RegistryServiceDep
 from mismapi.schemas.registry import (
     CreateRunRequest,
     CreateRunResponse,
@@ -12,7 +12,6 @@ from mismapi.schemas.registry import (
     UpdateModelRequest,
 )
 from mismapi.schemas.search import ModelListItem, ModelListResponse
-from mismapi.services.registry_service import RegistryService
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +20,7 @@ router = APIRouter()
 
 @router.get("/models", response_model=ModelListResponse)
 async def list_models(
+    service: RegistryServiceDep,
     name: str | None = Query(default=None, description="Substring match on model name"),
     owner: str | None = Query(default=None, description="Exact match on owner"),
     tags: list[str] | None = Query(default=None, description="Format tags (all must match)"),
@@ -28,7 +28,6 @@ async def list_models(
     scales: list[str] | None = Query(default=None, description="Modeling scales (any must match)"),
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
-    service: RegistryService = Depends(get_registry_service),
 ) -> ModelListResponse:
 
     resources = service.list_models(
@@ -64,8 +63,8 @@ async def list_models(
 @router.post("/models", response_model=RegisterModelResponse, status_code=201)
 async def create_model(
     payload: RegisterModelRequest,
-    principal: AuthenticatedPrincipal = Depends(require_principal),
-    service: RegistryService = Depends(get_registry_service),
+    service: RegistryServiceDep,
+    principal: AuthenticatedPrincipalDep,
 ) -> RegisterModelResponse:
 
     resource = service.create_model(
@@ -87,6 +86,8 @@ async def create_model(
         execution_type=resource.execution_type.value if resource.execution_type else None,
         version=resource.version,
         status=resource.status.value,
+        owner=resource.owner,
+        description=resource.description,
         created_at=resource.created_at,
     )
 
@@ -95,8 +96,8 @@ async def create_model(
 async def update_model(
     model_id: str,
     payload: UpdateModelRequest,
-    principal: AuthenticatedPrincipal = Depends(require_principal),
-    service: RegistryService = Depends(get_registry_service),
+    service: RegistryServiceDep,
+    principal: AuthenticatedPrincipalDep,
 ) -> RegisterModelResponse:
 
     resource = service.update_model(
@@ -119,6 +120,8 @@ async def update_model(
         execution_type=resource.execution_type.value if resource.execution_type else None,
         version=resource.version,
         status=resource.status.value,
+        owner=resource.owner,
+        description=resource.description,
         created_at=resource.created_at,
     )
 
@@ -131,8 +134,8 @@ async def update_model(
 async def create_run(
     model_id: str,
     payload: CreateRunRequest,
-    principal: AuthenticatedPrincipal = Depends(require_principal),
-    service: RegistryService = Depends(get_registry_service),
+    service: RegistryServiceDep,
+    principal: AuthenticatedPrincipalDep,
 ) -> CreateRunResponse:
 
     run = service.create_run(

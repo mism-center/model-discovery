@@ -7,6 +7,9 @@ IMAGE_NAME ?= model-discovery
 TAG ?= v0.1.0
 IMAGE_TAG ?= $(IMAGE_REPO)/$(IMAGE_NAME):$(TAG)
 IMAGE_RUN_ARGS ?=
+PORT ?= 8000
+
+COMPOSE_TEST ?= docker compose -f ../docker-compose.test.yaml
 
 .PHONY: help install lock run dev test lint format format-check typecheck clean image-build image-run image-push
 
@@ -19,6 +22,9 @@ help:
 	@echo '  make image-build IMAGE_TAG=mismplatform/model-discovery:v0.1.0'
 	@echo '  make image-build TAG=v0.1.1'
 	@echo '  make image-push IMAGE_TAG=mismplatform/model-discovery:v0.1.1'
+	@echo ''
+	@echo 'Available variables:'
+	@echo '  PORT, IMAGE_REPO, IMAGE_NAME, TAG, IMAGE_TAG, IMAGE_RUN_ARGS'
 	@echo ''
 	@echo 'Targets:'
 	@awk '/^[[:space:]]*$$/ { next } /^##/ { desc = $$0; sub(/^##[[:space:]]*/, "", desc); next } /^[a-zA-Z0-9_-]+[[:space:]]*:/ { if (desc != "") { t = $$0; sub(/:.*/, "", t); printf "  %-16s %s\n", t, desc } desc = ""; next } { desc = "" }' $(MAKEFILE_LIST)
@@ -33,15 +39,39 @@ lock:
 
 ## Run the API with uvicorn (no reload)
 run:
-	$(UV) run uvicorn --app-dir src $(APP) --host 0.0.0.0 --port 8000
+	$(UV) run uvicorn --app-dir src $(APP) --host 0.0.0.0 --port $(PORT)
 
 ## Run the API with uvicorn and --reload
 dev:
-	$(UV) run uvicorn --app-dir src $(APP) --host 0.0.0.0 --port 8000 --reload
+	$(UV) run uvicorn --app-dir src $(APP) --host 0.0.0.0 --port $(PORT) --reload
 
-## Run the test suite (pytest)
-test:
-	$(UV) run python -m pytest
+## Run the unit tests (pytest)
+test-unit:
+	$(UV) run pytest tests/unit/*.py -v
+
+## Run the integration tests (pytest)
+test-integration:
+	$(UV) run pytest tests/integration/*.py -v
+
+functional-up:
+	$(COMPOSE_TEST) up -d --build --wait
+
+functional-down:
+	$(COMPOSE_TEST) down -v
+
+## Run the functional tests (checking if the services are already running)
+test-functional:
+	@if [ -z "$$($(COMPOSE_TEST) ps --status running -q api 2>/dev/null)" ]; then \
+		$(MAKE) functional-up; \
+	fi
+	$(UV) run pytest tests/functional/*.py -m integration -v
+	$(MAKE) functional-down
+
+## Run the test suite (including functional tests)
+test: test-unit test-integration test-functional
+
+## Run the test suite for CI
+test-ci: test-unit test-integration
 
 ## Run Ruff linter
 lint:
@@ -63,22 +93,21 @@ typecheck:
 clean:
 	rm -rf .pytest_cache .ruff_cache .mypy_cache
 
-integration-up:
-	docker compose -f ../docker-compose.test.yaml up -d --build --wait
+
 
 integration-test: integration-up
-	$(UV) run pytest tests/test_integration.py -m integration -v
+	
 
 integration-down:
 	docker compose -f ../docker-compose.test.yaml down -v
 
 ## Build the Docker image (linux/amd64).
 image-build:
-	docker build -t $(IMAGE_TAG) --platform linux/amd64 -f Dockerfile .
+	docker build -t $(IMAGE_TAG) --platform linux/amd64 -f Dockerfile --build-arg PORT=$(PORT) .
 
-## Run the built image on port 8000.
+## Run the built image.
 image-run:
-	docker run --rm -p 8000:8000 $(IMAGE_RUN_ARGS) $(IMAGE_TAG)
+	docker run --rm -p $(PORT):$(PORT) -e PORT=$(PORT) $(IMAGE_RUN_ARGS) $(IMAGE_TAG)
 
 ## Push the image to the registry.
 image-push:

@@ -6,7 +6,7 @@ from mism_registry.enums import ResourceStatus, ResourceType
 from mism_registry.resource import Resource
 
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
-from mismapi.dependencies.registry import get_registry_service
+from mismapi.core.deps import _get_registry_service
 from mismapi.main import create_app
 from mismapi.services.registry_service import RegistryService
 
@@ -45,7 +45,7 @@ async def _allow_principal() -> AuthenticatedPrincipal:
 def _make_app_with_service(service: RegistryService) -> TestClient:
     app = create_app()
     app.dependency_overrides[require_principal] = _allow_principal
-    app.dependency_overrides[get_registry_service] = lambda: service
+    app.dependency_overrides[_get_registry_service] = lambda: service
     return TestClient(app)
 
 
@@ -189,13 +189,14 @@ def test_list_datasets_passes_filters() -> None:
 
     assert response.status_code == 200
 
-    service.list_datasets.assert_called_once_with(
+    filter_kwargs = dict(
         name_contains="climate",
         owner="bob",
         tags=["csv", "public"],
         organisms=None,
         scales=None,
     )
+    service.list_datasets.assert_called_once_with(**filter_kwargs)
 
 
 def test_list_datasets_pagination() -> None:
@@ -213,6 +214,14 @@ def test_list_datasets_pagination() -> None:
     assert len(payload["results"]) == 2
     assert payload["results"][0]["id"] == "d-1"
     assert payload["results"][1]["id"] == "d-2"
+
+    service.list_datasets.assert_called_once_with(
+        name_contains=None,
+        owner=None,
+        tags=None,
+        organisms=None,
+        scales=None,
+    )
 
 
 def test_list_datasets_response_shape() -> None:
