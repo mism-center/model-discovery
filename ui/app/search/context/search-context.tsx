@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 
 import type { ApiError, SearchResponse } from '~/api';
-import { searchQueryOptions } from '~/search/query/search-query';
+import { searchQueryOptions } from '~/api/query/search';
 import { getFacetConfig } from '~/search/state/facets.config';
 import {
   removeAllFacetParams,

@@ -100,6 +100,86 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/runs/{run_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Run
+     * @description Fetch a run by id, optionally refreshing status via the Execution service.
+     *
+     *     Order matters when refresh=true:
+     *       1. Call Execution API → it performs a lazy status check and writes the
+     *          updated state into the DAL.
+     *       2. Read the Run record from the DAL → now reflects the latest status.
+     *
+     *     If the Execution call fails we surface the error to the caller; if it
+     *     times out the client gets a 504 (see ExecutionClient.get_status).
+     */
+    get: operations['get_run_api_v1_runs__run_id__get'];
+    put?: never;
+    post?: never;
+    /**
+     * Cancel Run
+     * @description Cancel a run by proxying DELETE to the Execution service.
+     *
+     *     Order matters:
+     *       1. Call Execution API DELETE → it stops the run and updates DAL status
+     *          to CANCELLED.
+     *       2. Read the now-updated Run record from the DAL → reflects the cancel.
+     *
+     *     Returns the same shape as GET /runs/{run_id} so the UI can swap-in the
+     *     response without a second round-trip.
+     */
+    delete: operations['cancel_run_api_v1_runs__run_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/resources/{resource_id}/files': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Resource Files
+     * @description List every file in the resource's artifact directory.
+     */
+    get: operations['list_resource_files_api_v1_resources__resource_id__files_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/resources/{resource_id}/download': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Download Resource
+     * @description Download artifacts for a resource — single file or whole directory zip.
+     */
+    get: operations['download_resource_api_v1_resources__resource_id__download_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/search': {
     parameters: {
       query?: never;
@@ -759,6 +839,45 @@ export interface components {
       updated_at: string;
     };
     /**
+     * ResourceFileItem
+     * @description One entry in a resource's artifact directory.
+     */
+    ResourceFileItem: {
+      /**
+       * Path
+       * @description Relative path from the resource directory root.
+       */
+      path: string;
+      /**
+       * Name
+       * @description Final path segment (basename).
+       */
+      name: string;
+      /** Size Bytes */
+      size_bytes: number;
+      /**
+       * Is Dir
+       * @default false
+       */
+      is_dir: boolean;
+      /** Modified At */
+      modified_at?: string | null;
+    };
+    /**
+     * ResourceFilesResponse
+     * @description Listing of files for a resource.
+     */
+    ResourceFilesResponse: {
+      /** Resource Id */
+      resource_id: string;
+      /** Location Uri */
+      location_uri: string;
+      /** Files */
+      files?: components['schemas']['ResourceFileItem'][];
+      /** Total */
+      total: number;
+    };
+    /**
      * ResourceSummaryItem
      * @description Lightweight summary of a Resource for embedding inside run detail responses.
      */
@@ -906,6 +1025,28 @@ export interface components {
        * Format: date-time
        */
       created_at: string;
+    };
+    /**
+     * RunDetailResponse
+     * @description Single run, hydrated, with the latest execution-service status snapshot.
+     *
+     *     Returned by GET /runs/{run_id}. The Discovery API calls the Execution API
+     *     first so the exec service can perform its lazy DAL refresh; the run record
+     *     here is then read from the DAL with that fresh state already applied.
+     */
+    RunDetailResponse: {
+      run: components['schemas']['RunDetailItem'];
+      /** Input Resources */
+      input_resources?: components['schemas']['ResourceSummaryItem'][];
+      /** Output Resources */
+      output_resources?: components['schemas']['ResourceSummaryItem'][];
+      /**
+       * Execution Status
+       * @description Raw response from the Execution service /api/v1/runs/{run_id} call.
+       */
+      execution_status?: {
+        [key: string]: unknown;
+      };
     };
     /**
      * RunStatus
@@ -1487,6 +1628,136 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['RegisterDatasetResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_run_api_v1_runs__run_id__get: {
+    parameters: {
+      query?: {
+        /** @description When true (default), call the Execution service first so its lazy DAL refresh fires before we read the Run record — guaranteeing the freshest status. Set to false to skip the round-trip and return whatever the DAL has cached (cheap; useful for list-row previews). */
+        refresh?: boolean;
+      };
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RunDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  cancel_run_api_v1_runs__run_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RunDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_resource_files_api_v1_resources__resource_id__files_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        resource_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResourceFilesResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  download_resource_api_v1_resources__resource_id__download_get: {
+    parameters: {
+      query?: {
+        /** @description Relative path to a single file inside the resource directory. Omit to download the entire directory as a zip archive. */
+        file?: string | null;
+      };
+      header?: never;
+      path: {
+        resource_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
         };
       };
       /** @description Validation Error */
