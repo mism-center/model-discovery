@@ -1,5 +1,6 @@
 import logging
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 from mism_registry import (
@@ -32,6 +33,8 @@ from sqlalchemy.orm import Session
 
 from mismapi.auth.base import AuthenticatedPrincipal
 from mismapi.core.errors import APIError
+from mismapi.core.file_storage import resolve_location_uri, safe_join
+from mismapi.core.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -268,6 +271,42 @@ class RegistryService:
                 logger.warning("Run %s references missing output resource %s", run_id, rid)
 
         return run, input_resources, output_resources
+
+    # ── Resource file access ────────────────────────────────────────
+
+    def get_resource_directory(self, resource_id: str) -> tuple[Resource, Path]:
+        """Return the resource and its on-disk artifact directory.
+
+        Raises APIError(404) if the resource isn't registered, or if the
+        resolved directory doesn't exist on the iRODS mount. Raises
+        APIError(400) for unsupported location_uri schemes / path traversal.
+        """
+        try:
+            resource = self._registry.get_resource(resource_id)
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+        mount = get_settings().irods_mount_path
+        directory = resolve_location_uri(resource.location_uri, mount)
+        if not directory.is_dir():
+            raise APIError(
+                status_code=400,
+                code="not_a_directory",
+                detail=(
+                    f"Resource location_uri '{resource.location_uri}' resolves "
+                    "to a file, not a directory; cannot list contents."
+                ),
+            )
+        return resource, directory
+
+    def resolve_resource_file(self, resource_id: str, rel_path: str) -> tuple[Resource, Path]:
+        """Resolve a single file inside a resource's directory.
+
+        Raises 404 (resource or file missing), 400 (bad path / traversal /
+        not-a-file), or propagates the same errors as ``get_resource_directory``.
+        """
+        resource, directory = self.get_resource_directory(resource_id)
+        return resource, safe_join(directory, rel_path)
 
     def get_model_run_details(
         self,

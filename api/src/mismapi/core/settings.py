@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     # Must start with "/" and not end with "/". Example: "/api".
     api_prefix: str = Field(default="/api", alias="API_PATH_PREFIX")
 
+    # On-pod path where the iRODS PVC is mounted (see chart values.yaml ->
+    # irods.pvc.mountPath). Resource location_uris of the form
+    # "irods:///<rel>" or "/irods/<rel>" resolve to "{irods_mount_path}/<rel>".
+    irods_mount_path: str = Field(default="/irods", alias="IRODS_MOUNT_PATH")
+
     upload_service_url: str = Field(default="http://localhost:8200", alias="UPLOAD_SERVICE_URL")
     upload_timeout_seconds: float = Field(default=60.0, alias="UPLOAD_TIMEOUT_SECONDS")
 

@@ -401,3 +401,25 @@ class RunDetailResponse(BaseModel):
         default_factory=dict,
         description="Raw response from the Execution service /api/v1/runs/{run_id} call.",
     )
+
+
+# ── Resource files (download/listing) ────────────────────────────────
+
+
+class ResourceFileItem(BaseModel):
+    """One entry in a resource's artifact directory."""
+
+    path: str = Field(description="Relative path from the resource directory root.")
+    name: str = Field(description="Final path segment (basename).")
+    size_bytes: int = Field(ge=0)
+    is_dir: bool = False
+    modified_at: datetime | None = None
+
+
+class ResourceFilesResponse(BaseModel):
+    """Listing of files for a resource."""
+
+    resource_id: str
+    location_uri: str
+    files: list[ResourceFileItem] = Field(default_factory=list)
+    total: int
