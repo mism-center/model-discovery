@@ -8,6 +8,7 @@ from mism_registry.backends.postgres import create_session_factory
 from mismapi.api.router import build_api_router
 from mismapi.auth.base import build_auth_validator
 from mismapi.clients.execution_client import ExecutionClient
+from mismapi.clients.local_upload_client import LocalFileUploadClient
 from mismapi.clients.upload_client import UploadServiceClient
 from mismapi.core.errors import register_exception_handlers
 from mismapi.core.logging import configure_root_logger
@@ -29,11 +30,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.settings = settings
     app.state.auth_validator = build_auth_validator(settings=settings)
 
-    app.state.upload_client = UploadServiceClient(
-        base_url=resolver.upload_service_url(),
-        timeout_seconds=settings.upload_timeout_seconds,
-        stub_upstream=settings.stub_upstream_services,
-    )
+    # Upload backend: filesystem PVC (default while no upload service exists)
+    # or HTTP upload service. Both speak the same async protocol so the
+    # endpoint is backend-agnostic.
+    if settings.upload_backend == "local":
+        app.state.upload_client = LocalFileUploadClient(
+            mount_path=settings.irods_mount_path,
+            stub_upstream=settings.stub_upstream_services,
+        )
+    else:
+        app.state.upload_client = UploadServiceClient(
+            base_url=resolver.upload_service_url(),
+            timeout_seconds=settings.upload_timeout_seconds,
+            stub_upstream=settings.stub_upstream_services,
+        )
 
     app.state.execution_client = ExecutionClient(
         base_url=resolver.execution_service_url(),

@@ -5,8 +5,8 @@ from mismapi.auth.base import AuthenticatedPrincipal, require_principal
 from mismapi.clients.upload_client import UploadSession
 from mismapi.main import create_app
 
-TEST_MODEL_ID = "AbC123xYz890"
-CREATED_MODEL_ID = "Cr8ModelID12"
+TEST_RESOURCE_ID = "AbC123xYz890"
+TEST_DATASET_RESOURCE_ID = "ds-uuid-9f87-4b2c-aaaa-1234567890ab"
 
 
 class FakeUploadClient:
@@ -14,14 +14,15 @@ class FakeUploadClient:
         self.upload_part_calls: list[tuple[int, bytes]] = []
         self._failed_once = False
         self.completed = False
+        self.init_resource_id: str | None = None
 
     async def init_upload(
         self,
-        model_id: str,
+        resource_id: str,
         filename: str,
         content_type: str | None,
     ) -> UploadSession:
-        assert model_id == TEST_MODEL_ID
+        self.init_resource_id = resource_id
         assert filename == "dataset.bin"
         assert content_type == "application/octet-stream"
         return UploadSession(upload_id="upload-123", tracking_id="track-123")
@@ -50,14 +51,15 @@ class MultiPartRetryUploadClient:
         self.upload_part_calls: list[tuple[int, bytes]] = []
         self._failed_part_two_once = False
         self.completed = False
+        self.init_resource_id: str | None = None
 
     async def init_upload(
         self,
-        model_id: str,
+        resource_id: str,
         filename: str,
         content_type: str | None,
     ) -> UploadSession:
-        assert model_id == TEST_MODEL_ID
+        self.init_resource_id = resource_id
         assert filename == "dataset.bin"
         assert content_type == "application/octet-stream"
         return UploadSession(upload_id="upload-123", tracking_id="track-123")
@@ -98,7 +100,7 @@ def test_upload_retries_chunk_after_transient_error() -> None:
     with TestClient(app) as client:
         app.state.upload_client = fake_upload_client
         response = client.post(
-            f"/api/v1/models/{TEST_MODEL_ID}/files",
+            f"/api/v1/resources/{TEST_RESOURCE_ID}/files",
             files={
                 "file": (
                     "dataset.bin",
@@ -111,11 +113,12 @@ def test_upload_retries_chunk_after_transient_error() -> None:
         assert response.status_code == 200
         payload = response.json()
         assert payload["status"] == "accepted"
-        assert payload["model_id"] == TEST_MODEL_ID
+        assert payload["resource_id"] == TEST_RESOURCE_ID
         assert payload["upload_id"] == "upload-123"
         assert payload["tracking_id"] == "track-123"
         assert payload["parts_uploaded"] == 1
         assert fake_upload_client.completed is True
+        assert fake_upload_client.init_resource_id == TEST_RESOURCE_ID
         assert len(fake_upload_client.upload_part_calls) >= 2
 
 
@@ -128,7 +131,7 @@ def test_upload_retry_retries_only_failing_part() -> None:
         app.state.upload_client = fake_upload_client
         app.state.settings.upload_chunk_size_bytes = 4
         response = client.post(
-            f"/api/v1/models/{TEST_MODEL_ID}/files",
+            f"/api/v1/resources/{TEST_RESOURCE_ID}/files",
             files={
                 "file": (
                     "dataset.bin",
@@ -145,6 +148,34 @@ def test_upload_retry_retries_only_failing_part() -> None:
             (2, b"EFGH"),
             (2, b"EFGH"),
         ]
+
+
+def test_upload_accepts_dataset_uuid_resource_id() -> None:
+    """Endpoint must accept any registry resource id, not just 12-char model ids.
+
+    Registry uses UUIDs for datasets/tools — guard against any leftover
+    ModelId regex constraint blocking those.
+    """
+    app = create_app()
+    app.dependency_overrides[require_principal] = allow_principal
+    fake_upload_client = FakeUploadClient()
+
+    with TestClient(app) as client:
+        app.state.upload_client = fake_upload_client
+        response = client.post(
+            f"/api/v1/resources/{TEST_DATASET_RESOURCE_ID}/files",
+            files={
+                "file": (
+                    "dataset.bin",
+                    b"0123456789ABCDEFGHIJKLMN",
+                    "application/octet-stream",
+                )
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["resource_id"] == TEST_DATASET_RESOURCE_ID
+        assert fake_upload_client.init_resource_id == TEST_DATASET_RESOURCE_ID
 
 
 # NOTE: test_create_model_metadata and test_update_model_metadata were removed.

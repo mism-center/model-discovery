@@ -24,7 +24,7 @@ async def test_init_upload_rejects_non_json_payload() -> None:
     try:
         try:
             await client.init_upload(
-                model_id="model-1",
+                resource_id="model-1",
                 filename="file.bin",
                 content_type="application/octet-stream",
             )
@@ -44,7 +44,7 @@ async def test_init_upload_rejects_non_string_or_blank_ids() -> None:
     try:
         try:
             await client.init_upload(
-                model_id="model-1",
+                resource_id="model-1",
                 filename="file.bin",
                 content_type="application/octet-stream",
             )
@@ -64,7 +64,7 @@ async def test_init_upload_rejects_non_string_identifier_types() -> None:
     try:
         try:
             await client.init_upload(
-                model_id="model-1",
+                resource_id="model-1",
                 filename="file.bin",
                 content_type="application/octet-stream",
             )
@@ -135,7 +135,7 @@ async def test_init_upload_rejects_malformed_json_shape() -> None:
     try:
         try:
             await client.init_upload(
-                model_id="model-1",
+                resource_id="model-1",
                 filename="file.bin",
                 content_type="application/octet-stream",
             )

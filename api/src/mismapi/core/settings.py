@@ -26,6 +26,9 @@ class Settings(BaseSettings):
 
     upload_service_url: str = Field(default="http://localhost:8200", alias="UPLOAD_SERVICE_URL")
     upload_timeout_seconds: float = Field(default=60.0, alias="UPLOAD_TIMEOUT_SECONDS")
+    # "local" → write straight to the iRODS PVC (LocalFileUploadClient).
+    # "http"  → forward to a real upload service (UploadServiceClient).
+    upload_backend: Literal["local", "http"] = Field(default="local", alias="UPLOAD_BACKEND")
 
     execution_api_url: str = Field(
         default="http://localhost:8300",
