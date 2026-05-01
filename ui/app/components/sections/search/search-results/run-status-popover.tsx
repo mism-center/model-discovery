@@ -91,8 +91,8 @@ export function RunStatusPopover({
               {run.error_message && (
                 <>
                   <dt className="text-default-600">Error</dt>
-                  <dd className="text-danger wrap-break-word">
-                    {run.error_message}
+                  <dd className="wrap-break-word">
+                    <code>{run.error_message}</code>
                   </dd>
                 </>
               )}
