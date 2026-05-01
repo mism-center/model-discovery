@@ -1,4 +1,4 @@
-# CI for the UI: linting, formatting, type checking, and production build.
+# CI for the UI: linting, formatting, type checking, production build, and Docker image build.
 name: CI (UI)
 
 on:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   lint-typecheck-build:
-    name: Lint, typecheck, and build UI
+    name: Lint, typecheck, and build UI image
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -40,3 +40,6 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Build Docker image
+        run: docker build -t mismui:ci .

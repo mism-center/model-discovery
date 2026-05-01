@@ -1,6 +1,6 @@
-# Build and push Docker image to Docker Hub on pushes to test branches.
+# Build and push API Docker image to Docker Hub on pushes to test branches that touch api/.
 # Tags the image with the short commit SHA.
-name: Docker Build & Push
+name: Docker Build & Push (API)
 
 on:
   push:
@@ -8,6 +8,9 @@ on:
       - 'test/**'
       - 'feat*'
       - 'feat*/**'
+    paths:
+      - 'api/**'
+      - '.github/workflows/docker-publish-api.yml'
 
 permissions:
   contents: read
