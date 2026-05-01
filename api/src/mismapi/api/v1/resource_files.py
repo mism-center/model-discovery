@@ -150,7 +150,7 @@ async def list_resource_files(
 # ── GET /resources/{id}/download ────────────────────────────────
 
 
-@router.get("/resources/{resource_id}/download")
+@router.get("/resources/{resource_id}/download", response_model=None)
 async def download_resource(
     resource_id: str,
     file: str | None = Query(
