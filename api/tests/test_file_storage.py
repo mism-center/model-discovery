@@ -35,9 +35,29 @@ def test_resolve_plain_mount_path(mount: Path) -> None:
     assert resolve_location_uri(uri, str(mount)) == (mount / "datasets" / "abc-123").resolve()
 
 
+def test_resolve_plain_absolute_path_implicit_irods(mount: Path) -> None:
+    """A scheme-less absolute path (not under mount) is treated as iRODS-relative."""
+    uri = "/datasets/abc-123"
+    assert resolve_location_uri(uri, str(mount)) == (mount / "datasets" / "abc-123").resolve()
+
+
+def test_resolve_plain_relative_path_implicit_irods(mount: Path) -> None:
+    """A scheme-less relative path is treated as iRODS-relative."""
+    uri = "datasets/abc-123"
+    assert resolve_location_uri(uri, str(mount)) == (mount / "datasets" / "abc-123").resolve()
+
+
 def test_resolve_unsupported_scheme_400(mount: Path) -> None:
     with pytest.raises(APIError) as exc:
         resolve_location_uri("s3://bucket/key", str(mount))
+    assert exc.value.status_code == 400
+    assert exc.value.code == "unsupported_location_scheme"
+
+
+def test_resolve_git_scheme_400(mount: Path) -> None:
+    """Sanity: schemes other than irods are rejected even though they look path-ish."""
+    with pytest.raises(APIError) as exc:
+        resolve_location_uri("git+https://github.com/foo/bar.git", str(mount))
     assert exc.value.status_code == 400
     assert exc.value.code == "unsupported_location_scheme"
 

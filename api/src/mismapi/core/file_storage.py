@@ -5,14 +5,17 @@ The gateway has the iRODS PVC mounted (see chart values.yaml). A resource's
 
     irods:///datasets/abc-123          # canonical form (3 slashes = empty host)
     irods://datasets/abc-123           # tolerated; first segment is *not* a host
-    /irods/datasets/abc-123            # plain absolute path under the mount
+    /irods/datasets/abc-123            # absolute path that already includes the mount
+    /datasets/abc-123                  # plain absolute path — implicit iRODS
+    datasets/abc-123                   # plain relative path — implicit iRODS
 
-All three resolve to ``{irods_mount_path}/datasets/abc-123`` on disk.
+All five resolve to ``{irods_mount_path}/datasets/abc-123`` on disk. Any path
+without an explicit scheme is interpreted as iRODS-mounted.
 
 This module is the single place that mediates the URI-to-disk translation,
 which means it's also the single place that enforces:
 
-  * Only ``irods://...`` (or paths under the mount) are accepted.
+  * Only iRODS-mounted resources are accepted (other schemes 400).
   * The resolved path stays inside the mount root — no ``..`` escapes.
   * The resolved path actually exists.
 """
@@ -46,15 +49,20 @@ def resolve_location_uri(location_uri: str, mount_path: str) -> Path:
         # urlsplit("irods:///foo/bar") -> path="/foo/bar"
         # urlsplit("irods://foo/bar")  -> netloc="foo", path="/bar"  ← treat netloc as first segment
         rel = (parts.netloc + parts.path).lstrip("/")
-    elif parts.scheme == "" and location_uri.startswith(mount_path):
-        # Plain "/irods/foo/bar" — strip the mount prefix.
-        rel = location_uri[len(mount_path) :].lstrip("/")
+    elif parts.scheme == "":
+        # No scheme → implicit iRODS. Strip the mount prefix if present so
+        # "/irods/foo/bar", "/foo/bar", and "foo/bar" all collapse to the same
+        # relative path under mount_root.
+        if location_uri.startswith(mount_path):
+            rel = location_uri[len(mount_path) :].lstrip("/")
+        else:
+            rel = location_uri.lstrip("/")
     else:
         raise APIError(
             status_code=400,
             code="unsupported_location_scheme",
             detail=(
-                f"Cannot serve files for scheme '{parts.scheme or 'plain-path'}'. "
+                f"Cannot serve files for scheme '{parts.scheme}'. "
                 "Only iRODS-mounted resources are downloadable."
             ),
         )
