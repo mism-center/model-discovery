@@ -35,6 +35,10 @@ gateway:
     # Subpath that hosts the API + Swagger/ReDoc/openapi.json.
     # Docs land at {API_PATH_PREFIX}/docs. Set to "" to mount at root.
     API_PATH_PREFIX: "/api"
+    # On-pod path where the iRODS PVC is mounted. Resource location_uris of
+    # the form "irods:///foo" or "/irods/foo" resolve under this directory.
+    # Must match irods.pvc.mountPath below.
+    IRODS_MOUNT_PATH: "/irods"
     # Upload service
     UPLOAD_SERVICE_URL: "http://upload-service:8200"
     UPLOAD_TIMEOUT_SECONDS: "60.0"
