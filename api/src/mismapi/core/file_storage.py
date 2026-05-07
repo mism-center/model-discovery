@@ -44,19 +44,23 @@ def resolve_location_uri(location_uri: str, mount_path: str) -> Path:
     mount_root = Path(mount_path).resolve()
 
     # 1. Extract the path component, scheme-aware.
+    # Note: on Windows, `urlsplit("C:\\foo")` returns scheme="c" because the
+    # drive letter looks like a URL scheme. Detect that case explicitly so
+    # plain absolute paths still take the implicit-iRODS branch.
     parts = urlsplit(location_uri)
+    is_plain_path = parts.scheme == "" or (len(parts.scheme) == 1 and parts.scheme.isalpha())
     if parts.scheme == "irods":
         # urlsplit("irods:///foo/bar") -> path="/foo/bar"
         # urlsplit("irods://foo/bar")  -> netloc="foo", path="/bar"  ← treat netloc as first segment
         rel = (parts.netloc + parts.path).lstrip("/")
-    elif parts.scheme == "":
-        # No scheme → implicit iRODS. Strip the mount prefix if present so
-        # "/irods/foo/bar", "/foo/bar", and "foo/bar" all collapse to the same
-        # relative path under mount_root.
+    elif is_plain_path:
+        # No scheme (or single-letter Windows drive) → implicit iRODS.
+        # Strip the mount prefix if present so "/irods/foo/bar", "/foo/bar",
+        # and "foo/bar" all collapse to the same relative path under mount_root.
         if location_uri.startswith(mount_path):
-            rel = location_uri[len(mount_path) :].lstrip("/")
+            rel = location_uri[len(mount_path) :].lstrip("/").lstrip("\\")
         else:
-            rel = location_uri.lstrip("/")
+            rel = location_uri.lstrip("/").lstrip("\\")
     else:
         raise APIError(
             status_code=400,

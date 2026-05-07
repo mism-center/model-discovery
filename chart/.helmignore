@@ -1,0 +1,2 @@
+# Local Helm cache (e.g. HELM_CACHE_HOME under chart/)
+.helm-cache/

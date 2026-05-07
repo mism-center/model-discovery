@@ -1,9 +1,9 @@
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from mism_registry.search import FieldFilter, SearchQuery
 
-from mismapi.dependencies.registry import get_registry_service
+from mismapi.core.deps import RegistryServiceDep
 from mismapi.schemas.registry import author_to_dto, io_spec_to_dto, pub_to_dto
 from mismapi.schemas.search import (
     AggBucketDTO,
@@ -12,7 +12,6 @@ from mismapi.schemas.search import (
     SearchResponse,
     SearchResultItem,
 )
-from mismapi.services.registry_service import RegistryService
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +21,7 @@ router = APIRouter()
 @router.post("/search", response_model=SearchResponse)
 async def search_resources(
     body: SearchRequest,
-    service: RegistryService = Depends(get_registry_service),
+    service: RegistryServiceDep,
 ) -> SearchResponse:
     """Full-text search across models and datasets with filters and aggregations."""
 

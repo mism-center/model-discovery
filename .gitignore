@@ -1,3 +1,7 @@
 # Editor settings
 .vscode/
+.DS_Store
+.cursor/
 
+# Helm local cache (e.g. HELM_CACHE_HOME under chart/)
+chart/.helm-cache/
