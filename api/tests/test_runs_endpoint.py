@@ -89,7 +89,7 @@ def test_get_run_calls_execution_then_dal() -> None:
 
     exec_client = AsyncMock(spec=ExecutionClient)
 
-    async def _get_status(run_id: str) -> dict:
+    async def _get_status(run_id: str) -> dict[str, str]:
         call_order.append("exec")
         return {"run_id": run_id, "status": "completed", "phase": "done"}
 
@@ -277,7 +277,7 @@ def test_cancel_run_calls_execution_then_dal() -> None:
 
     exec_client = AsyncMock(spec=ExecutionClient)
 
-    async def _cancel(run_id: str) -> dict:
+    async def _cancel(run_id: str) -> dict[str, str]:
         call_order.append("exec")
         return {"run_id": run_id, "status": "cancelled"}
 
