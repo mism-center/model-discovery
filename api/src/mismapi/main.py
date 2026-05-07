@@ -3,17 +3,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from mism_registry.backends.postgres import create_session_factory
+from starlette.middleware.sessions import SessionMiddleware
 
 from mismapi.api.router import build_api_router
-from mismapi.auth.base import build_auth_validator
-from mismapi.clients.execution_client import ExecutionClient
-from mismapi.clients.local_upload_client import LocalFileUploadClient
-from mismapi.clients.upload_client import UploadServiceClient
+from mismapi.core.container import AppContainer
 from mismapi.core.errors import register_exception_handlers
 from mismapi.core.logging import configure_root_logger
-from mismapi.core.service_resolver import EnvServiceResolver
-from mismapi.core.settings import get_settings
+from mismapi.core.settings import Settings, get_settings
+from mismapi.core.uvicorn_access_log import install_uvicorn_access_formatter
 from mismapi.middleware.request_context import RequestContextMiddleware
 
 _DEV_CORS_ORIGINS = [
@@ -22,60 +19,53 @@ _DEV_CORS_ORIGINS = [
 ]
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    settings = get_settings()
-    resolver = EnvServiceResolver(settings=settings)
+def create_app(settings: Settings | None = None) -> FastAPI:
+    """
+    Build the FastAPI app with the given settings.
 
-    app.state.settings = settings
-    app.state.auth_validator = build_auth_validator(settings=settings)
+    `settings` is optional so production callers stay on the cached
+    `get_settings()` instance. Tests pass a fresh `Settings(...)` here to
+    avoid mutating `os.environ` and bouncing the settings cache (by default,
+    `get_settings()` returns the cached instance).
+    """
 
-    # Upload backend: filesystem PVC (default while no upload service exists)
-    # or HTTP upload service. Both speak the same async protocol so the
-    # endpoint is backend-agnostic.
-    if settings.upload_backend == "local":
-        app.state.upload_client = LocalFileUploadClient(
-            mount_path=settings.irods_mount_path,
-            stub_upstream=settings.stub_upstream_services,
-        )
-    else:
-        app.state.upload_client = UploadServiceClient(
-            base_url=resolver.upload_service_url(),
-            timeout_seconds=settings.upload_timeout_seconds,
-            stub_upstream=settings.stub_upstream_services,
-        )
+    @asynccontextmanager
+    async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+        container = AppContainer.build(resolved_settings)
+        app.state.container = container
+        await container.prime()
 
-    app.state.execution_client = ExecutionClient(
-        base_url=resolver.execution_service_url(),
-        timeout_seconds=settings.execution_timeout_seconds,
-        stub_upstream=settings.stub_upstream_services,
-    )
+        try:
+            yield
+        finally:
+            await container.aclose()
 
-    app.state.session_factory = create_session_factory(settings.database_url)
+    resolved_settings = settings if settings is not None else get_settings()
+    configure_root_logger(log_level=resolved_settings.log_level)
+    install_uvicorn_access_formatter(resolved_settings)
 
-    yield
+    # All API + auto-docs are mounted under this prefix so a UI can own "/".
+    api_prefix = resolved_settings.api_prefix.rstrip("/")
+    # Scope the OAuth-state cookie to the auth router. Tracks api_prefix so
+    # the cookie path stays aligned with the auth router prefix in
+    # `mismapi.api.router`. Cookie is only ever read by /{prefix}/auth/callback
+    # (and written by /{prefix}/auth/login), no reason to ship it on every
+    # authenticated API request.
+    oauth_state_cookie_path = f"{api_prefix}/auth"
 
-    await app.state.execution_client.close()
-    await app.state.upload_client.close()
-
-
-def create_app() -> FastAPI:
-    settings = get_settings()
-    configure_root_logger(log_level=settings.log_level)
-
-    # Pin Swagger/ReDoc/OpenAPI under the API prefix so a UI can own "/".
-    api_prefix = settings.api_prefix.rstrip("/")
     app = FastAPI(
         title="MISM Gateway API",
         version="0.1.0",
         description="Gateway API for searching, uploading, and managing model assets.",
-        lifespan=lifespan,
+        lifespan=_lifespan,
         docs_url=f"{api_prefix}/docs",
         redoc_url=f"{api_prefix}/redoc",
         openapi_url=f"{api_prefix}/openapi.json",
     )
 
-    if settings.mism_env in ("local", "development"):
+    app.state.settings = resolved_settings
+
+    if resolved_settings.mism_env in ("local", "development"):
         app.add_middleware(
             CORSMiddleware,
             allow_origins=_DEV_CORS_ORIGINS,
@@ -84,6 +74,16 @@ def create_app() -> FastAPI:
             allow_headers=["*"],
         )
 
+    if not resolved_settings.disable_auth:
+        app.add_middleware(
+            SessionMiddleware,
+            secret_key=resolved_settings.oidc_cookie_signing_secret,
+            session_cookie=resolved_settings.oauth_state_cookie_name,
+            max_age=resolved_settings.oauth_state_cookie_max_age_seconds,
+            path=oauth_state_cookie_path,
+            same_site="lax",
+            https_only=resolved_settings.production_mode,
+        )
     app.add_middleware(RequestContextMiddleware)
     app.include_router(build_api_router())
     register_exception_handlers(app)

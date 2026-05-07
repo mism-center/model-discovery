@@ -7,10 +7,10 @@ from mism_registry.run import Run
 
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
 from mismapi.clients.execution_client import ExecutionClient
-from mismapi.dependencies.execution import get_execution_client
-from mismapi.dependencies.registry import get_registry_service
+from mismapi.core.deps import _get_execution_client, _get_registry_service
 from mismapi.main import create_app
 from mismapi.services.registry_service import RegistryService
+from tests.conftest import minimal_oidc_settings
 
 
 def _make_run(
@@ -43,10 +43,10 @@ async def _allow_principal() -> AuthenticatedPrincipal:
 
 
 def _make_app(service: RegistryService, execution_client: ExecutionClient) -> TestClient:
-    app = create_app()
+    app = create_app(settings=minimal_oidc_settings())
     app.dependency_overrides[require_principal] = _allow_principal
-    app.dependency_overrides[get_registry_service] = lambda: service
-    app.dependency_overrides[get_execution_client] = lambda: execution_client
+    app.dependency_overrides[_get_registry_service] = lambda: service
+    app.dependency_overrides[_get_execution_client] = lambda: execution_client
     return TestClient(app)
 
 

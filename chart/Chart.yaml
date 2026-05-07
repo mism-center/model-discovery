@@ -2,12 +2,17 @@ apiVersion: v2
 name: model-discovery
 description: >
   MISM Model Discovery Platform – Deploys the Discovery Gateway API (FastAPI),
-  Search Service, Upload Service, Storage Interface (iRODS / LakeFS), and a
-  PostgreSQL metadata store. Includes a Helm-hook Job for Alembic schema
-  migrations, network policies, HPA autoscaling, and External Secrets Operator
-  integration.
+  Search Service, Upload Service, Storage Interface (iRODS / LakeFS), a
+  PostgreSQL metadata store, and Redis (sessions / cache for the gateway API). 
+  Includes a Helm-hook Job for Alembic schema migrations, network policies, 
+  HPA autoscaling, and External Secrets Operator integration.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
 maintainers:
   - name: MISM Team
+dependencies:
+  - name: redis
+    version: "25.3.11"
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: redis.enabled

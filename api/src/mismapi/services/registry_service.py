@@ -31,7 +31,7 @@ from mism_registry.search import (
 from mism_registry.types import Author, IOSpec, Publication
 from sqlalchemy.orm import Session
 
-from mismapi.auth.base import AuthenticatedPrincipal
+from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.core.errors import APIError
 from mismapi.core.file_storage import resolve_location_uri, safe_join
 from mismapi.core.settings import get_settings

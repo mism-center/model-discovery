@@ -39,6 +39,10 @@ spec:
             - name: {{ $key }}
               value: {{ $val | quote }}
             {{- end }}
+            {{- if and .Values.redis .Values.redis.enabled }}
+            - name: REDIS_URL
+              value: {{ printf "redis://%s:6379/0" (include "model-discovery.redis.masterHostname" .) | quote }}
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz

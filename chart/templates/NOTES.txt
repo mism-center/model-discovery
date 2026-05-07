@@ -26,6 +26,9 @@ Components deployed
 {{- if .Values.migration.enabled }}
   [x] Database Migration Job      (Alembic – runs on install/upgrade)
 {{- end }}
+{{- if and .Values.redis .Values.redis.enabled }}
+  [x] Redis (Bitnami)             master Service {{ include "model-discovery.redis.masterHostname" . }}:6379  (gateway REDIS_URL set automatically)
+{{- end }}
 
 Access
 ------

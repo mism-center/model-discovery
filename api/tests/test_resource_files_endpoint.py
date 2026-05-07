@@ -12,10 +12,11 @@ from mism_registry.enums import ResourceStatus, ResourceType
 from mism_registry.resource import Resource
 
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
+from mismapi.core.deps import _get_registry_service
 from mismapi.core.errors import APIError
-from mismapi.dependencies.registry import get_registry_service
 from mismapi.main import create_app
 from mismapi.services.registry_service import RegistryService
+from tests.conftest import minimal_oidc_settings
 
 
 @pytest.fixture
@@ -56,9 +57,9 @@ async def _allow_principal() -> AuthenticatedPrincipal:
 
 
 def _make_app(service: RegistryService) -> TestClient:
-    app = create_app()
+    app = create_app(settings=minimal_oidc_settings())
     app.dependency_overrides[require_principal] = _allow_principal
-    app.dependency_overrides[get_registry_service] = lambda: service
+    app.dependency_overrides[_get_registry_service] = lambda: service
     return TestClient(app)
 
 
@@ -201,16 +202,14 @@ def test_download_zip_resource_missing_returns_404() -> None:
     assert response.status_code == 404
 
 
-def test_download_zip_streams_in_chunks(tmp_path: Path) -> None:
-    """Sanity check: a ~5 MiB file is delivered as multiple chunks, not buffered.
+def test_download_zip_streams_large_directory(tmp_path: Path) -> None:
+    """A ~5 MiB directory zips and downloads correctly.
 
-    We can't directly observe the wire chunking through TestClient, but we can
-    confirm:
-      (a) the zip is valid,
-      (b) the response is iterable (StreamingResponse),
-      (c) memory growth on the server side is bounded by chunk size — implied
-          by using ZipFile.open(... force_zip64=True) over a non-seekable
-          _StreamingBuffer (covered by code review, not a runtime assertion).
+    We can't observe wire-level chunking through TestClient (it eagerly
+    buffers the StreamingResponse body), so we assert the zip is valid and
+    the contents round-trip. Streaming behavior itself is structural — see
+    the ``_StreamingBuffer.seekable() -> False`` + ``ZipFile.open(...,
+    force_zip64=True)`` pattern in resource_files.py.
     """
     big_dir = tmp_path / "datasets" / "big"
     big_dir.mkdir(parents=True)
@@ -226,13 +225,11 @@ def test_download_zip_streams_in_chunks(tmp_path: Path) -> None:
     with client.stream("GET", "/api/v1/resources/big-1/download") as response:
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/zip"
-        # Iterate raw chunks. We expect more than one chunk for a 5 MiB payload.
-        chunks = list(response.iter_bytes(chunk_size=64 * 1024))
-
-    assert len(chunks) > 1, "expected the zip to arrive in multiple chunks"
-    body = b"".join(chunks)
+        body = b"".join(response.iter_bytes(chunk_size=64 * 1024))
 
     with zipfile.ZipFile(io.BytesIO(body)) as zf:
         assert sorted(zf.namelist()) == ["big.bin", "small.txt"]
         with zf.open("big.bin") as fh:
             assert fh.read() == payload
+        with zf.open("small.txt") as fh:
+            assert fh.read() == b"hello"

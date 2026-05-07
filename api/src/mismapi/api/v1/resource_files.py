@@ -18,12 +18,11 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 from fastapi.responses import FileResponse, StreamingResponse
 
-from mismapi.dependencies.registry import get_registry_service
+from mismapi.core.deps import RegistryServiceDep
 from mismapi.schemas.registry import ResourceFileItem, ResourceFilesResponse
-from mismapi.services.registry_service import RegistryService
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +83,7 @@ class _StreamingBuffer(io.RawIOBase):
     def seekable(self) -> bool:
         return False
 
-    def write(self, data) -> int:  # type: ignore[override]
+    def write(self, data: bytes) -> int:  # type: ignore[override]
         n = len(data)
         self._buffer.extend(data)
         self._pos += n
@@ -134,7 +133,7 @@ def _zip_directory_stream(directory: Path) -> Iterator[bytes]:
 @router.get("/resources/{resource_id}/files", response_model=ResourceFilesResponse)
 async def list_resource_files(
     resource_id: str,
-    service: RegistryService = Depends(get_registry_service),
+    service: RegistryServiceDep,
 ) -> ResourceFilesResponse:
     """List every file in the resource's artifact directory."""
     resource, directory = service.get_resource_directory(resource_id)
@@ -153,6 +152,7 @@ async def list_resource_files(
 @router.get("/resources/{resource_id}/download", response_model=None)
 async def download_resource(
     resource_id: str,
+    service: RegistryServiceDep,
     file: str | None = Query(
         default=None,
         description=(
@@ -160,7 +160,6 @@ async def download_resource(
             "Omit to download the entire directory as a zip archive."
         ),
     ),
-    service: RegistryService = Depends(get_registry_service),
 ) -> StreamingResponse | FileResponse:
     """Download artifacts for a resource — single file or whole directory zip."""
     if file is not None:

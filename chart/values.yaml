@@ -39,8 +39,11 @@ gateway:
     # the form "irods:///foo" or "/irods/foo" resolve under this directory.
     # Must match irods.pvc.mountPath below.
     IRODS_MOUNT_PATH: "/irods"
-    # Upload service
-    UPLOAD_SERVICE_URL: "http://upload-service:8200"
+    # "local" → write straight to the iRODS PVC (LocalFileUploadClient).
+    # "http"  → forward to a real upload service (UploadServiceClient).
+    UPLOAD_BACKEND: "local"
+    # Upload service (only consulted when UPLOAD_BACKEND=http).
+    UPLOAD_SERVICE_URL: "http://upload-service:8001"
     UPLOAD_TIMEOUT_SECONDS: "60.0"
     UPLOAD_CHUNK_SIZE_BYTES: "5242880"
     UPLOAD_RETRY_MAX_ATTEMPTS: "3"
@@ -52,12 +55,7 @@ gateway:
     OIDC_AUDIENCE: ""
     OIDC_REQUIRED_SCOPES: ""
     OIDC_JWKS_TTL_SECONDS: "300"
-    # JWT – alternative auth mode
-    JWT_ISSUER: ""
-    JWT_AUDIENCE: ""
-    JWT_ALGORITHMS: "RS256"
-    JWT_JWKS_URL: ""
-    # Exection API
+    # Execution API
     EXECUTION_API_URL: ""
     EXECUTION_TIMEOUT_SECONDS: "120"
 
@@ -269,3 +267,31 @@ hpa:
     targetMemoryUtilizationPercentage: ""
     scaleUpStabilizationWindowSeconds: 30 # scale up fast for burst uploads
     scaleDownStabilizationWindowSeconds: 600 # keep pods longer; transfers may be in-flight
+    # additionalMetrics: []
+
+# ────────────────────────────────────────────────────────────
+# Redis  (Bitnami subchart – gateway sessions / cache)
+# https://artifacthub.io/packages/helm/bitnami/redis
+# Schedules on linux/amd64 nodes via master.nodeSelector (image matches node arch).
+# Set redis.enabled: false and configure gateway.env.REDIS_URL for an external Redis.
+# ────────────────────────────────────────────────────────────
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+  networkPolicy:
+    # Keep as false: the parent Bitnami chart's NetworkPolicy is overly permissive
+    # in-namespace. We want to disable the parent's NetworkPolicy and use our own,
+    # which provides a specific cutout for discovery gateway -> Redis.
+    enabled: false
+  master:
+    nodeSelector:
+      kubernetes.io/arch: amd64
+    persistence:
+      enabled: true
+      size: 8Gi
+      storageClass: ""
+  global:
+    imageRegistry: ""
+    imagePullSecrets: []

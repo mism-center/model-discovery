@@ -7,14 +7,11 @@ fires, then reads the run back from the DAL with the freshly-updated status.
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 
 from mismapi.api.v1._run_helpers import resource_summary, run_detail
-from mismapi.clients.execution_client import ExecutionClient
-from mismapi.dependencies.execution import get_execution_client
-from mismapi.dependencies.registry import get_registry_service
+from mismapi.core.deps import ExecutionClientDep, RegistryServiceDep
 from mismapi.schemas.registry import RunDetailResponse
-from mismapi.services.registry_service import RegistryService
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +21,8 @@ router = APIRouter()
 @router.get("/runs/{run_id}", response_model=RunDetailResponse)
 async def get_run(
     run_id: str,
+    service: RegistryServiceDep,
+    execution_client: ExecutionClientDep,
     refresh: bool = Query(
         default=True,
         description=(
@@ -33,8 +32,6 @@ async def get_run(
             "whatever the DAL has cached (cheap; useful for list-row previews)."
         ),
     ),
-    service: RegistryService = Depends(get_registry_service),
-    execution_client: ExecutionClient = Depends(get_execution_client),
 ) -> RunDetailResponse:
     """Fetch a run by id, optionally refreshing status via the Execution service.
 
@@ -65,8 +62,8 @@ async def get_run(
 @router.delete("/runs/{run_id}", response_model=RunDetailResponse)
 async def cancel_run(
     run_id: str,
-    service: RegistryService = Depends(get_registry_service),
-    execution_client: ExecutionClient = Depends(get_execution_client),
+    service: RegistryServiceDep,
+    execution_client: ExecutionClientDep,
 ) -> RunDetailResponse:
     """Cancel a run by proxying DELETE to the Execution service.
 

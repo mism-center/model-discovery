@@ -1,10 +1,10 @@
 import logging
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 from mism_registry.resource import Resource
 
-from mismapi.auth.base import AuthenticatedPrincipal, require_principal
-from mismapi.dependencies.registry import get_registry_service
+from mismapi.auth.base import AuthenticatedPrincipalDep
+from mismapi.core.deps import RegistryServiceDep
 from mismapi.schemas.registry import (
     RegisterDatasetRequest,
     RegisterDatasetResponse,
@@ -16,7 +16,6 @@ from mismapi.schemas.registry import (
     pub_to_dto,
 )
 from mismapi.schemas.search import ModelListItem, ModelListResponse
-from mismapi.services.registry_service import RegistryService
 
 logger = logging.getLogger(__name__)
 
@@ -89,8 +88,8 @@ def _dataset_response(r: Resource) -> RegisterDatasetResponse:
 @router.post("/datasets", response_model=RegisterDatasetResponse, status_code=201)
 async def create_dataset(
     payload: RegisterDatasetRequest,
-    principal: AuthenticatedPrincipal = Depends(require_principal),
-    service: RegistryService = Depends(get_registry_service),
+    service: RegistryServiceDep,
+    principal: AuthenticatedPrincipalDep,
 ) -> RegisterDatasetResponse:
 
     resource = service.create_dataset(
@@ -124,8 +123,8 @@ async def create_dataset(
 async def update_dataset(
     dataset_id: str,
     payload: UpdateDatasetRequest,
-    principal: AuthenticatedPrincipal = Depends(require_principal),
-    service: RegistryService = Depends(get_registry_service),
+    service: RegistryServiceDep,
+    principal: AuthenticatedPrincipalDep,
 ) -> RegisterDatasetResponse:
 
     resource = service.update_dataset(
@@ -162,6 +161,7 @@ async def update_dataset(
 
 @router.get("/datasets", response_model=ModelListResponse)
 async def list_datasets(
+    service: RegistryServiceDep,
     name: str | None = Query(default=None, description="Substring match on dataset name"),
     owner: str | None = Query(default=None, description="Exact match on owner"),
     tags: list[str] | None = Query(default=None, description="Format tags (all must match)"),
@@ -169,7 +169,6 @@ async def list_datasets(
     scales: list[str] | None = Query(default=None, description="Modeling scales (any must match)"),
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
-    service: RegistryService = Depends(get_registry_service),
 ) -> ModelListResponse:
 
     resources = service.list_datasets(

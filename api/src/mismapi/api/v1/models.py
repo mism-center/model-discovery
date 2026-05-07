@@ -1,15 +1,13 @@
 import logging
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 from mism_registry.enums import RunStatus
 from mism_registry.resource import Resource
 
 from mismapi.api.v1._run_helpers import resource_summary as _resource_summary
 from mismapi.api.v1._run_helpers import run_detail as _run_detail
-from mismapi.auth.base import AuthenticatedPrincipal, require_principal
-from mismapi.clients.execution_client import ExecutionClient
-from mismapi.dependencies.execution import get_execution_client
-from mismapi.dependencies.registry import get_registry_service
+from mismapi.auth.base import AuthenticatedPrincipalDep
+from mismapi.core.deps import ExecutionClientDep, RegistryServiceDep
 from mismapi.schemas.registry import (
     ExecuteRunRequest,
     ExecuteRunResponse,
@@ -26,7 +24,6 @@ from mismapi.schemas.registry import (
     pub_to_dto,
 )
 from mismapi.schemas.search import ModelListItem, ModelListResponse
-from mismapi.services.registry_service import RegistryService
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +98,7 @@ def _model_response(r: Resource) -> RegisterModelResponse:
 
 @router.get("/models", response_model=ModelListResponse)
 async def list_models(
+    service: RegistryServiceDep,
     name: str | None = Query(default=None, description="Substring match on model name"),
     owner: str | None = Query(default=None, description="Exact match on owner"),
     tags: list[str] | None = Query(default=None, description="Format tags (all must match)"),
@@ -108,7 +106,6 @@ async def list_models(
     scales: list[str] | None = Query(default=None, description="Modeling scales (any must match)"),
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
-    service: RegistryService = Depends(get_registry_service),
 ) -> ModelListResponse:
 
     resources = service.list_models(
@@ -128,8 +125,8 @@ async def list_models(
 @router.post("/models", response_model=RegisterModelResponse, status_code=201)
 async def create_model(
     payload: RegisterModelRequest,
-    principal: AuthenticatedPrincipal = Depends(require_principal),
-    service: RegistryService = Depends(get_registry_service),
+    service: RegistryServiceDep,
+    principal: AuthenticatedPrincipalDep,
 ) -> RegisterModelResponse:
 
     resource = service.create_model(
@@ -166,8 +163,8 @@ async def create_model(
 async def update_model(
     model_id: str,
     payload: UpdateModelRequest,
-    principal: AuthenticatedPrincipal = Depends(require_principal),
-    service: RegistryService = Depends(get_registry_service),
+    service: RegistryServiceDep,
+    principal: AuthenticatedPrincipalDep,
 ) -> RegisterModelResponse:
 
     resource = service.update_model(
@@ -213,9 +210,9 @@ async def update_model(
 async def execute_run(
     model_id: str,
     payload: ExecuteRunRequest,
-    principal: AuthenticatedPrincipal = Depends(require_principal),
-    service: RegistryService = Depends(get_registry_service),
-    execution_client: ExecutionClient = Depends(get_execution_client),
+    service: RegistryServiceDep,
+    principal: AuthenticatedPrincipalDep,
+    execution_client: ExecutionClientDep,
 ) -> ExecuteRunResponse:
     """Create a run and immediately trigger execution on the Execution API."""
 
@@ -260,10 +257,10 @@ async def execute_run(
 @router.get("/models/{model_id}/runs", response_model=ModelRunDetailsResponse)
 async def list_model_runs(
     model_id: str,
+    service: RegistryServiceDep,
     status: RunStatus | None = Query(
         default=None, description="Optional filter — only include runs with this status."
     ),
-    service: RegistryService = Depends(get_registry_service),
 ) -> ModelRunDetailsResponse:
     """Fetch all runs for a model, enriched with hydrated input/output resources.
 

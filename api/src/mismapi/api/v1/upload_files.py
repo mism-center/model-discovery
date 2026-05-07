@@ -2,11 +2,12 @@ import asyncio
 import logging
 
 import httpx
-from fastapi import APIRouter, File, Request, UploadFile
+from fastapi import APIRouter, File, UploadFile
 
+from mismapi.clients.local_upload_client import LocalFileUploadClient
 from mismapi.clients.upload_client import UploadServiceClient
+from mismapi.core.deps import SettingsDep, UploadClientDep
 from mismapi.core.errors import APIError
-from mismapi.core.settings import Settings
 from mismapi.schemas.upload import UploadAcceptedResponse
 
 logger = logging.getLogger(__name__)
@@ -16,20 +17,18 @@ upload_file_body = File(...)
 
 @router.post("/resources/{resource_id}/files", response_model=UploadAcceptedResponse)
 async def upload_resource_file(
-    request: Request,
     resource_id: str,
+    settings: SettingsDep,
+    upload_client: UploadClientDep,
     file: UploadFile = upload_file_body,
 ) -> UploadAcceptedResponse:
     """Upload a file artifact for any resource (model, dataset, tool, …).
 
     The path is scoped by ``resource_id`` so the same flow handles every
-    registry resource type. Upstream upload service still exposes its endpoint
-    under ``/models/{id}``; we bridge the naming here without leaking it to
-    callers.
+    registry resource type. The configured upload backend (`UPLOAD_BACKEND=local`
+    writes to the iRODS PVC; `UPLOAD_BACKEND=http` forwards to the upload
+    service) is selected at app startup; the route is backend-agnostic.
     """
-    settings: Settings = request.app.state.settings
-    upload_client: UploadServiceClient = request.app.state.upload_client
-
     session = await upload_client.init_upload(
         resource_id=resource_id,
         filename=file.filename or "upload.bin",
@@ -81,7 +80,7 @@ async def upload_resource_file(
 
 
 async def _upload_part_with_retry(
-    client: UploadServiceClient,
+    client: UploadServiceClient | LocalFileUploadClient,
     upload_id: str,
     part_number: int,
     chunk: bytes,
