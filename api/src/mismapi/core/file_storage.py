@@ -48,9 +48,7 @@ def resolve_location_uri(location_uri: str, mount_path: str) -> Path:
     # drive letter looks like a URL scheme. Detect that case explicitly so
     # plain absolute paths still take the implicit-iRODS branch.
     parts = urlsplit(location_uri)
-    is_plain_path = parts.scheme == "" or (
-        len(parts.scheme) == 1 and parts.scheme.isalpha()
-    )
+    is_plain_path = parts.scheme == "" or (len(parts.scheme) == 1 and parts.scheme.isalpha())
     if parts.scheme == "irods":
         # urlsplit("irods:///foo/bar") -> path="/foo/bar"
         # urlsplit("irods://foo/bar")  -> netloc="foo", path="/bar"  ← treat netloc as first segment

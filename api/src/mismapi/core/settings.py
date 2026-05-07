@@ -42,9 +42,7 @@ class Settings(BaseSettings):
     # "irods:///<rel>" or "/irods/<rel>" resolve to "{irods_mount_path}/<rel>".
     irods_mount_path: str = Field(default="/irods", alias="IRODS_MOUNT_PATH")
 
-    upload_service_url: BaseUrl = Field(
-        default="http://localhost:8200", alias="UPLOAD_SERVICE_URL"
-    )
+    upload_service_url: BaseUrl = Field(default="http://localhost:8200", alias="UPLOAD_SERVICE_URL")
     upload_timeout_seconds: float = Field(default=60.0, alias="UPLOAD_TIMEOUT_SECONDS")
     # "local" → write straight to the iRODS PVC (LocalFileUploadClient).
     # "http"  → forward to a real upload service (UploadServiceClient).

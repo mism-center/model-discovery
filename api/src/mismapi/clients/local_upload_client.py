@@ -240,8 +240,7 @@ class LocalFileUploadClient:
                 status_code=400,
                 code="invalid_filename",
                 detail=(
-                    "Filename must contain only [A-Za-z0-9._-] and not be empty. "
-                    f"Got: {filename!r}"
+                    f"Filename must contain only [A-Za-z0-9._-] and not be empty. Got: {filename!r}"
                 ),
             )
         return base
