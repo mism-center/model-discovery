@@ -148,10 +148,11 @@ class OIDCService:
         self._client = client
 
     async def authorize_redirect(self, request: Request) -> RedirectResponse:
-        return await self._client.authorize_redirect(
+        redirect_url = await self._client.authorize_redirect(
             request,
             self._settings.oidc_redirect_uri,
         )
+        return RedirectResponse(url=redirect_url, status_code=302)
 
     async def authorize_access_token(self, request: Request) -> TokenResponse:
         """
