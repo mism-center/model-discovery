@@ -205,8 +205,21 @@ externalSecrets:
 # ────────────────────────────────────────────────────────────
 networkPolicy:
   enabled: true
-  ingressControllerNamespace: "ingress-nginx"
+  ingressControllerNamespace: infra
   restrictEgress: false
+  # Allow ingress from an externally-deployed tusd to the Gateway's
+  # /api/internal/tusd/hooks endpoint. tusd ships in a separate Helm chart,
+  # so we cannot detect its presence automatically — set `enabled: true`
+  # and adjust `podSelectorLabels` to match the labels the tusd chart
+  # applies to its pod template. The `app.kubernetes.io/name: tusd`
+  # default below is just a convention and MUST match whatever the tusd
+  # chart actually emits.
+  #
+  # tusd is assumed to be deployed in the same namespace as this release.
+  tusd:
+    enabled: false
+    podSelectorLabels:
+      app.kubernetes.io/name: tusd
 
 # ────────────────────────────────────────────────────────────
 # HorizontalPodAutoscalers

@@ -13,6 +13,12 @@
     Gateway             → Redis (when bundled subchart is enabled)
     Gateway / Migrate   → Metadata Store (PostgreSQL)
     Upload Service      → Storage Interface
+    tusd                → Gateway     (HTTP hooks, /api/internal/tusd/hooks; gateway
+                                       trusts the transport because /api/internal/*
+                                       has no app-layer auth on post-finish — see
+                                       api/.../api/internal.py. tusd is deployed by
+                                       a separate Helm chart, so the source pod
+                                       selector is configured via values.)
   ─────────────────────────────────────────────────────────────────────────────
 */}}
 
@@ -81,6 +87,44 @@ spec:
       ports:
         - protocol: TCP
           port: 6379
+{{- end }}
+
+---
+# ── 1c. Discovery Gateway – also accepts tusd hook callbacks ──────────────────
+# tusd posts every enabled hook event (pre-create, post-finish, ...) to
+# POST /api/internal/tusd/hooks on the Gateway. pre-create authenticates
+# via the forwarded user `Authorization` header, but post-finish has no
+# app-layer auth and instead relies on this NetworkPolicy to ensure only
+# the tusd pod can reach the endpoint.
+#
+# tusd is NOT deployed by this chart (the legacy `uploadService` component
+# is unrelated and disabled in our deployments). It ships as a separate
+# Helm chart that we deploy into the SAME namespace as this release; the
+# source pod selector is supplied via `.Values.networkPolicy.tusd`. See
+# `values.yaml` for the contract. Cross-namespace tusd is unsupported
+# here on purpose — add a namespaceSelector option back if that ever
+# becomes a real deployment shape.
+{{- if and .Values.gateway.enabled .Values.networkPolicy.tusd .Values.networkPolicy.tusd.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-tusd-to-gateway-hooks
+  labels:
+    {{- include "model-discovery.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: gateway
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+      - podSelector:
+          matchLabels:
+            {{- toYaml .Values.networkPolicy.tusd.podSelectorLabels | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.gateway.service.port }}
 {{- end }}
 
 ---

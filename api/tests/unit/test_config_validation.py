@@ -2,7 +2,10 @@ from typing import Any
 
 import pytest
 
-from mismapi.core.config_validation import OIDCConfigurationError, ensure_startup_config
+from mismapi.core.config_validation import (
+    OIDCConfigurationError,
+    ensure_startup_config,
+)
 from mismapi.core.settings import Settings
 
 
@@ -49,6 +52,11 @@ def test_oidc_mode_accepts_discovery_url_in_lieu_of_issuer_url() -> None:
             OIDC_COOKIE_SIGNING_SECRET="test-cookie-signing-secret",
         )
     )
+
+
+def test_disable_auth_skips_oidc_validation() -> None:
+    """`DISABLE_AUTH` skips OIDC validation entirely (no other required fields)."""
+    ensure_startup_config(_settings(DISABLE_AUTH="true"))
 
 
 def test_oidc_mode_rejects_whitespace_only_values() -> None:

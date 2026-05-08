@@ -39,8 +39,9 @@ def ensure_startup_config(settings: Settings) -> None:
     """
     Validate cross-field settings constraints before app wiring.
 
-    Currently only validates OIDC-mode configuration. If in the future we add another auth mode,
-    we will need to add different validation here.
+    Validates OIDC-mode configuration. If in the future we add another auth
+    mode or another mandatory integration, we will need to add different
+    validation here.
     """
     if not settings.disable_auth:
         _ensure_oidc_config(settings)

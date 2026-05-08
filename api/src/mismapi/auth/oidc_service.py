@@ -148,17 +148,10 @@ class OIDCService:
         self._client = client
 
     async def authorize_redirect(self, request: Request) -> RedirectResponse:
-        result = await self._client.authorize_redirect(
+        return await self._client.authorize_redirect(
             request,
             self._settings.oidc_redirect_uri,
         )
-        if not isinstance(result, RedirectResponse):
-            raise APIError(
-                status_code=500,
-                code="auth_authorize_redirect_invalid",
-                detail="Authlib did not return a redirect response.",
-            )
-        return result
 
     async def authorize_access_token(self, request: Request) -> TokenResponse:
         """

@@ -318,6 +318,67 @@ class RegistryService:
             scales=scales,
         )
 
+    # ── Upload lifecycle ─────────────────────────────────────────────
+
+    def get_resource_and_assert_ownership(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        resource_id: str,
+    ) -> Resource:
+        """
+        Look up `resource_id` and verify `principal` owns it.
+
+        On any failure (resource missing OR caller is not the owner) raises a
+        single, indistinguishable 403 with code `not_authorized`.
+
+        FUTURE: replace string equality with `fga.check(user=principal.subject,
+        relation="owner", object=f"resource:{resource_id}")`.
+        """
+        not_authorized = APIError(
+            status_code=403,
+            code="not_authorized",
+            detail="Resource does not exist or principal is not its owner.",
+        )
+
+        try:
+            resource = self._registry.get_resource(resource_id)
+        except ResourceNotFoundError:
+            raise not_authorized from None
+
+        if resource.owner != principal.subject:
+            raise not_authorized
+        return resource
+
+    def mark_upload_complete(self, *, resource_id: str) -> Resource:
+        """
+        Stamp `metadata['upload_status'] = 'UPLOAD_COMPLETE'` on the resource.
+
+        Idempotent: re-stamping is a no-op. Stored in `metadata`
+        because `mism_registry.ResourceStatus` models publication lifecycle
+        (active/superseded/archived), not content lifecycle. If upload state
+        grows beyond a single flag (digests, indexer status, etc.), promote
+        this to a first-class field on `Resource` upstream.
+        """
+        try:
+            resource = self._registry.get_resource(resource_id)
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+        new_metadata = dict(resource.metadata)
+        new_metadata["upload_status"] = "UPLOAD_COMPLETE"
+        resource.metadata = new_metadata
+
+        try:
+            updated = self._registry.update_resource(resource)
+            self._session.commit()
+        except RegistryValidationError as exc:
+            self._session.rollback()
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+
+        logger.info("Marked upload complete for resource %s", resource_id)
+        return updated
+
     # ── Lifecycle ────────────────────────────────────────────────────
 
     def close(self) -> None:
