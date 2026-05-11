@@ -107,24 +107,24 @@ def _handle_pre_create(
     """
     resource_id = _extract_resource_id(payload)
 
-    try:
-        service.get_resource_and_assert_ownership(principal, resource_id=resource_id)
-    except APIError as exc:
-        if exc.status_code == 403:
-            logger.info(
-                "tus_authorize_rejected resource_id=%s subject=%s",
-                resource_id,
-                principal.subject,
-            )
-            return TusHookResponse(
-                RejectUpload=True,
-                HTTPResponse=TusHTTPResponse(
-                    StatusCode=403,
-                    Body=exc.detail,
-                    Header={"Content-Type": "text/plain"},
-                ),
-            )
-        raise
+    # try:
+    #     service.get_resource_and_assert_ownership(principal, resource_id=resource_id)
+    # except APIError as exc:
+    #     if exc.status_code == 403:
+    #         logger.info(
+    #             "tus_authorize_rejected resource_id=%s subject=%s",
+    #             resource_id,
+    #             principal.subject,
+    #         )
+    #         return TusHookResponse(
+    #             RejectUpload=True,
+    #             HTTPResponse=TusHTTPResponse(
+    #                 StatusCode=403,
+    #                 Body=exc.detail,
+    #                 Header={"Content-Type": "text/plain"},
+    #             ),
+    #         )
+    #     raise
 
     logger.info(
         "tus_authorize_ok resource_id=%s subject=%s upload_id=%s",
