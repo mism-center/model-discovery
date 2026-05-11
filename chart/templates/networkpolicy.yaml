@@ -3,8 +3,9 @@
   networkpolicy.yaml
   ─────────────────────────────────────────────────────────────────────────────
   Enforces the communication paths shown in the architecture diagram.
-  Default posture: deny-all ingress within the namespace, then open only the
-  exact paths each component legitimately needs.
+  Default posture: deny-all ingress for THIS release's pods only (scoped via
+  app.kubernetes.io/instance), then open only the exact paths each component
+  legitimately needs. Other workloads sharing the namespace are unaffected.
 
   Allowed call graph (→ = may initiate connection):
     Ingress controller  → Gateway
@@ -22,7 +23,11 @@
   ─────────────────────────────────────────────────────────────────────────────
 */}}
 
-# ── 0. Default-deny all intra-namespace ingress ───────────────────────────────
+# ── 0. Default-deny ingress for this release's pods ──────────────────────────
+# Scoped to app.kubernetes.io/instance={{ .Release.Name }} so unrelated workloads
+# sharing the namespace (other Helm releases, ad-hoc pods) are not affected.
+# Subchart pods (e.g. bundled redis) carry the same instance label and are
+# therefore included; they get explicit allow rules below.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -30,7 +35,9 @@ metadata:
   labels:
     {{- include "model-discovery.labels" . | nindent 4 }}
 spec:
-  podSelector: {}
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
   policyTypes:
     - Ingress
 
@@ -235,6 +242,8 @@ spec:
 {{- if .Values.networkPolicy.restrictEgress }}
 ---
 # ── 6. Restrict egress – allow only DNS + known intra-namespace targets ──────
+# Scoped to this release's pods (app.kubernetes.io/instance) for the same
+# reason as policy #0; we don't want to clamp unrelated workloads.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -242,7 +251,9 @@ metadata:
   labels:
     {{- include "model-discovery.labels" . | nindent 4 }}
 spec:
-  podSelector: {}
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
   policyTypes:
     - Egress
   egress:

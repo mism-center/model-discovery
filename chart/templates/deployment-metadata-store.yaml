@@ -36,6 +36,9 @@ spec:
                 secretKeyRef:
                   name: model-discovery-secrets
                   key: databasePassword
+            # PVC root contains lost+found on ext4; point PGDATA at a subdir so initdb sees an empty target.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
           livenessProbe:
             exec:
               command:

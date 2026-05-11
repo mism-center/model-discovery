@@ -148,11 +148,12 @@ class OIDCService:
         self._client = client
 
     async def authorize_redirect(self, request: Request) -> RedirectResponse:
-        redirect_url = await self._client.authorize_redirect(
+        # authorize_redirect() returns a `RedirectResponse` instance every time here, but the
+        # function signature just returns Any. The type ignore is a workaround to avoid mypy errors.
+        return await self._client.authorize_redirect(  # type: ignore[no-any-return]
             request,
             self._settings.oidc_redirect_uri,
         )
-        return RedirectResponse(url=redirect_url, status_code=302)
 
     async def authorize_access_token(self, request: Request) -> TokenResponse:
         """
