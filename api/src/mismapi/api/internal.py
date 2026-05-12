@@ -56,7 +56,7 @@ from mismapi.core.deps import (
     SettingsDep,
 )
 from mismapi.core.errors import APIError
-from mismapi.schemas.tus import TusHookRequest, TusHookResponse, TusHTTPResponse
+from mismapi.schemas.tus import TusHookRequest, TusHookResponse  # , TusHTTPResponse
 from mismapi.services.registry_service import RegistryService
 
 logger = logging.getLogger(__name__)
