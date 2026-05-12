@@ -25,8 +25,6 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         token = request_id_context.set(request_id)
         started = time.perf_counter()
         log_this_request = self._should_log_request(request)
-        if log_this_request:
-            logger.info("request_started method=%s path=%s", request.method, request.url.path)
         try:
             response = await call_next(request)
             elapsed_ms = (time.perf_counter() - started) * 1000
@@ -44,4 +42,8 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             request_id_context.reset(token)
 
     def _should_log_request(self, request: Request) -> bool:
+        """
+        Returns True if the request should be logged. If you need any specific paths to be excluded
+        from logging, change this method.
+        """
         return request.url.path.rstrip("/") != "/healthz"
