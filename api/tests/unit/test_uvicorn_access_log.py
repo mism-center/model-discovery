@@ -37,7 +37,10 @@ def test_redact_request_path(full_path: str, production: bool, expected: str) ->
         (("127.0.0.1:1", "GET", "/api/v1/models", "1.1", 200), True),
     ],
 )
-def test_skip_health_check_access_filter(args: tuple, expect_emit: bool) -> None:
+def test_skip_health_check_access_filter(
+    args: tuple[str, str, str, str, int],
+    expect_emit: bool,
+) -> None:
     f = SkipHealthCheckAccessFilter()
     record = logging.LogRecord(
         name="uvicorn.access",
