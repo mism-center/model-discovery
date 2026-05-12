@@ -12,6 +12,16 @@ from mismapi.core.settings import Settings
 REDACT_PLACEHOLDER = "<redacted>"
 
 
+class SkipHealthCheckAccessFilter(logging.Filter):
+    """Drop uvicorn access lines for liveness/readiness probes (reduces log noise in Kubernetes)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not isinstance(record.args, tuple) or len(record.args) < 3:
+            return True
+        path = str(record.args[2]).split("?", 1)[0].rstrip("/") or "/"
+        return path != "/healthz"
+
+
 def redact_request_path(full_path: str, *, production: bool) -> str:
     if not production:
         return full_path
@@ -74,3 +84,7 @@ def install_uvicorn_access_formatter(settings: Settings) -> None:
             use_colors=use_colors,
             production_mode=settings.production_mode,
         )
+    skip_health = SkipHealthCheckAccessFilter()
+    for handler in list(log.handlers):
+        if not any(isinstance(f, SkipHealthCheckAccessFilter) for f in handler.filters):
+            handler.addFilter(skip_health)

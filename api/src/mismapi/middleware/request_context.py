@@ -24,18 +24,24 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         request_id = request.headers.get("x-request-id", str(uuid4()))
         token = request_id_context.set(request_id)
         started = time.perf_counter()
-        logger.info("request_started method=%s path=%s", request.method, request.url.path)
+        log_this_request = self._should_log_request(request)
+        if log_this_request:
+            logger.info("request_started method=%s path=%s", request.method, request.url.path)
         try:
             response = await call_next(request)
             elapsed_ms = (time.perf_counter() - started) * 1000
             response.headers["x-request-id"] = request_id
-            logger.info(
-                "request_completed method=%s path=%s status_code=%s duration_ms=%.2f",
-                request.method,
-                request.url.path,
-                response.status_code,
-                elapsed_ms,
-            )
+            if log_this_request:
+                logger.info(
+                    "request_completed method=%s path=%s status_code=%s duration_ms=%.2f",
+                    request.method,
+                    request.url.path,
+                    response.status_code,
+                    elapsed_ms,
+                )
             return response
         finally:
             request_id_context.reset(token)
+
+    def _should_log_request(self, request: Request) -> bool:
+        return request.url.path.rstrip("/") != "/healthz"

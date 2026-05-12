@@ -6,6 +6,7 @@ from uvicorn.logging import AccessFormatter
 from mismapi.core.settings import Settings
 from mismapi.core.uvicorn_access_log import (
     RedactedAccessFormatter,
+    SkipHealthCheckAccessFilter,
     install_uvicorn_access_formatter,
     redact_request_path,
 )
@@ -25,6 +26,29 @@ from mismapi.core.uvicorn_access_log import (
 )
 def test_redact_request_path(full_path: str, production: bool, expected: str) -> None:
     assert redact_request_path(full_path, production=production) == expected
+
+
+@pytest.mark.parametrize(
+    ("args", "expect_emit"),
+    [
+        (("127.0.0.1:1", "GET", "/healthz", "1.1", 200), False),
+        (("127.0.0.1:1", "GET", "/healthz/", "1.1", 200), False),
+        (("127.0.0.1:1", "GET", "/healthz?verbose=1", "1.1", 200), False),
+        (("127.0.0.1:1", "GET", "/api/v1/models", "1.1", 200), True),
+    ],
+)
+def test_skip_health_check_access_filter(args: tuple, expect_emit: bool) -> None:
+    f = SkipHealthCheckAccessFilter()
+    record = logging.LogRecord(
+        name="uvicorn.access",
+        level=logging.INFO,
+        pathname="",
+        lineno=0,
+        msg='%s - "%s %s HTTP/%s" %s',
+        args=args,
+        exc_info=None,
+    )
+    assert f.filter(record) is expect_emit
 
 
 def test_redacted_access_formatter_production_hides_query_values() -> None:
@@ -82,6 +106,7 @@ def test_install_uvicorn_access_formatter_replaces_handler() -> None:
         settings = Settings(_env_file=None, PRODUCTION_MODE=True)  # type: ignore[call-arg]
         install_uvicorn_access_formatter(settings)
         assert isinstance(handler.formatter, RedactedAccessFormatter)
+        assert any(isinstance(f, SkipHealthCheckAccessFilter) for f in handler.filters)
         record = logging.LogRecord(
             name="uvicorn.access",
             level=logging.INFO,
