@@ -1,31 +1,34 @@
-import { parseDate } from '@internationalized/date';
-import type {
-  DatasetResult,
-  ModelResult,
-  ResultType,
-} from '~/api/services/search';
 import cn from 'classnames';
 import { Button } from '@heroui/react';
-import { QuotationMarkIcon } from '@sidekickicons/react/16/solid';
 import { BookmarkIcon } from '@heroicons/react/24/outline';
-import { AuthorListTooltip } from './author-list-tooltip';
 import {
   CalendarIcon,
   CircleStackIcon,
-  StarIcon,
+  UserIcon,
 } from '@heroicons/react/16/solid';
-import { Link } from 'react-router';
 import { DocumentIcon } from '@heroicons/react/24/solid';
+import { QuotationMarkIcon } from '@sidekickicons/react/16/solid';
+import { Link } from 'react-router';
 
-// `Mon Year`
-function formatDate(dateString: string) {
-  const date = parseDate(dateString);
+import type { SearchResultItem } from '~/api';
+import { AuthorListTooltip } from './author-list-tooltip';
+
+/**
+ * Format an ISO timestamp / date string as `Mon Year` (e.g. `Jan 2024`).
+ */
+function formatDate(iso: string) {
+  const date = new Date(iso);
+  // Catch invalid dates
+  if (Number.isNaN(date.valueOf())) return iso;
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     year: 'numeric',
-  }).format(date.toDate('UTC'));
+  }).format(date);
 }
 
+/**
+ * Human-readable byte-size formatting.
+ */
 function formatSize(bytes: number): string {
   if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
   if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`;
@@ -34,26 +37,23 @@ function formatSize(bytes: number): string {
 }
 
 interface SearchResultProps {
-  result: ModelResult | DatasetResult;
-  resultType: ResultType;
+  result: SearchResultItem;
 }
 
-export function SearchResult({ result, resultType }: SearchResultProps) {
-  const executable =
-    resultType === 'models' ? (result as ModelResult).executable : false;
-  const types =
-    resultType === 'models' ? (result as ModelResult).types : undefined;
-  const sizeBytes =
-    resultType === 'datasets'
-      ? (result as DatasetResult).size_bytes
-      : undefined;
-  const formats =
-    resultType === 'datasets' ? (result as DatasetResult).formats : undefined;
+export function SearchResult({ result }: SearchResultProps) {
+  const isDataset = result.resource_type === 'dataset';
+  const linkPath = isDataset
+    ? `/datasets/${result.id}/`
+    : `/models/${result.id}/`;
 
-  const linkPath =
-    resultType === 'models'
-      ? `/models/${result.id}/`
-      : `/datasets/${result.id}/`;
+  const formatTags = result.format_tags ?? [];
+  const authors = result.authors ?? [];
+  const publications = result.publications ?? [];
+  const executable = Boolean(result.execution_type);
+
+  // Prefer the dedicated publication date when available; fall back to the
+  // row's created_at so we can at least render something otherwise.
+  const displayDate = result.date_published ?? result.created_at;
 
   return (
     <Link
@@ -69,34 +69,20 @@ export function SearchResult({ result, resultType }: SearchResultProps) {
     >
       {/* Left content */}
       <div className="flex-1 min-w-0">
-        {/* Featured / executable badges */}
-        {/* min-h-8 to align with bookmark button when badges are present */}
-        {(result.featured || executable) && (
+        {/* Executable badge (models only). Featured/starred isn't modeled by
+            the API yet; if/when it is, add back here. */}
+        {executable && (
           <div className="flex items-center flex-wrap gap-x-3 gap-y-3 min-h-8 mb-1">
             <div className="flex flex-wrap items-center gap-2">
-              {result.featured && (
-                <span
-                  className={cn(
-                    'inline-flex items-center px-2 py-0.5',
-                    'rounded-xs bg-success',
-                    'text-black text-[10px] font-bold uppercase tracking-wide'
-                  )}
-                >
-                  <StarIcon className="size-3 mr-1" />
-                  Featured {resultType === 'models' ? 'Model' : 'Dataset'}
-                </span>
-              )}
-              {executable && (
-                <span
-                  className={cn(
-                    'inline-flex items-center px-2 py-0.5',
-                    'rounded-xs bg-primary',
-                    'text-white text-[10px] font-bold uppercase tracking-wide'
-                  )}
-                >
-                  Executable
-                </span>
-              )}
+              <span
+                className={cn(
+                  'inline-flex items-center px-2 py-0.5',
+                  'rounded-xs bg-primary',
+                  'text-white text-[10px] font-bold uppercase tracking-wide'
+                )}
+              >
+                Executable
+              </span>
             </div>
           </div>
         )}
@@ -112,41 +98,44 @@ export function SearchResult({ result, resultType }: SearchResultProps) {
             'after:delay-0 group-hover:after:delay-150'
           )}
         >
-          {result.title}
+          {result.name}
         </h3>
 
         {/* Description */}
-        <p className="text-sm text-default-800 line-clamp-2 mt-2 leading-relaxed">
-          {result.description}
-        </p>
+        {result.description && (
+          <p className="text-sm text-default-800 line-clamp-2 mt-2 leading-relaxed">
+            {result.description}
+          </p>
+        )}
 
-        <div className="flex flex-wrap items-center gap-2 mt-3">
-          {result.scales.map((scale) => (
-            <span
-              key={scale}
-              className={cn(
-                'px-2 py-0.5 rounded-xs text-[10px] font-bold uppercase tracking-tighter',
-                'bg-primary-100 text-primary/80'
-              )}
-            >
-              {scale}
-            </span>
-          ))}
-          {types?.map((type) => (
-            <span
-              key={type}
-              className={cn(
-                'px-2 py-0.5 rounded-xs text-[10px] font-bold uppercase tracking-tighter',
-                'bg-default-200 text-default-900/90'
-              )}
-            >
-              {type}
-            </span>
-          ))}
-        </div>
+        {result.modeling_scales?.length || result.domains?.length ? (
+          <div className="flex flex-wrap items-center gap-2 mt-3">
+            {result.modeling_scales?.map((scale) => (
+              <span
+                key={scale}
+                className={cn(
+                  'px-2 py-0.5 rounded-xs text-[10px] font-bold uppercase tracking-tighter',
+                  'bg-primary-100 text-primary/80'
+                )}
+              >
+                {scale}
+              </span>
+            ))}
+            {result.domains?.map((domain) => (
+              <span
+                key={domain}
+                className={cn(
+                  'px-2 py-0.5 rounded-xs text-[10px] font-bold uppercase tracking-tighter',
+                  'bg-default-200 text-default-900/90'
+                )}
+              >
+                {domain}
+              </span>
+            ))}
+          </div>
+        ) : null}
 
-        {/* Metadata and actions */}
-        {/* min-h-8 to align text with details button */}
+        {/* Metadata row */}
         <div className="flex items-center gap-4 mt-3 min-h-8">
           <div
             className={cn(
@@ -154,35 +143,41 @@ export function SearchResult({ result, resultType }: SearchResultProps) {
               'text-[11px] text-default-800 uppercase tracking-tight'
             )}
           >
-            <AuthorListTooltip result={result} />
+            {authors.length > 0 ? (
+              <AuthorListTooltip authors={authors} />
+            ) : (
+              result.owner && (
+                <div className="flex items-center gap-1.5 font-medium text-primary">
+                  <UserIcon className="size-3.5" />
+                  <span>{result.owner}</span>
+                </div>
+              )
+            )}
             <div className="flex items-center gap-1.5">
               <CalendarIcon className="size-3.5" />
-              <span>{formatDate(result.published_date)}</span>
+              <span>{formatDate(displayDate)}</span>
             </div>
-            {/* {doi !== undefined && (
-              <div className="flex items-center gap-1.5">
-                <TagIcon className="size-3.5" />
-                <span className="uppercase tracking-wider">DOI: {doi}</span>
-              </div>
-            )} */}
-            {formats?.length && (
+            {formatTags.length > 0 && (
               <div className="flex items-center gap-1.5">
                 <DocumentIcon className="size-3.5" />
                 <span className="uppercase tracking-wider">
-                  {formats.join(' / ')}
+                  {formatTags.join(' / ')}
                 </span>
               </div>
             )}
-            {sizeBytes !== undefined && (
+            {typeof result.size_bytes === 'number' && (
               <div className="flex items-center gap-1.5">
                 <CircleStackIcon className="size-3.5" />
-                {formatSize(sizeBytes)}
+                {formatSize(result.size_bytes)}
               </div>
             )}
-            {result.citations !== undefined && (
+            {publications.length > 0 && (
               <div className="flex items-center gap-1.5">
                 <QuotationMarkIcon className="size-3.5 mb-1" />
-                <span>{result.citations} Citations</span>
+                <span>
+                  {publications.length}{' '}
+                  {publications.length === 1 ? 'Publication' : 'Publications'}
+                </span>
               </div>
             )}
           </div>
@@ -201,7 +196,7 @@ export function SearchResult({ result, resultType }: SearchResultProps) {
           )}
           onClick={(e) => e.preventDefault()}
           onPress={() =>
-            console.log('bookmark', resultType.slice(0, -1), result.id)
+            console.log('bookmark', result.resource_type, result.id)
           }
         >
           <BookmarkIcon className="size-5" />
@@ -211,7 +206,7 @@ export function SearchResult({ result, resultType }: SearchResultProps) {
           size="sm"
           color="primary"
           className="px-5 py-2.5 rounded-lg text-sm font-bold"
-          // Doesn't actually need an onPress since the entire card functions as a link
+          // Entire card is already a link, so this button is purely visual.
         >
           View details
         </Button>

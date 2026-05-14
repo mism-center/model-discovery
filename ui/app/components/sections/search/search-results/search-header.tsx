@@ -7,24 +7,22 @@ import {
   Tabs,
 } from '@heroui/react';
 import cn from 'classnames';
-import { useSearch } from '~/contexts/search-context';
-import type { ResultType, SortOrder } from '~/api/services/search';
+import { useSearch } from '~/search/context/search-context';
+import type { ResourceType, SortField } from '~/search/state/types';
+
+const SORT_OPTIONS: Array<{ key: SortField; label: string }> = [
+  { key: '_score', label: 'Relevance' },
+  { key: 'created_at', label: 'Newest' },
+  { key: 'updated_at', label: 'Recently updated' },
+  { key: 'name', label: 'Name' },
+];
 
 export function SearchResultsHeader() {
-  const {
-    searchQuery,
-    isCompact,
-    resultType,
-    sort,
-    models,
-    datasets,
-    setResultType,
-    setSort,
-  } = useSearch();
+  const { state, data, isCompact, setResourceType, setSort } = useSearch();
 
-  const modelsTotal = models.pagination?.total;
-  const datasetsTotal = datasets.pagination?.total;
-  const totalResults = (modelsTotal ?? 0) + (datasetsTotal ?? 0);
+  // No way right now to get per-tab counts unless both models and dataset queries
+  // are maintained simultaneously.
+  const activeTotal = data?.total;
 
   return (
     <div>
@@ -47,11 +45,11 @@ export function SearchResultsHeader() {
           <h1 className="text-3xl font-headline font-extrabold text-primary tracking-tight">
             {isCompact ? 'Search Results' : 'Featured Submissions'}
           </h1>
-          {isCompact && (
+          {isCompact && activeTotal !== undefined && (
             <p className="mt-3 text-[16px] font-medium text-default-800/90">
-              Found {totalResults} results for{' '}
+              Found {activeTotal} results for{' '}
               <span className="text-secondary font-bold">
-                &quot;{searchQuery}&quot;
+                &quot;{state.query}&quot;
               </span>
             </p>
           )}
@@ -60,8 +58,8 @@ export function SearchResultsHeader() {
       <div className="flex justify-between mb-4">
         <Tabs
           aria-label="Result types"
-          selectedKey={resultType}
-          onSelectionChange={(key) => setResultType(key as ResultType)}
+          selectedKey={state.resourceType}
+          onSelectionChange={(key) => setResourceType(key as ResourceType)}
           classNames={{
             base: 'flex w-full border-b border-default-200/75',
             tabList: 'p-0 gap-0',
@@ -81,28 +79,30 @@ export function SearchResultsHeader() {
           variant="underlined"
         >
           <Tab
-            key="models"
+            key="model"
             title={
               <div className="flex items-center gap-3">
                 Models{' '}
-                {modelsTotal !== undefined && (
-                  <span className="text-sm font-bold text-default-700/75">
-                    {modelsTotal}
-                  </span>
-                )}
+                {state.resourceType === 'model' &&
+                  activeTotal !== undefined && (
+                    <span className="text-sm font-bold text-default-700/75">
+                      {activeTotal}
+                    </span>
+                  )}
               </div>
             }
           />
           <Tab
-            key="datasets"
+            key="dataset"
             title={
               <div className="flex items-center gap-3">
                 Datasets{' '}
-                {datasetsTotal !== undefined && (
-                  <span className="text-sm font-bold text-default-700/75">
-                    {datasetsTotal}
-                  </span>
-                )}
+                {state.resourceType === 'dataset' &&
+                  activeTotal !== undefined && (
+                    <span className="text-sm font-bold text-default-700/75">
+                      {activeTotal}
+                    </span>
+                  )}
               </div>
             }
           />
@@ -113,9 +113,9 @@ export function SearchResultsHeader() {
               label="Sort by:"
               labelPlacement="outside-left"
               variant="underlined"
-              selectedKeys={[sort]}
+              selectedKeys={[state.sortField]}
               onChange={(e) => {
-                if (e.target.value) setSort(e.target.value as SortOrder);
+                if (e.target.value) setSort(e.target.value as SortField);
               }}
               classNames={{
                 base: 'w-auto items-end',
@@ -147,9 +147,9 @@ export function SearchResultsHeader() {
                 ),
               }}
             >
-              <SelectItem key="relevance">Relevance</SelectItem>
-              <SelectItem key="featured">Featured</SelectItem>
-              <SelectItem key="latest">Latest</SelectItem>
+              {SORT_OPTIONS.map((opt) => (
+                <SelectItem key={opt.key}>{opt.label}</SelectItem>
+              ))}
             </Select>
           </div>
         )}

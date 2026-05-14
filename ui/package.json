@@ -9,7 +9,9 @@
     "typecheck": "react-router typegen && tsc",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "api:types": "openapi-typescript https://mism-discovery.apps.renci.org/openapi.json -o app/api/generated/schema.d.ts",
+    "prepare": "cd .. && husky"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
@@ -18,10 +20,13 @@
     "@react-router/node": "7.12.0",
     "@react-router/serve": "7.12.0",
     "@sidekickicons/react": "^0.15.0",
+    "@tanstack/react-query": "^5.99.2",
+    "@tanstack/react-query-devtools": "^5.99.2",
     "classnames": "^2.5.1",
     "framer-motion": "^12.34.0",
     "isbot": "^5.1.31",
     "match-sorter": "^8.2.0",
+    "openapi-fetch": "^0.17.0",
     "pluralize": "^8.0.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
@@ -46,7 +51,10 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-unicorn": "^62.0.0",
     "globals": "^17.1.0",
+    "husky": "^9.1.7",
     "jiti": "^2.6.1",
+    "lint-staged": "^16.4.0",
+    "openapi-typescript": "^7.13.0",
     "prettier": "^3.8.1",
     "tailwindcss": "^4.1.13",
     "typescript": "^5.9.2",
@@ -54,5 +62,14 @@
     "vite": "^7.1.7",
     "vite-plugin-svgr": "^4.5.0",
     "vite-tsconfig-paths": "^5.1.4"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,css}": [
+      "prettier --write"
+    ]
   }
 }

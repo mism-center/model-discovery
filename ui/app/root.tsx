@@ -9,8 +9,11 @@ import {
   useNavigate,
 } from 'react-router';
 import { HeroUIProvider } from '@heroui/react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import type { Route } from './+types/root';
 import { Header } from './components/layout/header';
+import { getQueryClient } from './api/query/query-client';
 import './styles/index.css';
 
 export function meta() {
@@ -36,15 +39,24 @@ export function links() {
 
 function Providers({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
+  const queryClient = getQueryClient();
   return (
-    <HeroUIProvider
-      // HeroUI's provider creates a div container
-      className="min-h-dvh"
-      navigate={navigate}
-      useHref={useHref}
-    >
-      {children}
-    </HeroUIProvider>
+    <QueryClientProvider client={queryClient}>
+      <HeroUIProvider
+        // HeroUI's provider creates a div container
+        className="min-h-dvh"
+        navigate={navigate}
+        useHref={useHref}
+      >
+        {children}
+      </HeroUIProvider>
+      {import.meta.env.DEV && (
+        <ReactQueryDevtools
+          initialIsOpen={false}
+          buttonPosition="bottom-left"
+        />
+      )}
+    </QueryClientProvider>
   );
 }
 

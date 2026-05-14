@@ -32,12 +32,13 @@ spec:
                 name: discovery-gateway
                 port:
                   name: http
-          # UI fallback — every non-API path goes to the UI service.
+          # UI frontend – serves all other requests
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: {{ .Values.ui.service.name }}
+                name: ui
                 port:
+                  name: http
 
 {{- end }}
