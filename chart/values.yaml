@@ -32,12 +32,6 @@ gateway:
     AUTH_MODE: "oidc"
     DISABLE_AUTH: "false"
     STUB_UPSTREAM_SERVICES: "false"
-    UPLOAD_SERVICE_URL: "http://upload-service:8001"
-    UPLOAD_TIMEOUT_SECONDS: "60.0"
-    UPLOAD_CHUNK_SIZE_BYTES: "5242880"
-    UPLOAD_RETRY_MAX_ATTEMPTS: "3"
-    UPLOAD_RETRY_BACKOFF_SECONDS: "1.0"
-    UPLOAD_RETRY_TRAILING_BUFFER_BYTES: "15728640"
     # OIDC – set via --set or values override per environment
     OIDC_ISSUER_URL: ""
     OIDC_DISCOVERY_URL: ""
