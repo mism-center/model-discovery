@@ -8,11 +8,13 @@ Currently exposes a single tusd hook endpoint:
   endpoint and identifies the event in the `Type` field of the
   `HookRequest` envelope. We dispatch on that field:
 
-  - `pre-create`: tusd is configured to forward the original client
-    `Authorization` header (via `--hooks-http-forward-headers Authorization`),
-    so we authenticate with the same machinery used by `/api/v1/*` and
-    verify the principal owns the resource named in
-    `Event.Upload.MetaData.resource_id`. A failed authorization returns a
+  - `pre-create`: the client supplies an `upload_token` value (minted by
+    this API, stored server-side, one-time consumable) and `resource_id`
+    in tus upload metadata. We load claims via `SessionStore.consume_upload_token`,
+    build an `AuthenticatedPrincipal` from `claims.user_id`, reject the
+    upload if the declared size exceeds `claims.max_bytes`, then call
+    `RegistryService.get_resource_and_assert_ownership` so the user owns
+    the registry row for `resource_id`. On ownership failure we return
     `HookResponse` with `RejectUpload=True` so tusd aborts the upload.
   - `post-finish`: fires server-to-server after the upload completes and
     stamps `metadata['upload_status'] = 'UPLOAD_COMPLETE'` on the
@@ -32,31 +34,32 @@ tusd expects: see https://tus.github.io/tusd/advanced-topics/hooks/.
 
 This endpoint is intentionally mounted under `/api/internal` (not
 `/api/v1`) because the v1 router enforces a blanket `require_principal`
-dependency that does not fit the post-finish auth model (no user request
-context at hook time).
+dependency: it does not fit `post-finish` (no user in the request) and it
+does not fit `pre-create`, which authenticates via upload metadata and the
+session store instead of `Authorization` / session cookies on the hook
+request.
 """
 
 from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Request
-from fastapi.security import HTTPAuthorizationCredentials
+from fastapi import APIRouter
 
 from mismapi.auth.base import (
     AuthenticatedPrincipal,
-    bearer_dependency,
-    require_principal,
 )
 from mismapi.core.deps import (
-    AuthValidatorDep,
     RegistryServiceDep,
-    SessionRefresherDep,
     SessionStoreDep,
-    SettingsDep,
 )
 from mismapi.core.errors import APIError
-from mismapi.schemas.tus import TusHookRequest, TusHookResponse  # , TusHTTPResponse
+from mismapi.schemas.auth import UploadTokenClaims
+from mismapi.schemas.tus import (
+    TusHookRequest,
+    TusHookResponse,
+    TusHTTPResponse,
+)
 from mismapi.services.registry_service import RegistryService
 
 logger = logging.getLogger(__name__)
@@ -68,6 +71,7 @@ RESOURCE_ID_METADATA_KEY = "resource_id"
 Metadata key that tus clients (web, CLI) MUST set when creating an upload,
 e.g. via `Upload-Metadata: resource_id <base64(uuid)>`. Without this we
 cannot bind the upload to a registry resource for ownership checks.
+`pre-create` also requires metadata key `upload_token` (see module docstring).
 """
 
 TUSD_HOOK_PRE_CREATE = "pre-create"
@@ -85,9 +89,9 @@ def _extract_resource_id(payload: TusHookRequest) -> str:
     return resource_id
 
 
-def _handle_pre_create(
+async def _handle_pre_create(
     payload: TusHookRequest,
-    principal: AuthenticatedPrincipal,
+    session_store: SessionStoreDep,
     service: RegistryService,
 ) -> TusHookResponse:
     """
@@ -96,15 +100,37 @@ def _handle_pre_create(
     `reject_upload=True`) for any authorization failure, which tusd surfaces
     to the client as the embedded `HTTPResponse`. The "not the owner" and
     "resource does not exist" cases are intentionally collapsed into the
-    same 403 by `service.assert_owner`, so this handler cannot distinguish
-    them either; that prevents probe-based enumeration of valid resource
-    IDs (see the docstring on `assert_owner` for the threat model).
+    same 403 by `service.get_resource_and_assert_ownership`, so this handler
+    cannot distinguish them either; that prevents probe-based enumeration
+    of valid resource IDs (see that method's docstring for the threat model).
 
     Other failures (e.g., missing `resource_id` metadata) bubble up as
     standard `APIError`s, which become 4xx JSON responses via the global
     error handler. tusd treats any non-2xx hook response as a hard failure
     and aborts the upload.
     """
+    metadata = payload.event.upload.metadata
+    upload_token = metadata.get("upload_token")
+    if not upload_token:
+        raise APIError(
+            status_code=400,
+            code="missing_upload_token",
+            detail="Upload token is missing.",
+        )
+    claims: UploadTokenClaims = await session_store.consume_upload_token(upload_token)
+    principal = AuthenticatedPrincipal(
+        subject=claims.user_id,
+        issuer="discovery-api",
+        audience="discovery-api",
+        scopes=set(),
+    )
+    if payload.event.upload.size is None or (payload.event.upload.size > claims.max_bytes):
+        raise APIError(
+            status_code=413,
+            code="upload_exceeds_permitted_size",
+            detail="Upload exceeds permitted size",
+        )
+
     resource_id = _extract_resource_id(payload)
 
     # try:
@@ -161,13 +187,8 @@ def _handle_post_finish(
 )
 async def tusd_hooks(
     payload: TusHookRequest,
-    request: Request,
-    settings: SettingsDep,
     session_store: SessionStoreDep,
-    validator: AuthValidatorDep,
-    session_refresher: SessionRefresherDep,
     service: RegistryServiceDep,
-    credentials: HTTPAuthorizationCredentials | None = bearer_dependency,
 ) -> TusHookResponse:
     """
     Unified tusd HTTP hook endpoint.
@@ -177,24 +198,11 @@ async def tusd_hooks(
     `Type` field of the envelope; per-event behavior is handled by the
     `_handle_*` helpers above.
 
-    Auth dependencies (`session_store`, `validator`, `session_refresher`,
-    `credentials`) are declared at the route level rather than inside an
-    `AuthenticatedPrincipalDep`-style dependency because only the
-    `pre-create` branch needs a user principal. Doing so allows
-    `post-finish` to pass through with no `Authorization` header.
     """
     event_type = payload.type
 
     if event_type == TUSD_HOOK_PRE_CREATE:
-        principal = await require_principal(
-            request=request,
-            settings=settings,
-            session_store=session_store,
-            validator=validator,
-            session_refresher=session_refresher,
-            credentials=credentials,
-        )
-        return _handle_pre_create(payload, principal, service)
+        return await _handle_pre_create(payload, session_store, service)
 
     if event_type == TUSD_HOOK_POST_FINISH:
         return _handle_post_finish(payload, service)

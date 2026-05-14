@@ -1,3 +1,4 @@
+import json
 import logging
 import secrets
 from dataclasses import dataclass
@@ -6,7 +7,8 @@ from typing import Protocol
 from pydantic import ValidationError
 from redis.asyncio import Redis
 
-from mismapi.schemas.auth import OidcSessionRecord
+from mismapi.core.errors import APIError
+from mismapi.schemas.auth import OidcSessionRecord, UploadTokenClaims
 
 logger = logging.getLogger(__name__)
 
@@ -20,14 +22,20 @@ class SessionStore(Protocol):
 
     async def delete(self, session_id: str) -> None: ...
 
+    async def mint_upload_token(self, user_id: str, max_bytes: int, allowed_path: str) -> str: ...
 
-SESSION_KEY_PREFIX = "session:"
+    async def consume_upload_token(self, token: str) -> UploadTokenClaims: ...
+
+
+UPLOAD_TOKEN_KEY_PREFIX: str = "upload_token:"
+SESSION_KEY_PREFIX: str = "session:"
 
 
 @dataclass(slots=True)
 class RedisSessionStore:
     redis: Redis
     session_ttl_seconds: int
+    upload_token_ttl_seconds: int
 
     async def create(self, session_data: OidcSessionRecord) -> str:
         session_id = secrets.token_urlsafe(32)
@@ -57,3 +65,34 @@ class RedisSessionStore:
     async def delete(self, session_id: str) -> None:
         key = f"{SESSION_KEY_PREFIX}{session_id}"
         await self.redis.delete(key)
+
+    async def mint_upload_token(
+        self,
+        user_id: str,
+        max_bytes: int,
+        allowed_path: str,
+    ) -> str:
+        token = secrets.token_urlsafe(32)
+        claims = UploadTokenClaims(
+            user_id=user_id,
+            max_bytes=max_bytes,
+            allowed_path=allowed_path,
+        )
+        await self.redis.set(
+            f"{UPLOAD_TOKEN_KEY_PREFIX}{token}",
+            claims.model_dump_json(),
+            ex=self.upload_token_ttl_seconds,
+        )
+        return token
+
+    async def consume_upload_token(self, token: str) -> UploadTokenClaims:
+        key = f"{UPLOAD_TOKEN_KEY_PREFIX}{token}"
+        raw = await self.redis.get(key)
+        if not raw:
+            raise APIError(
+                status_code=401,
+                code="auth_upload_token_invalid",
+                detail="Upload token is invalid or has expired",
+            )
+        await self.redis.delete(key)
+        return UploadTokenClaims.model_validate_json(raw)

@@ -100,9 +100,9 @@ spec:
 # ── 1c. Discovery Gateway – also accepts tusd hook callbacks ──────────────────
 # tusd posts every enabled hook event (pre-create, post-finish, ...) to
 # POST /api/internal/tusd/hooks on the Gateway. pre-create authenticates
-# via the forwarded user `Authorization` header, but post-finish has no
-# app-layer auth and instead relies on this NetworkPolicy to ensure only
-# the tusd pod can reach the endpoint.
+# via an upload token the client sends in tus metadata (validated server-side),
+# but post-finish has no app-layer auth and instead relies on this
+# NetworkPolicy to ensure only the tusd pod can reach the endpoint.
 #
 # tusd is NOT deployed by this chart (the legacy `uploadService` component
 # is unrelated and disabled in our deployments). It ships as a separate

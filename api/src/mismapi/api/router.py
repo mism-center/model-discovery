@@ -21,7 +21,7 @@ def build_api_router() -> APIRouter:
     # Internal endpoints (e.g. tusd hooks) sit under /api but NOT under /v1:
     # they are not subject to the v1 router's blanket `require_principal`
     # dependency. The unified tusd hook endpoint (/tusd/hooks) dispatches on
-    # the hook event type and applies per-event auth (forwarded user bearer
-    # for pre-create, none for post-finish).
+    # the hook event type and applies per-event auth (pre-create: upload
+    # token in tus metadata + session store; post-finish: none at app layer).
     api_router.include_router(internal_router)
     return api_router

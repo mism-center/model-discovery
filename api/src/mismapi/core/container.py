@@ -26,7 +26,6 @@ from mismapi.auth.oauth_registry import build_oauth_registry, get_oidc_client
 from mismapi.auth.oidc_service import OIDCService
 from mismapi.auth.session import RedisSessionStore, SessionStore
 from mismapi.auth.session_refresh import SessionRefresher
-from mismapi.clients.upload_client import UploadServiceClient
 from mismapi.core.config_validation import ensure_startup_config
 from mismapi.core.errors import APIError
 from mismapi.core.settings import Settings
@@ -47,7 +46,6 @@ class AppContainer:
     settings: Settings
     redis: Redis
     session_store: SessionStore
-    upload_client: UploadServiceClient
     auth_validator: AuthValidator
     oidc_client: StarletteOAuth2App
     oidc_service: OIDCService
@@ -82,12 +80,6 @@ class AppContainer:
             future=True,
         )
 
-        upload_client = UploadServiceClient(
-            base_url=settings.upload_service_url,
-            timeout_seconds=settings.upload_timeout_seconds,
-            stub_upstream=settings.stub_upstream_services,
-        )
-
         redis_client: Redis = Redis.from_url(  # type: ignore[type-arg]
             settings.redis_url,
             decode_responses=False,
@@ -95,6 +87,7 @@ class AppContainer:
         session_store: SessionStore = RedisSessionStore(
             redis=redis_client,
             session_ttl_seconds=settings.session_ttl_seconds,
+            upload_token_ttl_seconds=settings.upload_token_ttl_seconds,
         )
 
         oidc_client = get_oidc_client(build_oauth_registry(settings))
@@ -113,7 +106,6 @@ class AppContainer:
             settings=settings,
             redis=redis_client,
             session_store=session_store,
-            upload_client=upload_client,
             auth_validator=auth_validator,
             oidc_client=oidc_client,
             oidc_service=oidc_service,
@@ -138,10 +130,7 @@ class AppContainer:
 
     async def aclose(self) -> None:
         """Tear down every collaborator, best-effort. Errors are logged, never raised."""
-        for name, close in (
-            ("upload_client", self.upload_client.close),
-            ("redis", self.redis.aclose),
-        ):
+        for name, close in (("redis", self.redis.aclose),):
             try:
                 await close()
             except Exception:

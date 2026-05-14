@@ -3,7 +3,8 @@ import logging
 from fastapi import APIRouter, Query
 
 from mismapi.auth.base import AuthenticatedPrincipalDep
-from mismapi.core.deps import RegistryServiceDep
+from mismapi.core.deps import RegistryServiceDep, SessionStoreDep, SettingsDep
+from mismapi.schemas.common import ModelId
 from mismapi.schemas.registry import (
     CreateRunRequest,
     CreateRunResponse,
@@ -12,6 +13,7 @@ from mismapi.schemas.registry import (
     UpdateModelRequest,
 )
 from mismapi.schemas.search import ModelListItem, ModelListResponse
+from mismapi.schemas.upload import UploadInitiatedResponse
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +125,26 @@ async def update_model(
         owner=resource.owner,
         description=resource.description,
         created_at=resource.created_at,
+    )
+
+
+@router.post("/models/{model_id}/upload", response_model=UploadInitiatedResponse)
+async def upload_model_file(
+    model_id: ModelId,
+    settings: SettingsDep,
+    session_store: SessionStoreDep,
+    principal: AuthenticatedPrincipalDep,
+) -> UploadInitiatedResponse:
+
+    user_id = principal.subject
+    max_bytes = 1024 * 1024 * 500  # 500MB
+    allowed_path = f"/models/{model_id}/files"
+    token = await session_store.mint_upload_token(user_id, max_bytes, allowed_path)
+
+    return UploadInitiatedResponse(
+        upload_server_base_url=settings.tusd_base_url,
+        resource_id=model_id,
+        token=token,
     )
 
 
