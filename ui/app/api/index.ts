@@ -10,9 +10,9 @@ export {
   type SearchResultItem,
   type AggResult,
   type AggBucket,
-  type Author,
-  type Publication,
 } from './endpoints/search';
+
+export { type Author, type Publication } from './types';
 
 export {
   executeModelRun,
