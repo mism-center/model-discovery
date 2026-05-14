@@ -4,7 +4,7 @@ import type { paths } from '~/api/generated/schema';
 import { ApiError } from './errors';
 
 export const API_BASE_URL =
-  import.meta.env?.VITE_API_BASE_URL ?? 'https://mism-discovery.apps.renci.org';
+  import.meta.env?.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
 /**
  * Normalize non-2xx responses into `ApiError` so call sites don't have to
