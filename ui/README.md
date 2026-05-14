@@ -36,15 +36,15 @@ The application will be available at `http://localhost:5173`.
 
 ### Available Scripts
 
-| Command | Description |
-| --- | --- |
-| `npm run dev` | Start dev server with HMR |
-| `npm run build` | Create a production build |
-| `npm start` | Run the production server |
+| Command             | Description                        |
+| ------------------- | ---------------------------------- |
+| `npm run dev`       | Start dev server with HMR          |
+| `npm run build`     | Create a production build          |
+| `npm start`         | Run the production server          |
 | `npm run typecheck` | Generate route types and run `tsc` |
-| `npm run lint` | Run ESLint |
-| `npm run lint:fix` | Run ESLint with auto-fix |
-| `npm run format` | Format code with Prettier |
+| `npm run lint`      | Run ESLint                         |
+| `npm run lint:fix`  | Run ESLint with auto-fix           |
+| `npm run format`    | Format code with Prettier          |
 
 ## Project Structure
 

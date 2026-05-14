@@ -10,39 +10,32 @@ import {
   Switch,
 } from '@heroui/react';
 import { parseDate } from '@internationalized/date';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import cn from 'classnames';
 import { matchSorter } from 'match-sorter';
 import { useDebounce } from 'use-debounce';
-import { useSearch } from '~/contexts/search-context';
-import type {
-  CheckboxConfig,
-  DateRangeConfig,
-  FilterConfig,
-  FilterValue,
-  TermAggregation,
-} from '~/api/services/search';
 import { MagnifyingGlassIcon } from '@heroicons/react/16/solid';
 
+import type { AggResult } from '~/api';
+import { useSearch } from '~/search/context/search-context';
+import {
+  facetsForResourceType,
+  type FacetConfig,
+} from '~/search/state/facets.config';
+import type { FacetValue } from '~/search/state/types';
+
 export function SearchSidebar() {
-  const {
-    filterConfigs,
-    resultType,
-    models,
-    datasets,
-    getFilterValue,
-    setFilterValue,
-    clearFilter,
-  } = useSearch();
+  const { state, data, setFacet, clearFacet } = useSearch();
 
-  const aggregations =
-    resultType === 'models' ? models.aggregations : datasets.aggregations;
+  const facets = useMemo(
+    () => facetsForResourceType(state.resourceType),
+    [state.resourceType]
+  );
 
-  const defaultExpandedKeys = useMemo(() => {
-    return filterConfigs
-      .filter((c) => c.type !== 'switch')
-      .map((config) => config.id);
-  }, [filterConfigs]);
+  const defaultExpandedKeys = useMemo(
+    () => facets.filter((f) => f.widget !== 'toggle').map((f) => f.id),
+    [facets]
+  );
 
   return (
     <div className="flex flex-col h-full min-w-[320px]">
@@ -59,6 +52,7 @@ export function SearchSidebar() {
         defaultExpandedKeys={defaultExpandedKeys}
         showDivider={false}
         itemClasses={{
+          base: 'pb-2',
           heading: 'py-0 group px-6',
           content: 'pt-0 pb-4 px-6',
           trigger: 'gap-2 flex-row',
@@ -70,19 +64,16 @@ export function SearchSidebar() {
         }}
         className="p-0"
       >
-        {filterConfigs.map((config, configIndex) => {
-          if (config.type === 'switch') {
-            const filterValue = getFilterValue(config.id);
-            const isSelected =
-              filterValue?.type === 'switch' ? filterValue.value : false;
-            const count = (
-              aggregations?.[config.id] as TermAggregation | undefined
-            )?.['true'];
+        {facets.map((facet, index) => {
+          const agg = data?.aggs?.[facet.field];
+          const value = state.facets[facet.id];
 
+          if (facet.widget === 'toggle') {
+            const isSelected = value?.kind === 'toggle' ? value.value : false;
             return (
               <AccordionItem
-                key={config.id}
-                aria-label={config.label}
+                key={facet.id}
+                aria-label={facet.label}
                 hideIndicator
                 classNames={{
                   content: 'hidden',
@@ -90,16 +81,14 @@ export function SearchSidebar() {
                   heading: 'px-6',
                 }}
                 title={
-                  <SwitchFilterHeading
-                    label={config.label}
-                    icon={config.icon}
+                  <ToggleFacetHeading
+                    label={facet.label}
                     isSelected={isSelected}
-                    count={count}
                     onChange={(checked) =>
-                      setFilterValue(config.id, {
-                        type: 'switch',
-                        value: checked,
-                      })
+                      setFacet(
+                        facet.id,
+                        checked ? { kind: 'toggle', value: true } : undefined
+                      )
                     }
                   />
                 }
@@ -109,42 +98,40 @@ export function SearchSidebar() {
 
           return (
             <AccordionItem
-              key={config.id}
-              aria-label={config.label}
+              key={facet.id}
+              aria-label={facet.label}
               title={
-                <FilterTitle
-                  config={config}
-                  isActive={!!getFilterValue(config.id)}
-                  onClear={() => clearFilter(config.id)}
+                <FacetTitle
+                  config={facet}
+                  isActive={Boolean(value)}
+                  onClear={() => clearFacet(facet.id)}
                 />
               }
             >
-              {config.type === 'checkbox' && (
-                <CheckboxFilter
-                  groupIndex={configIndex}
-                  config={config}
-                  aggregation={
-                    aggregations?.[config.id] as TermAggregation | undefined
-                  }
-                  value={getFilterValue(config.id)}
+              {facet.widget === 'terms' && (
+                <TermsFacet
+                  groupIndex={index}
+                  config={facet}
+                  aggregation={agg}
+                  value={value}
                   onChange={(selected) =>
-                    setFilterValue(config.id, {
-                      type: 'checkbox',
-                      selected,
-                    })
+                    setFacet(
+                      facet.id,
+                      selected.length > 0
+                        ? { kind: 'terms', values: selected }
+                        : undefined
+                    )
                   }
                 />
               )}
-              {config.type === 'date_range' && (
-                <DateRangeFilter
-                  config={config}
-                  value={getFilterValue(config.id)}
-                  onChange={(start, end) =>
-                    setFilterValue(config.id, {
-                      type: 'date_range',
-                      start,
-                      end,
-                    })
+              {facet.widget === 'range' && (
+                <RangeFacet
+                  value={value}
+                  onChange={(from, to) =>
+                    setFacet(
+                      facet.id,
+                      from || to ? { kind: 'range', from, to } : undefined
+                    )
                   }
                 />
               )}
@@ -160,17 +147,16 @@ export function SearchSidebar() {
 // Sub-components
 // ============================================================================
 
-interface FilterTitleProps {
-  config: FilterConfig;
+interface FacetTitleProps {
+  config: FacetConfig;
   isActive: boolean;
   onClear: () => void;
 }
 
-function FilterTitle({ config, isActive, onClear }: FilterTitleProps) {
+function FacetTitle({ config, isActive, onClear }: FacetTitleProps) {
   return (
     <div className="flex justify-between items-center">
       <div className="flex items-center gap-2 font-headline">
-        {config.icon}
         <span>{config.label}</span>
       </div>
       <Button
@@ -188,17 +174,17 @@ function FilterTitle({ config, isActive, onClear }: FilterTitleProps) {
   );
 }
 
-interface FilterSearchInputProps {
+interface FacetSearchInputProps {
   placeholder: string;
   debounce?: number;
   onChange: (value: string) => void;
 }
 
-function FilterSearchInput({
+function FacetSearchInput({
   placeholder,
   onChange,
   debounce = 100,
-}: FilterSearchInputProps) {
+}: FacetSearchInputProps) {
   const [search, setSearch] = useState('');
   const [debouncedSearch] = useDebounce(search, debounce);
 
@@ -229,21 +215,17 @@ function FilterSearchInput({
   );
 }
 
-interface SwitchFilterHeadingProps {
+interface ToggleFacetHeadingProps {
   label: string;
-  icon: ReactNode;
   isSelected: boolean;
-  count: number | undefined;
   onChange: (checked: boolean) => void;
 }
 
-function SwitchFilterHeading({
+function ToggleFacetHeading({
   label,
-  icon,
   isSelected,
-  count,
   onChange,
-}: SwitchFilterHeadingProps) {
+}: ToggleFacetHeadingProps) {
   return (
     <Switch
       size="sm"
@@ -262,51 +244,41 @@ function SwitchFilterHeading({
       }}
     >
       <div className="flex items-center gap-2">
-        {icon}
         <span>{label}</span>
       </div>
-      {count !== undefined && (
-        <span
-          className={cn(
-            'flex items-center px-1.5 py-0.5 rounded-full text-xs',
-            isSelected
-              ? 'text-white bg-primary'
-              : 'text-primary bg-primary-100/75'
-          )}
-        >
-          {count}
-        </span>
-      )}
     </Switch>
   );
 }
 
-interface CheckboxFilterProps {
+interface TermsFacetProps {
   groupIndex: number;
-  config: CheckboxConfig;
-  aggregation: TermAggregation | undefined;
-  value: FilterValue | undefined;
+  config: FacetConfig;
+  aggregation: AggResult | undefined;
+  value: FacetValue | undefined;
   onChange: (selected: string[]) => void;
 }
 
-function CheckboxFilter({
+function TermsFacet({
   groupIndex,
   config,
   aggregation,
   value,
   onChange,
-}: CheckboxFilterProps) {
+}: TermsFacetProps) {
   const [filter, setFilter] = useState('');
 
-  const selected = value?.type === 'checkbox' ? value.selected : [];
-  const options = aggregation ? Object.entries(aggregation) : [];
+  const selected = value?.kind === 'terms' ? value.values : [];
+  // The API may not include the requested facet in `aggs` yet (e.g. before
+  // the first response lands). Treat that as a loading state rather than
+  // "no options".
   const loading = aggregation === undefined;
+  const buckets = aggregation?.buckets ?? [];
 
-  const filteredOptions = matchSorter(options, filter, {
-    keys: [([optionName]) => optionName],
+  const filteredBuckets = matchSorter(buckets, filter, {
+    keys: [(b) => b.key],
   });
 
-  if (loading)
+  if (loading) {
     return (
       <div className="flex flex-col gap-3 p-0.75">
         {Array.from({ length: 4 }).map((_, i) => (
@@ -314,11 +286,8 @@ function CheckboxFilter({
             <Skeleton className="size-4 rounded-xs shrink-0" />
             <Skeleton
               className="h-4 rounded-md"
-              // Give each skeleton row a slightly different width so they don't all look uniform.
-              // Width is 30% plus a pseudo-random offset (0–28%) based on the row index,
-              // shifted by groupIndex so that different filter groups have distinct patterns.
-              // Multiplying by 12 and using modulo 29 ensures the offsets cycle through a varied
-              // pattern without repeating too predictably.
+              // Varied widths so rows don't look uniform. 30% + pseudo-random
+              // offset derived from row index + groupIndex.
               style={{ width: `${30 + (((i + groupIndex * 3) * 12) % 29)}%` }}
             />
             <Skeleton className="h-5 w-6 rounded-full ml-auto shrink-0" />
@@ -326,28 +295,29 @@ function CheckboxFilter({
         ))}
       </div>
     );
+  }
 
-  if (options.length === 0)
+  if (buckets.length === 0) {
     return (
       <span className="text-sm text-default-900">No options available.</span>
     );
+  }
 
   return (
     <div>
-      <FilterSearchInput
+      <FacetSearchInput
         placeholder={`Filter ${config.label.toLowerCase()}...`}
         onChange={setFilter}
       />
       <CheckboxGroup value={selected} onChange={onChange} className="p-0.75">
-        {filteredOptions.map(([optionName, optionCount]) => (
+        {filteredBuckets.map((bucket) => (
           <Checkbox
-            key={optionName}
-            value={optionName}
+            key={bucket.key}
+            value={bucket.key}
             color="primary"
             size="sm"
             classNames={{
               wrapper:
-                // Checkbox styling
                 'rounded-xs before:rounded-xs after:rounded-xs before:border-1 before:bg-white',
               label: 'ml-0 w-full flex text-[14px] text-default-900',
               base: cn(
@@ -357,16 +327,18 @@ function CheckboxFilter({
               ),
             }}
           >
-            <span className="grow">{optionName}</span>
+            <span className="grow">
+              {bucket.key.charAt(0).toUpperCase() + bucket.key.slice(1)}
+            </span>
             <span
               className={cn(
                 'flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium',
-                selected.includes(optionName)
+                selected.includes(bucket.key)
                   ? 'text-white bg-primary'
                   : 'text-primary bg-primary-100/75'
               )}
             >
-              {optionCount}
+              {bucket.count}
             </span>
           </Checkbox>
         ))}
@@ -375,52 +347,51 @@ function CheckboxFilter({
   );
 }
 
-interface DateRangeFilterProps {
-  config: DateRangeConfig;
-  value: FilterValue | undefined;
-  onChange: (start?: string, end?: string) => void;
+interface RangeFacetProps {
+  value: FacetValue | undefined;
+  onChange: (from?: string, to?: string) => void;
 }
 
-function DateRangeFilter({ config, value, onChange }: DateRangeFilterProps) {
-  const start =
-    value?.type === 'date_range' && value.start
-      ? parseDate(value.start)
-      : undefined;
-  const end =
-    value?.type === 'date_range' && value.end
-      ? parseDate(value.end)
-      : undefined;
+/**
+ * Date range facet.
+ * The API currently only has date ranges, if a numeric-range facet ever
+ * appears this will need augmenting.
+ *
+ * No min/max bounds are enforced, backend doesn't expose these yet.
+ */
+function RangeFacet({ value, onChange }: RangeFacetProps) {
+  const from =
+    value?.kind === 'range' && value.from ? parseDate(value.from) : null;
+  const to = value?.kind === 'range' && value.to ? parseDate(value.to) : null;
 
   return (
     <div className="flex gap-4 justify-center -mt-1">
       <div>
-        <span className="text-xs text-slate-400">Start date:</span>
+        <span className="text-xs text-slate-400">From:</span>
         <DatePicker
           size="sm"
-          // label="Start date"
-          value={start ?? null}
-          onChange={(date) => onChange(date?.toString(), end?.toString())}
-          minValue={parseDate(config.bounds.min)}
-          maxValue={end ?? parseDate(config.bounds.max)}
+          // @ts-expect-error HeroUI's DatePicker makes it impossible to pull the same copies from @internationalized/date
+          value={from}
+          onChange={(date: ReturnType<typeof parseDate> | null) =>
+            onChange(date?.toString(), to?.toString() ?? undefined)
+          }
+          maxValue={to ?? undefined}
           className="mt-0.5"
-          classNames={{
-            input: 'text-[13px]',
-          }}
+          classNames={{ input: 'text-[13px]' }}
         />
       </div>
       <div>
-        <span className="text-xs text-slate-400">End date:</span>
+        <span className="text-xs text-slate-400">To:</span>
         <DatePicker
           size="sm"
-          // label="End date"
-          value={end ?? null}
-          onChange={(date) => onChange(start?.toString(), date?.toString())}
-          minValue={start ?? parseDate(config.bounds.min)}
-          maxValue={parseDate(config.bounds.max)}
+          // @ts-expect-error HeroUI's DatePicker makes it impossible to pull the same copies from @internationalized/date
+          value={to}
+          onChange={(date: ReturnType<typeof parseDate> | null) =>
+            onChange(from?.toString() ?? undefined, date?.toString())
+          }
+          minValue={from ?? undefined}
           className="mt-0.5"
-          classNames={{
-            input: 'text-[13px]',
-          }}
+          classNames={{ input: 'text-[13px]' }}
         />
       </div>
     </div>

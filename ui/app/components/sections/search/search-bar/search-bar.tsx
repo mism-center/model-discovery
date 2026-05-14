@@ -3,19 +3,18 @@ import { BreadcrumbItem, Button, Input } from '@heroui/react';
 import { MagnifyingGlassIcon } from '@heroicons/react/16/solid';
 import cn from 'classnames';
 import BreadcrumbsNav from '~/components/layout/breadcrumbs';
-import { useSearch } from '~/contexts/search-context';
+import { useSearch } from '~/search/context/search-context';
 import { SuggestedTermsContainer } from './suggested-terms';
 import { AIModeCard } from './ai-mode-card';
 
 export function SearchBar() {
-  const { searchQuery, isCompact, doSearch } = useSearch();
+  const { state, isCompact, setQuery } = useSearch();
 
-  const [currentSearch, setCurrentSearch] = useState(searchQuery);
+  const [currentSearch, setCurrentSearch] = useState(state.query);
 
-  // Sync local input state with URL when it changes externally
   useEffect(() => {
-    setCurrentSearch(searchQuery);
-  }, [searchQuery]);
+    setCurrentSearch(state.query);
+  }, [state.query]);
 
   return (
     <div
@@ -40,7 +39,7 @@ export function SearchBar() {
           className="w-full relative border-b border-default bg-primary-gradient pt-4 pb-12 px-6"
           onSubmit={(e) => {
             e.preventDefault();
-            doSearch(currentSearch);
+            setQuery(currentSearch);
           }}
         >
           <div
@@ -98,13 +97,13 @@ export function SearchBar() {
                     <Button
                       className="font-bold h-12 px-7 rounded-lg"
                       color="primary"
-                      onPress={() => doSearch(currentSearch)}
+                      onPress={() => setQuery(currentSearch)}
                     >
                       Search
                     </Button>
                   </div>
                 </div>
-                <SuggestedTermsContainer doSearch={doSearch} />
+                <SuggestedTermsContainer onSelect={setQuery} />
               </div>
               <div
                 className={cn(

@@ -2,11 +2,11 @@ import { Button } from '@heroui/react';
 import cn from 'classnames';
 
 interface SuggestedTermsContainerProps {
-  doSearch: (query: string) => void;
+  onSelect: (query: string) => void;
 }
 
 export function SuggestedTermsContainer({
-  doSearch,
+  onSelect,
 }: SuggestedTermsContainerProps) {
   const suggestedTerms = [
     'Cardiac',
@@ -31,7 +31,7 @@ export function SuggestedTermsContainer({
               'h-7 bg-secondary/40 border-1 border-white/10',
               'font-medium text-xs text-white'
             )}
-            onPress={() => doSearch(tag)}
+            onPress={() => onSelect(tag)}
           >
             {tag}
           </Button>
