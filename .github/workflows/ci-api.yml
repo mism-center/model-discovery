@@ -34,8 +34,25 @@ jobs:
       - name: Install dependencies
         run: make install
 
-      - name: Run tests
-        run: make test
+      - name: Run unit tests
+        run: make test-unit
+
+      - name: Run integration tests
+        run: make test-integration
+
+      - name: Start services
+        run: make functional-up
+
+      - name: Run functional tests
+        run: make test-functional
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose -f ../docker-compose.test.yaml logs
+
+      - name: Tear down
+        if: always()
+        run: make functional-down
 
       - name: Check formatting
         run: make format-check
@@ -47,40 +64,4 @@ jobs:
         run: make typecheck
 
       - name: Build Docker image
-        run: docker build -t mismapi:ci .
-
-  integration-test:
-    name: Integration tests (Docker Compose)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-
-      - name: Install test dependencies
-        working-directory: api
-        run: uv sync --group dev
-
-      - name: Start services
-        run: docker compose -f docker-compose.test.yaml up -d --build --wait
-
-      - name: Run integration tests
-        working-directory: api
-        run: uv run pytest tests/test_integration.py -m integration -v
-
-      - name: Show logs on failure
-        if: failure()
-        run: docker compose -f docker-compose.test.yaml logs
-
-      - name: Tear down
-        if: always()
-        run: docker compose -f docker-compose.test.yaml down -v
+        run: make image-build TAG=ci-${GITHUB_SHA:0:7}

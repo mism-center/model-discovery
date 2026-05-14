@@ -3,10 +3,21 @@ from fastapi.testclient import TestClient
 
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
 from mismapi.clients.upload_client import UploadSession
+from mismapi.core.deps import _get_upload_client
 from mismapi.main import create_app
+from tests.conftest import minimal_oidc_settings
 
 TEST_MODEL_ID = "AbC123xYz890"
 CREATED_MODEL_ID = "Cr8ModelID12"
+
+
+async def _allow_principal() -> AuthenticatedPrincipal:
+    return AuthenticatedPrincipal(
+        subject="user-1",
+        issuer="test",
+        audience="mism-api",
+        scopes=set(),
+    )
 
 
 class FakeUploadClient:
@@ -81,22 +92,13 @@ class MultiPartRetryUploadClient:
         return None
 
 
-async def allow_principal() -> AuthenticatedPrincipal:
-    return AuthenticatedPrincipal(
-        subject="user-1",
-        issuer="test",
-        audience="mism-api",
-        scopes=set(),
-    )
-
-
 def test_upload_retries_chunk_after_transient_error() -> None:
-    app = create_app()
-    app.dependency_overrides[require_principal] = allow_principal
+    app = create_app(settings=minimal_oidc_settings())
     fake_upload_client = FakeUploadClient()
+    app.dependency_overrides[require_principal] = _allow_principal
+    app.dependency_overrides[_get_upload_client] = lambda: fake_upload_client
 
     with TestClient(app) as client:
-        app.state.upload_client = fake_upload_client
         response = client.post(
             f"/api/v1/models/{TEST_MODEL_ID}/files",
             files={
@@ -108,25 +110,24 @@ def test_upload_retries_chunk_after_transient_error() -> None:
             },
         )
 
-        assert response.status_code == 200
-        payload = response.json()
-        assert payload["status"] == "accepted"
-        assert payload["model_id"] == TEST_MODEL_ID
-        assert payload["upload_id"] == "upload-123"
-        assert payload["tracking_id"] == "track-123"
-        assert payload["parts_uploaded"] == 1
-        assert fake_upload_client.completed is True
-        assert len(fake_upload_client.upload_part_calls) >= 2
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "accepted"
+    assert payload["model_id"] == TEST_MODEL_ID
+    assert payload["upload_id"] == "upload-123"
+    assert payload["tracking_id"] == "track-123"
+    assert payload["parts_uploaded"] == 1
+    assert fake_upload_client.completed is True
+    assert len(fake_upload_client.upload_part_calls) >= 2
 
 
 def test_upload_retry_retries_only_failing_part() -> None:
-    app = create_app()
-    app.dependency_overrides[require_principal] = allow_principal
+    app = create_app(settings=minimal_oidc_settings(UPLOAD_CHUNK_SIZE_BYTES=4))
     fake_upload_client = MultiPartRetryUploadClient()
+    app.dependency_overrides[require_principal] = _allow_principal
+    app.dependency_overrides[_get_upload_client] = lambda: fake_upload_client
 
     with TestClient(app) as client:
-        app.state.upload_client = fake_upload_client
-        app.state.settings.upload_chunk_size_bytes = 4
         response = client.post(
             f"/api/v1/models/{TEST_MODEL_ID}/files",
             files={
@@ -138,13 +139,13 @@ def test_upload_retry_retries_only_failing_part() -> None:
             },
         )
 
-        assert response.status_code == 200
-        assert fake_upload_client.completed is True
-        assert fake_upload_client.upload_part_calls == [
-            (1, b"ABCD"),
-            (2, b"EFGH"),
-            (2, b"EFGH"),
-        ]
+    assert response.status_code == 200
+    assert fake_upload_client.completed is True
+    assert fake_upload_client.upload_part_calls == [
+        (1, b"ABCD"),
+        (2, b"EFGH"),
+        (2, b"EFGH"),
+    ]
 
 
 # NOTE: test_create_model_metadata and test_update_model_metadata were removed.

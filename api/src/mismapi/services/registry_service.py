@@ -25,7 +25,7 @@ from mism_registry.search import (
 )
 from sqlalchemy.orm import Session
 
-from mismapi.auth.base import AuthenticatedPrincipal
+from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.core.errors import APIError
 
 logger = logging.getLogger(__name__)

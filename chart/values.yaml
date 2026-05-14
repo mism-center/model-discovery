@@ -32,8 +32,7 @@ gateway:
     AUTH_MODE: "oidc"
     DISABLE_AUTH: "false"
     STUB_UPSTREAM_SERVICES: "false"
-    # Upload service
-    UPLOAD_SERVICE_URL: "http://upload-service:8200"
+    UPLOAD_SERVICE_URL: "http://upload-service:8001"
     UPLOAD_TIMEOUT_SECONDS: "60.0"
     UPLOAD_CHUNK_SIZE_BYTES: "5242880"
     UPLOAD_RETRY_MAX_ATTEMPTS: "3"
@@ -45,11 +44,6 @@ gateway:
     OIDC_AUDIENCE: ""
     OIDC_REQUIRED_SCOPES: ""
     OIDC_JWKS_TTL_SECONDS: "300"
-    # JWT – alternative auth mode
-    JWT_ISSUER: ""
-    JWT_AUDIENCE: ""
-    JWT_ALGORITHMS: "RS256"
-    JWT_JWKS_URL: ""
 
 irods:
   # PersistentVolumeClaim
@@ -278,3 +272,31 @@ hpa:
     targetMemoryUtilizationPercentage: ""
     scaleUpStabilizationWindowSeconds: 60
     scaleDownStabilizationWindowSeconds: 300
+    # additionalMetrics: []
+
+# ────────────────────────────────────────────────────────────
+# Redis  (Bitnami subchart – gateway sessions / cache)
+# https://artifacthub.io/packages/helm/bitnami/redis
+# Schedules on linux/amd64 nodes via master.nodeSelector (image matches node arch).
+# Set redis.enabled: false and configure gateway.env.REDIS_URL for an external Redis.
+# ────────────────────────────────────────────────────────────
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+  networkPolicy:
+    # Keep as false: the parent Bitnami chart's NetworkPolicy is overly permissive
+    # in-namespace. We want to disable the parent's NetworkPolicy and use our own,
+    # which provides a specific cutout for discovery gateway -> Redis.
+    enabled: false
+  master:
+    nodeSelector:
+      kubernetes.io/arch: amd64
+    persistence:
+      enabled: true
+      size: 8Gi
+      storageClass: ""
+  global:
+    imageRegistry: ""
+    imagePullSecrets: []

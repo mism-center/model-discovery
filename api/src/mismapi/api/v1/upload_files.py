@@ -2,11 +2,11 @@ import asyncio
 import logging
 
 import httpx
-from fastapi import APIRouter, File, Request, UploadFile
+from fastapi import APIRouter, File, UploadFile
 
 from mismapi.clients.upload_client import UploadServiceClient
+from mismapi.core.deps import SettingsDep, UploadClientDep
 from mismapi.core.errors import APIError
-from mismapi.core.settings import Settings
 from mismapi.schemas.common import ModelId
 from mismapi.schemas.upload import UploadAcceptedResponse
 
@@ -17,13 +17,11 @@ upload_file_body = File(...)
 
 @router.post("/models/{model_id}/files", response_model=UploadAcceptedResponse)
 async def upload_model_file(
-    request: Request,
     model_id: ModelId,
+    settings: SettingsDep,
+    upload_client: UploadClientDep,
     file: UploadFile = upload_file_body,
 ) -> UploadAcceptedResponse:
-    settings: Settings = request.app.state.settings
-    upload_client: UploadServiceClient = request.app.state.upload_client
-
     session = await upload_client.init_upload(
         model_id=model_id,
         filename=file.filename or "upload.bin",
