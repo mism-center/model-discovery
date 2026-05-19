@@ -11,7 +11,7 @@ read from the container; nothing else should.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -54,7 +54,7 @@ class AppContainer:
     _session_factory: sessionmaker[Session]
 
     @contextmanager
-    def open_session(self) -> Iterator[Session]:
+    def open_session(self) -> Generator[Session]:
         """
         Open a SQLAlchemy session and yield it.
         """
@@ -80,7 +80,7 @@ class AppContainer:
             future=True,
         )
 
-        redis_client: Redis = Redis.from_url(  # type: ignore[type-arg]
+        redis_client: Redis = Redis.from_url(  # pyright: ignore[reportUnknownMemberType]
             settings.redis_url,
             decode_responses=False,
         )

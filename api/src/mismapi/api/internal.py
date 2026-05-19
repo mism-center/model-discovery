@@ -61,7 +61,7 @@ from mismapi.schemas.auth import UploadTokenClaims
 from mismapi.schemas.tus import (
     TusHookRequest,
     TusHookResponse,
-    TusHTTPResponse,
+    # TusHTTPResponse,
 )
 from mismapi.services.registry_service import RegistryService
 
