@@ -124,7 +124,7 @@ function createUppy(getModelId: () => string) {
     for (const [id, s] of pairs) {
       uppy.setFileMeta(id, {
         resource_id: s.resource_id,
-        upload_token: '22222222222222222',
+        upload_token: s.token,
       });
     }
   });
