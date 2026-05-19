@@ -88,6 +88,13 @@ function createUppy(getModelId: () => string) {
     retryDelays: [0, 1000, 3000, 5000],
     chunkSize: 5 * 1024 * 1024,
     removeFingerprintOnSuccess: true,
+    allowedMetaFields: [
+      'resource_id',
+      'upload_token',
+      'filename',
+      'filetype',
+      'type',
+    ],
   });
 
   uppy.addPreProcessor(async (fileIDs) => {
