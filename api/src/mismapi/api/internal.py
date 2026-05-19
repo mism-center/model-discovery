@@ -9,16 +9,19 @@ Currently exposes a single tusd hook endpoint:
   `HookRequest` envelope. We dispatch on that field:
 
   - `pre-create`: the client supplies an `upload_token` value (minted by
-    this API, stored server-side, one-time consumable) and `resource_id`
-    in tus upload metadata. We load claims via `SessionStore.consume_upload_token`,
-    build an `AuthenticatedPrincipal` from `claims.user_id`, reject the
+    this API, stored in Redis for `UPLOAD_TOKEN_TTL_SECONDS`) and `resource_id`
+    in tus upload metadata. We load claims via `SessionStore.validate_upload_token`
+    (read-only; the key is not deleted here). We then build an
+    `AuthenticatedPrincipal` from `claims.user_id`, reject the
     upload if the declared size exceeds `claims.max_bytes`, then call
     `RegistryService.get_resource_and_assert_ownership` so the user owns
     the registry row for `resource_id`. On ownership failure we return
     `HookResponse` with `RejectUpload=True` so tusd aborts the upload.
   - `post-finish`: fires server-to-server after the upload completes and
     stamps `metadata['upload_status'] = 'UPLOAD_COMPLETE'` on the
-    resource. Currently UNAUTHENTICATED at the application layer; we
+    resource. When `upload_token` is still present in upload metadata, the
+    token key is removed from Redis (`revoke_upload_token`). Currently
+    UNAUTHENTICATED at the application layer; we
     rely on transport-level trust (tusd and the API run in the same
     Kubernetes namespace, with a NetworkPolicy expected to restrict
     callers to the tusd pod). If that assumption ever breaks, reintroduce
@@ -117,7 +120,7 @@ async def _handle_pre_create(
             code="missing_upload_token",
             detail="Upload token is missing.",
         )
-    claims: UploadTokenClaims = await session_store.consume_upload_token(upload_token)
+    claims: UploadTokenClaims = await session_store.validate_upload_token(upload_token)
     principal = AuthenticatedPrincipal(
         subject=claims.user_id,
         issuer="discovery-api",
@@ -161,15 +164,22 @@ async def _handle_pre_create(
     return TusHookResponse()
 
 
-def _handle_post_finish(
+async def _handle_post_finish(
     payload: TusHookRequest,
     service: RegistryService,
+    session_store: SessionStoreDep,
 ) -> TusHookResponse:
     """
-    Mark the upload complete in the registry.
+    Mark the upload complete in the registry and drop the upload token from
+    Redis when tusd still forwards it in metadata (so the slot does not linger
+    until TTL after a successful upload).
     """
     resource_id = _extract_resource_id(payload)
     service.mark_upload_complete(resource_id=resource_id)
+
+    upload_token = payload.event.upload.metadata.get("upload_token")
+    if upload_token:
+        await session_store.revoke_upload_token(upload_token)
 
     logger.info(
         "tus_complete_ok resource_id=%s upload_id=%s size=%s",
@@ -205,7 +215,7 @@ async def tusd_hooks(
         return await _handle_pre_create(payload, session_store, service)
 
     if event_type == TUSD_HOOK_POST_FINISH:
-        return _handle_post_finish(payload, service)
+        return await _handle_post_finish(payload, service, session_store)
 
     logger.info(
         "tusd_hook_ignored type=%s upload_id=%s",
