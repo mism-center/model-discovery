@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from mismapi.api.router import build_api_router
@@ -65,6 +66,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             https_only=resolved_settings.production_mode,
         )
     app.add_middleware(RequestContextMiddleware)
+    if resolved_settings.deploy_type == "local":
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
     app.include_router(build_api_router())
     register_exception_handlers(app)
 

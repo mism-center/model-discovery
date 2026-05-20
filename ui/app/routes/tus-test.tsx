@@ -15,7 +15,7 @@ import '@uppy/core/css/style.min.css';
 import '@uppy/dashboard/css/style.min.css';
 
 const API_BASE_URL =
-  import.meta.env?.VITE_API_BASE_URL ?? 'https://20.127.19.251.nip.io/api';
+  import.meta.env?.VITE_API_BASE_URL ?? 'https://20.127.19.251.nip.io';
 
 /** Bootstrap endpoint; real URL comes from `POST .../upload` before bytes hit tusd. */
 const TUS_ENDPOINT_PLACEHOLDER =
@@ -41,6 +41,12 @@ function tusEndpointFromServerBase(baseUrl: string): string {
 async function initiateModelUpload(
   modelId: string
 ): Promise<UploadInitiatedResponse> {
+  console.log(`API Origin: ${apiOrigin()}`);
+  console.log(`Model ID: ${modelId}`);
+  console.log(
+    `Request URL: ${apiOrigin()}/api/v1/models/${encodeURIComponent(modelId)}/upload`
+  );
+
   const url = `${apiOrigin()}/api/v1/models/${encodeURIComponent(modelId)}/upload`;
   const res = await fetch(url, { method: 'POST', credentials: 'include' });
   if (!res.ok) {
@@ -54,6 +60,7 @@ async function initiateModelUpload(
     }
     throw new Error(detail || `Upload init failed (${res.status})`);
   }
+
   return res.json() as Promise<UploadInitiatedResponse>;
 }
 
@@ -122,6 +129,7 @@ function createUppy(getModelId: () => string) {
     const pairs = fileIDs.map(
       (id, i) => [id, sessions[i]] as [string, UploadInitiatedResponse]
     );
+    console.log(`Pairs: ${JSON.stringify(pairs)}`);
     for (const [id, s] of pairs) {
       uppy.setFileMeta(id, {
         resource_id: s.resource_id,

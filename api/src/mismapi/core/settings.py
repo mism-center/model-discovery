@@ -26,7 +26,7 @@ class Settings(BaseSettings):
         str_strip_whitespace=True,
     )
 
-    mism_env: str = Field(default="local", alias="MISM_ENV")
+    deploy_type: Literal["cloud", "local"] = Field(default="cloud", alias="DEPLOY_TYPE")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     database_url: str = Field(
         default="postgresql+psycopg://postgres:postgres@localhost/mism",
