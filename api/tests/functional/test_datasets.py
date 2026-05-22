@@ -55,6 +55,6 @@ def test_update_dataset(api: httpx.Client) -> None:
     assert r.json()["description"] == "updated via functional test"
 
 
-def test_create_dataset_missing_fields_returns_422(api: httpx.Client) -> None:
+def test_create_dataset_missing_fields_returns_400(api: httpx.Client) -> None:
     r = api.post("/api/v1/datasets", json={"description": "no name or uri"})
-    assert r.status_code == 422
+    assert r.status_code == 400

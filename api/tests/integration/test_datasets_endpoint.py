@@ -92,7 +92,7 @@ def test_create_dataset_minimal() -> None:
     assert response.status_code == 201
 
 
-def test_create_dataset_missing_name_returns_422() -> None:
+def test_create_dataset_missing_name_returns_400() -> None:
     service = MagicMock(spec=RegistryService)
     client = _make_app_with_service(service)
 
@@ -101,7 +101,7 @@ def test_create_dataset_missing_name_returns_422() -> None:
         json={"location_uri": "s3://bucket/file"},
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 400
 
 
 # ── PUT /datasets/{id} ──────────────────────────────────────────

@@ -75,6 +75,6 @@ def test_update_model(api: httpx.Client) -> None:
     assert r.json()["version"] == "2.0"
 
 
-def test_create_model_missing_fields_returns_422(api: httpx.Client) -> None:
+def test_create_model_missing_fields_returns_400(api: httpx.Client) -> None:
     r = api.post("/api/v1/models", json={"name": "incomplete"})
-    assert r.status_code == 422
+    assert r.status_code == 400

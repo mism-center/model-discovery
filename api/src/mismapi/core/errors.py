@@ -102,7 +102,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         detail, field_errors = _summarize_request_validation(exc)
         return JSONResponse(
-            status_code=422,
+            status_code=400,
             content={
                 "error": {
                     "code": "validation_error",

@@ -70,7 +70,7 @@ def test_request_validation_error_uses_error_envelope() -> None:
     with TestClient(app, raise_server_exceptions=False) as client:
         response = client.get("/_needs_query")
 
-    assert response.status_code == 422
+    assert response.status_code == 400
     payload = response.json()
     assert payload["error"]["code"] == "validation_error"
     assert payload["error"]["detail"] == "Request validation failed."
@@ -88,7 +88,7 @@ def test_model_id_pattern_validation_error_includes_format_hint() -> None:
     with TestClient(app, raise_server_exceptions=False) as client:
         response = client.get("/_models/sj8389f8932jf")
 
-    assert response.status_code == 422
+    assert response.status_code == 400
     payload = response.json()
     assert payload["error"]["code"] == "validation_error"
     assert "exactly 12 alphanumeric characters" in payload["error"]["detail"]
