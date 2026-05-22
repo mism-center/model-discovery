@@ -15,12 +15,11 @@ import '@uppy/core/css/style.min.css';
 import '@uppy/dashboard/css/style.min.css';
 
 const API_BASE_URL =
-  import.meta.env?.VITE_API_BASE_URL ?? 'https://20.127.19.251.nip.io';
+  import.meta.env?.VITE_API_BASE_URL ?? 'http://localhost:3000';
 
 /** Bootstrap endpoint; real URL comes from `POST .../upload` before bytes hit tusd. */
 const TUS_ENDPOINT_PLACEHOLDER =
-  import.meta.env?.VITE_TUSD_PLACEHOLDER_URL ??
-  'https://mism-tusd-dev.renci.org/files/';
+  import.meta.env?.VITE_TUSD_PLACEHOLDER_URL ?? 'http://localhost:8000';
 
 type UploadInitiatedResponse = {
   upload_server_base_url: string;
@@ -41,20 +40,23 @@ function tusEndpointFromServerBase(baseUrl: string): string {
 async function initiateModelUpload(
   modelId: string
 ): Promise<UploadInitiatedResponse> {
-  console.log(`API Origin: ${apiOrigin()}`);
-  console.log(`Model ID: ${modelId}`);
-  console.log(
-    `Request URL: ${apiOrigin()}/api/v1/models/${encodeURIComponent(modelId)}/upload`
-  );
-
   const url = `${apiOrigin()}/api/v1/models/${encodeURIComponent(modelId)}/upload`;
   const res = await fetch(url, { method: 'POST', credentials: 'include' });
   if (!res.ok) {
     const raw = await res.text();
     let detail = raw;
     try {
-      const parsed = JSON.parse(raw) as { detail?: unknown };
-      if (typeof parsed.detail === 'string') detail = parsed.detail;
+      const parsed = JSON.parse(raw) as {
+        detail?: unknown;
+        error?: {
+          detail?: unknown;
+        };
+      };
+      if (typeof parsed.error?.detail === 'string') {
+        detail = parsed.error.detail;
+      } else if (typeof parsed.detail === 'string') {
+        detail = parsed.detail;
+      }
     } catch {
       /* keep raw */
     }
@@ -101,7 +103,6 @@ function createUppy(getModelId: () => string) {
       'filename',
       'filetype',
       'type',
-      'foo',
     ],
   });
 
@@ -129,11 +130,10 @@ function createUppy(getModelId: () => string) {
     const pairs = fileIDs.map(
       (id, i) => [id, sessions[i]] as [string, UploadInitiatedResponse]
     );
-    console.log(`Pairs: ${JSON.stringify(pairs)}`);
     for (const [id, s] of pairs) {
       uppy.setFileMeta(id, {
         resource_id: s.resource_id,
-        foo: 'r',
+        upload_token: s.token,
       });
     }
   });

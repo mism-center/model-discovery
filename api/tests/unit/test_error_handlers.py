@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from mismapi.core.errors import APIError, register_exception_handlers
+from mismapi.schemas.common import ModelId
 from tests.conftest import build_test_app, minimal_oidc_settings
 
 
@@ -56,3 +57,39 @@ def test_api_error_does_not_use_unhandled_logger() -> None:
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "x"
     assert log_exception.call_count == 0
+
+
+def test_request_validation_error_uses_error_envelope() -> None:
+    app = FastAPI()
+
+    @app.get("/_needs_query")
+    async def _needs_query(q: str) -> dict[str, str]:
+        return {"q": q}
+
+    register_exception_handlers(app)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/_needs_query")
+
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["error"]["code"] == "validation_error"
+    assert payload["error"]["detail"] == "Request validation failed."
+    assert payload["error"]["fields"][0]["field"] == "q"
+
+
+def test_model_id_pattern_validation_error_includes_format_hint() -> None:
+    app = FastAPI()
+
+    @app.get("/_models/{model_id}")
+    async def _read_model(model_id: ModelId) -> dict[str, str]:
+        return {"id": model_id}
+
+    register_exception_handlers(app)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/_models/sj8389f8932jf")
+
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["error"]["code"] == "validation_error"
+    assert "exactly 12 alphanumeric characters" in payload["error"]["detail"]
+    assert payload["error"]["fields"][0]["field"] == "model_id"
