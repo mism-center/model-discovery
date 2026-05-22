@@ -1,7 +1,5 @@
 import logging
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from typing import TypedDict, cast
+from collections.abc import Sequence
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -9,24 +7,37 @@ from fastapi.responses import JSONResponse
 from starlette.requests import Request
 
 from mismapi.core.settings import Settings
-from mismapi.schemas.common import MODEL_ID_PATTERN
 
 logger = logging.getLogger(__name__)
 
-MODEL_ID_FORMAT_HINT = "Path parameter 'model_id' must be exactly 12 alphanumeric characters."
-
-
-class ValidationFieldError(TypedDict, total=False):
-    field: str
-    location: list[str]
-    type: str
-    message: str
+REQUEST_VALIDATION_DETAIL_TEMPLATE = "Request validation failed for field '{field}'."
+UNKNOWN_VALIDATION_FIELD = "unknown field"
 
 
 class APIError(Exception):
     status_code: int
     code: str
     detail: str
+
+    def __init__(self, *, status_code: int, code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.status_code = status_code
+        self.code = code
+        self.detail = detail
+
+
+class ValidationFieldError(APIError):
+    field: str
+
+    def __init__(
+        self, *, field: str, status_code: int = 400, code: str = "validation_error"
+    ) -> None:
+        self.field = field
+        super().__init__(
+            status_code=status_code,
+            code=code,
+            detail=REQUEST_VALIDATION_DETAIL_TEMPLATE.format(field=field),
+        )
 
 
 def _normalize_error_location(raw_location: object) -> list[str]:
@@ -35,50 +46,12 @@ def _normalize_error_location(raw_location: object) -> list[str]:
     return [str(part) for part in raw_location]
 
 
-def _is_model_id_format_error(*, location: list[str], error_type: str, context: object) -> bool:
-    if not isinstance(context, Mapping):
-        return False
-    context_mapping = cast(Mapping[str, object], context)
-    return (
-        len(location) >= 2
-        and location[0] == "path"
-        and location[-1] == "model_id"
-        and error_type == "string_pattern_mismatch"
-        and context_mapping.get("pattern") == MODEL_ID_PATTERN
-    )
-
-
-def _summarize_request_validation(
-    exc: RequestValidationError,
-) -> tuple[str, list[ValidationFieldError]]:
-    field_errors: list[ValidationFieldError] = []
-    saw_model_id_format_error = False
-
+def _summarize_request_validation(exc: RequestValidationError) -> ValidationFieldError:
     for error in exc.errors():
         location = _normalize_error_location(error.get("loc"))
-        error_type = str(error.get("type", "validation_error"))
-        context = error.get("ctx")
-        message = str(error.get("msg", "Invalid request value."))
-
-        if _is_model_id_format_error(
-            location=location,
-            error_type=error_type,
-            context=context,
-        ):
-            message = MODEL_ID_FORMAT_HINT
-            saw_model_id_format_error = True
-
-        item: ValidationFieldError = {
-            "location": location,
-            "type": error_type,
-            "message": message,
-        }
         if location:
-            item["field"] = location[-1]
-        field_errors.append(item)
-
-    detail = MODEL_ID_FORMAT_HINT if saw_model_id_format_error else "Request validation failed."
-    return detail, field_errors
+            return ValidationFieldError(field=location[-1])
+    return ValidationFieldError(field=UNKNOWN_VALIDATION_FIELD)
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -96,20 +69,11 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def request_validation_error_handler(
-        _: Request,
+        request: Request,
         exc: RequestValidationError,
     ) -> JSONResponse:
-        detail, field_errors = _summarize_request_validation(exc)
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": {
-                    "code": "validation_error",
-                    "detail": detail,
-                    "fields": field_errors,
-                },
-            },
-        )
+        validation_error = _summarize_request_validation(exc)
+        return await api_error_handler(request, validation_error)
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:

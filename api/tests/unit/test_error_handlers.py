@@ -73,11 +73,10 @@ def test_request_validation_error_uses_error_envelope() -> None:
     assert response.status_code == 400
     payload = response.json()
     assert payload["error"]["code"] == "validation_error"
-    assert payload["error"]["detail"] == "Request validation failed."
-    assert payload["error"]["fields"][0]["field"] == "q"
+    assert payload["error"]["detail"] == "Request validation failed for field 'q'."
 
 
-def test_model_id_pattern_validation_error_includes_format_hint() -> None:
+def test_model_id_pattern_validation_error_includes_field_name() -> None:
     app = FastAPI()
 
     @app.get("/_models/{model_id}")
@@ -91,5 +90,4 @@ def test_model_id_pattern_validation_error_includes_format_hint() -> None:
     assert response.status_code == 400
     payload = response.json()
     assert payload["error"]["code"] == "validation_error"
-    assert "exactly 12 alphanumeric characters" in payload["error"]["detail"]
-    assert payload["error"]["fields"][0]["field"] == "model_id"
+    assert payload["error"]["detail"] == "Request validation failed for field 'model_id'."
