@@ -11,15 +11,12 @@ import Dashboard from '@uppy/react/dashboard';
 import Tus from '@uppy/tus';
 import { useEffect, useRef, useState } from 'react';
 
+import { resolveApiBaseUrl, resolveTusdPlaceholderUrl } from '~/utils/env';
 import '@uppy/core/css/style.min.css';
 import '@uppy/dashboard/css/style.min.css';
 
-const API_BASE_URL =
-  import.meta.env?.VITE_API_BASE_URL ?? 'http://localhost:3000';
-
-/** Bootstrap endpoint; real URL comes from `POST .../upload` before bytes hit tusd. */
-const TUS_ENDPOINT_PLACEHOLDER =
-  import.meta.env?.VITE_TUSD_PLACEHOLDER_URL ?? 'http://localhost:8000';
+/** Bootstrap endpoint default; real URL comes from `POST .../upload` before bytes hit tusd. */
+const TUS_ENDPOINT_PLACEHOLDER = resolveTusdPlaceholderUrl();
 
 type UploadInitiatedResponse = {
   upload_server_base_url: string;
@@ -28,7 +25,7 @@ type UploadInitiatedResponse = {
 };
 
 function apiOrigin(): string {
-  return API_BASE_URL.replace(/\/+$/, '');
+  return resolveApiBaseUrl().replace(/\/+$/, '');
 }
 
 function tusEndpointFromServerBase(baseUrl: string): string {
