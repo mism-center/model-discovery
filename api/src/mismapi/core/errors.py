@@ -23,7 +23,6 @@ class ValidationFieldError(TypedDict, total=False):
     message: str
 
 
-@dataclass(slots=True)
 class APIError(Exception):
     status_code: int
     code: str
