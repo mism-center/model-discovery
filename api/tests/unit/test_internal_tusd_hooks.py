@@ -77,6 +77,6 @@ async def test_handle_pre_create_sets_change_file_info_paths() -> None:
     )
 
     assert response.change_file_info is not None
-    assert response.change_file_info.id == f"/models/{resource_id}/files"
+    assert response.change_file_info.id == f"models/{resource_id}/files"
     assert response.change_file_info.storage is not None
     assert response.change_file_info.storage.path == f"/models/{resource_id}/files/{resource_id}"
