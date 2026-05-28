@@ -32,6 +32,17 @@ gateway:
     AUTH_MODE: "oidc"
     DISABLE_AUTH: "false"
     STUB_UPSTREAM_SERVICES: "false"
+    # Subpath that hosts the API + Swagger/ReDoc/openapi.json.
+    # Docs land at {API_PATH_PREFIX}/docs. Set to "" to mount at root.
+    API_PATH_PREFIX: "/api"
+    # On-pod path where the iRODS PVC is mounted. Resource location_uris of
+    # the form "irods:///foo" or "/irods/foo" resolve under this directory.
+    # Must match irods.pvc.mountPath below.
+    IRODS_MOUNT_PATH: "/irods"
+    # "local" → write straight to the iRODS PVC (LocalFileUploadClient).
+    # "http"  → forward to a real upload service (UploadServiceClient).
+    UPLOAD_BACKEND: "local"
+    # Upload service (only consulted when UPLOAD_BACKEND=http).
     UPLOAD_SERVICE_URL: "http://upload-service:8001"
     UPLOAD_TIMEOUT_SECONDS: "60.0"
     UPLOAD_CHUNK_SIZE_BYTES: "5242880"
@@ -44,6 +55,9 @@ gateway:
     OIDC_AUDIENCE: ""
     OIDC_REQUIRED_SCOPES: ""
     OIDC_JWKS_TTL_SECONDS: "300"
+    # Execution API
+    EXECUTION_API_URL: ""
+    EXECUTION_TIMEOUT_SECONDS: "120"
 
 irods:
   # PersistentVolumeClaim
@@ -53,7 +67,7 @@ irods:
     storage: "5Gi"
     accessMode: "ReadWriteMany"
     mountPath: "/irods"
-    subPath: "/"
+    subPath: ""
 
   # StorageClass
   storageClass:
@@ -64,7 +78,7 @@ irods:
 # ────────────────────────────────────────────────────────────
 searchService:
   enabled: true
-  replicaCount: 2
+  replicaCount: 0
   image:
     repository: mism/search-service
     tag: "1.0.0"
@@ -87,7 +101,7 @@ searchService:
 # ────────────────────────────────────────────────────────────
 uploadService:
   enabled: true
-  replicaCount: 2
+  replicaCount: 0
   image:
     repository: mism/upload-service
     tag: "1.0.0"
@@ -111,7 +125,7 @@ uploadService:
 # ────────────────────────────────────────────────────────────
 storageInterface:
   enabled: true
-  replicaCount: 1
+  replicaCount: 0
   image:
     repository: mism/storage-interface
     tag: "1.0.0"
@@ -139,6 +153,8 @@ storageInterface:
 # ────────────────────────────────────────────────────────────
 metadataStore:
   enabled: true
+  # azure has lost+found dir that causes init to fall .
+  pgData: /var/lib/postgresql/data/pgdata
   image:
     repository: postgres
     tag: "17-alpine"

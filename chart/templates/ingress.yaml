@@ -23,8 +23,9 @@ spec:
     - host: {{ .Values.ingress.host }}
       http:
         paths:
-          # API requests to backend gateway
-          - path: /api
+          # API + auto-docs live at {{ .Values.ui.apiPath }} so the UI can own "/".
+          # Longer prefix listed first so nginx matches it before "/".
+          - path: {{ .Values.gateway.env.API_PATH_PREFIX }}
             pathType: Prefix
             backend:
               service:
@@ -39,4 +40,5 @@ spec:
                 name: ui
                 port:
                   name: http
+
 {{- end }}
