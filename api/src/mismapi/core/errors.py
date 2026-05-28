@@ -6,8 +6,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.requests import Request
 
-from mismapi.core.settings import Settings
-
 logger = logging.getLogger(__name__)
 
 REQUEST_VALIDATION_DETAIL_TEMPLATE = "Request validation failed for field '{field}'."
@@ -56,7 +54,27 @@ def _summarize_request_validation(exc: RequestValidationError) -> ValidationFiel
 
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(APIError)
-    async def api_error_handler(_: Request, exc: APIError) -> JSONResponse:
+    async def api_error_handler(request: Request, exc: APIError) -> JSONResponse:
+        settings = getattr(request.app.state, "settings", None)
+        production = bool(getattr(settings, "production_mode", False))
+
+        log_level = logging.ERROR if exc.status_code >= 500 else logging.INFO
+        logger.log(
+            log_level,
+            "api_error status=%s code=%s method=%s path=%s",
+            exc.status_code,
+            exc.code,
+            request.method,
+            request.url.path,
+        )
+        # Log the error detail in debug mode specifically
+        if not production and logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "api_error_detail code=%s detail=%s",
+                exc.code,
+                exc.detail,
+            )
+
         return JSONResponse(
             status_code=exc.status_code,
             content={
@@ -87,7 +105,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             stack_info=True,
         )
         settings = getattr(request.app.state, "settings", None)
-        production = isinstance(settings, Settings) and settings.production_mode
+        production = bool(getattr(settings, "production_mode", False))
         detail = (
             "An unexpected error occurred."
             if production

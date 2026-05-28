@@ -27,7 +27,6 @@ from mismapi.auth.oidc_service import OIDCService
 from mismapi.auth.session import RedisSessionStore, SessionStore
 from mismapi.auth.session_refresh import SessionRefresher
 from mismapi.core.config_validation import ensure_startup_config
-from mismapi.core.errors import APIError
 from mismapi.core.settings import Settings
 
 if TYPE_CHECKING:
@@ -123,10 +122,8 @@ class AppContainer:
             if self.settings.disable_auth:
                 return
             await self.oidc_service.prime_metadata()
-        except APIError as exc:
-            logger.warning("oidc_discovery_prime_failed error=%s", exc)
-        except Exception:
-            logger.exception("oidc_discovery_prime_failed_unexpected")
+        except Exception as exc:
+            logger.exception("oidc_discovery_prime_failed error=%s", exc)
 
     async def aclose(self) -> None:
         """Tear down every collaborator, best-effort. Errors are logged, never raised."""

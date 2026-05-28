@@ -57,7 +57,9 @@ class RedactedAccessFormatter(AccessFormatter):
 
     def formatMessage(self, record: logging.LogRecord) -> str:
         recordcopy = copy(record)
-        client_addr, method, full_path, http_version, status_code = recordcopy.args  # type: ignore[misc]
+        if not recordcopy.args:
+            return super().formatMessage(recordcopy)
+        client_addr, method, full_path, http_version, status_code = recordcopy.args
         safe_path = redact_request_path(str(full_path), production=self._production_mode)
         recordcopy.args = (client_addr, method, safe_path, http_version, status_code)
         return super().formatMessage(recordcopy)

@@ -58,11 +58,7 @@ from mismapi.core.deps import (
 )
 from mismapi.core.errors import APIError
 from mismapi.schemas.auth import UploadTokenClaims
-from mismapi.schemas.tus import (
-    TusHookRequest,
-    TusHookResponse,
-    # TusHTTPResponse,
-)
+from mismapi.schemas.tus import FileInfoChanges, Storage, TusHookRequest, TusHookResponse
 from mismapi.services.registry_service import RegistryService
 
 logger = logging.getLogger(__name__)
@@ -79,6 +75,7 @@ cannot bind the upload to a registry resource for ownership checks.
 
 TUSD_HOOK_PRE_CREATE = "pre-create"
 TUSD_HOOK_POST_FINISH = "post-finish"
+FILES_ALLOWED_PATH_TEMPLATE = "models/{resource_id}/files"
 
 
 def _extract_resource_id(payload: TusHookRequest) -> str:
@@ -90,6 +87,22 @@ def _extract_resource_id(payload: TusHookRequest) -> str:
             detail=(f"tus upload metadata is missing required key '{RESOURCE_ID_METADATA_KEY}'."),
         )
     return resource_id
+
+
+def _check_allowed_path(claims: UploadTokenClaims, resource_id: str, upload_id: str) -> bool:
+    allowed_path = claims.allowed_path
+    expected_allowed_path = FILES_ALLOWED_PATH_TEMPLATE.format(resource_id=resource_id)
+    if allowed_path != expected_allowed_path:
+        logger.debug(
+            "tus_authorize_failed upload_id=%s resource_id=%s allowed_path=%s "
+            + "expected_allowed_path=%s",
+            upload_id,
+            resource_id,
+            allowed_path,
+            expected_allowed_path,
+        )
+        return False
+    return True
 
 
 async def _handle_pre_create(
@@ -105,7 +118,7 @@ async def _handle_pre_create(
     "resource does not exist" cases are intentionally collapsed into the
     same 403 by `service.get_resource_and_assert_ownership`, so this handler
     cannot distinguish them either; that prevents probe-based enumeration
-    of valid resource IDs (see that method's docstring for the threat model).
+    of valid resource IDs (see that method's docstring).
 
     Other failures (e.g., missing `resource_id` metadata) bubble up as
     standard `APIError`s, which become 4xx JSON responses via the global
@@ -135,25 +148,25 @@ async def _handle_pre_create(
         )
 
     resource_id = _extract_resource_id(payload)
+    upload_id = payload.event.upload.id
 
-    # try:
-    #     service.get_resource_and_assert_ownership(principal, resource_id=resource_id)
-    # except APIError as exc:
-    #     if exc.status_code == 403:
-    #         logger.info(
-    #             "tus_authorize_rejected resource_id=%s subject=%s",
-    #             resource_id,
-    #             principal.subject,
-    #         )
-    #         return TusHookResponse(
-    #             RejectUpload=True,
-    #             HTTPResponse=TusHTTPResponse(
-    #                 StatusCode=403,
-    #                 Body=exc.detail,
-    #                 Header={"Content-Type": "text/plain"},
-    #             ),
-    #         )
-    #     raise
+    if not _check_allowed_path(claims, resource_id, upload_id):
+        raise APIError(
+            status_code=403,
+            code="upload_path_invalid",
+            detail="Upload file does not have expected resource ID",
+        )
+
+    try:
+        service.get_resource_and_assert_ownership(principal, resource_id=resource_id)
+    except APIError as exc:
+        if exc.status_code == 403:
+            logger.error(
+                "tus_authorize_rejected resource_id=%s subject=%s",
+                resource_id,
+                principal.subject,
+            )
+        raise
 
     logger.info(
         "tus_authorize_ok resource_id=%s subject=%s upload_id=%s",
@@ -161,7 +174,11 @@ async def _handle_pre_create(
         principal.subject,
         payload.event.upload.id,
     )
-    return TusHookResponse()
+
+    filepath = FILES_ALLOWED_PATH_TEMPLATE.format(resource_id=resource_id)
+    return TusHookResponse(
+        ChangeFileInfo=FileInfoChanges(ID=filepath, Storage=Storage(Path=filepath))
+    )
 
 
 async def _handle_post_finish(
