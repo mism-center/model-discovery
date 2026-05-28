@@ -32,7 +32,7 @@ def test_check_allowed_path_accepts_exact_resource_path() -> None:
     claims = UploadTokenClaims(
         user_id="user-1",
         max_bytes=1024,
-        allowed_path="/models/model-123/files",
+        allowed_path="models/model-123/files",
     )
 
     assert _check_allowed_path(claims, resource_id="model-123", upload_id="upload-1")
@@ -42,7 +42,7 @@ def test_check_allowed_path_rejects_non_matching_path() -> None:
     claims = UploadTokenClaims(
         user_id="user-1",
         max_bytes=1024,
-        allowed_path="/models/model-abc/files",
+        allowed_path="models/model-abc/files",
     )
 
     assert not _check_allowed_path(claims, resource_id="model-123", upload_id="upload-1")
@@ -53,7 +53,7 @@ async def test_handle_pre_create_sets_change_file_info_paths() -> None:
     claims = UploadTokenClaims(
         user_id="user-1",
         max_bytes=10_000,
-        allowed_path=f"/models/{resource_id}/files",
+        allowed_path=f"models/{resource_id}/files",
     )
     session_store_mock: Any = create_autospec(SessionStore, instance=True, spec_set=True)
     session_store_mock.validate_upload_token = AsyncMock(return_value=claims)
@@ -79,4 +79,4 @@ async def test_handle_pre_create_sets_change_file_info_paths() -> None:
     assert response.change_file_info is not None
     assert response.change_file_info.id == f"models/{resource_id}/files"
     assert response.change_file_info.storage is not None
-    assert response.change_file_info.storage.path == f"/models/{resource_id}/files/{resource_id}"
+    assert response.change_file_info.storage.path == f"models/{resource_id}/files/{resource_id}"

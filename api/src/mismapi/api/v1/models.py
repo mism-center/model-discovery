@@ -137,7 +137,7 @@ async def upload_model_file(
 
     user_id = principal.subject
     max_bytes = 1024 * 1024 * 500  # 500MB
-    allowed_path = f"/models/{model_id}/files"
+    allowed_path = f"models/{model_id}/files"
     token = await session_store.mint_upload_token(user_id, max_bytes, allowed_path)
 
     return UploadInitiatedResponse(
