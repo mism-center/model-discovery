@@ -178,7 +178,8 @@ async def _handle_pre_create(
     filepath = FILES_ALLOWED_PATH_TEMPLATE.format(resource_id=resource_id)
     return TusHookResponse(
         ChangeFileInfo=FileInfoChanges(
-            ID=filepath, Storage=Storage(Path=filepath + "/{resource_id}")
+            ID=filepath,
+            Storage=Storage(Path=filepath + f"/{resource_id}"),
         )
     )
 
