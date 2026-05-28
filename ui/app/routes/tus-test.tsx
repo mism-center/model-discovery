@@ -24,6 +24,10 @@ type UploadInitiatedResponse = {
   token: string;
 };
 
+type CreatedModelResponse = {
+  id: string;
+};
+
 function apiOrigin(): string {
   return resolveApiBaseUrl().replace(/\/+$/, '');
 }
@@ -34,30 +38,59 @@ function tusEndpointFromServerBase(baseUrl: string): string {
   return `${trimmed}/files/`;
 }
 
+async function readApiErrorDetail(
+  res: Response,
+  fallbackMessage: string
+): Promise<string> {
+  const raw = await res.text();
+  let detail = raw;
+  try {
+    const parsed = JSON.parse(raw) as {
+      detail?: unknown;
+      error?: {
+        detail?: unknown;
+      };
+    };
+    if (typeof parsed.error?.detail === 'string') {
+      detail = parsed.error.detail;
+    } else if (typeof parsed.detail === 'string') {
+      detail = parsed.detail;
+    }
+  } catch {
+    /* keep raw */
+  }
+
+  return detail || `${fallbackMessage} (${res.status})`;
+}
+
+async function createModel(modelName: string): Promise<CreatedModelResponse> {
+  const url = `${apiOrigin()}/api/v1/models`;
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: modelName,
+      location_uri: `${apiOrigin()}/api/v1/models/${encodeURIComponent(modelName)}`,
+      execution_type: 'docker',
+      description: 'Created by tus upload test page',
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(await readApiErrorDetail(res, 'Model creation failed'));
+  }
+
+  return res.json() as Promise<CreatedModelResponse>;
+}
+
 async function initiateModelUpload(
   modelId: string
 ): Promise<UploadInitiatedResponse> {
   const url = `${apiOrigin()}/api/v1/models/${encodeURIComponent(modelId)}/upload`;
   const res = await fetch(url, { method: 'POST', credentials: 'include' });
   if (!res.ok) {
-    const raw = await res.text();
-    let detail = raw;
-    try {
-      const parsed = JSON.parse(raw) as {
-        detail?: unknown;
-        error?: {
-          detail?: unknown;
-        };
-      };
-      if (typeof parsed.error?.detail === 'string') {
-        detail = parsed.error.detail;
-      } else if (typeof parsed.detail === 'string') {
-        detail = parsed.detail;
-      }
-    } catch {
-      /* keep raw */
-    }
-    throw new Error(detail || `Upload init failed (${res.status})`);
+    throw new Error(await readApiErrorDetail(res, 'Upload init failed'));
   }
 
   return res.json() as Promise<UploadInitiatedResponse>;
@@ -85,7 +118,7 @@ type FileStatus = {
   uploadUrl?: string;
 };
 
-function createUppy(getModelId: () => string) {
+function createUppy(getModelName: () => string) {
   const uppy = new Uppy({
     autoProceed: false,
     restrictions: { maxNumberOfFiles: 10 },
@@ -106,17 +139,19 @@ function createUppy(getModelId: () => string) {
   uppy.addPreProcessor(async (fileIDs) => {
     if (fileIDs.length === 0) return;
 
-    const modelId = getModelId().trim();
-    if (!modelId) {
-      throw new Error('Enter a model ID, then start the upload.');
+    const modelName = getModelName().trim();
+    if (!modelName) {
+      throw new Error('Enter a model name, then start the upload.');
     }
 
     const tusPlugin = uppy.getPlugin('Tus') as
       | { setOptions: (opts: { endpoint: string }) => void }
       | undefined;
 
+    const createdModel = await createModel(modelName);
+
     const sessions = await Promise.all(
-      fileIDs.map(() => initiateModelUpload(modelId))
+      fileIDs.map(() => initiateModelUpload(createdModel.id))
     );
 
     const endpoint = tusEndpointFromServerBase(
@@ -166,15 +201,15 @@ function statusColor(status: FileStatus['status']) {
 }
 
 export default function TusTest() {
-  const [modelId, setModelId] = useState('');
-  const modelIdRef = useRef('');
-  modelIdRef.current = modelId;
+  const [modelName, setModelName] = useState('');
+  const modelNameRef = useRef('');
+  modelNameRef.current = modelName;
 
   const [uppy, setUppy] = useState<Uppy | null>(null);
   const [files, setFiles] = useState<Record<string, FileStatus>>({});
 
   useEffect(() => {
-    const instance = createUppy(() => modelIdRef.current);
+    const instance = createUppy(() => modelNameRef.current);
 
     const upsert = <M extends Meta, B extends Body>(
       file: UppyFile<M, B>,
@@ -255,7 +290,7 @@ export default function TusTest() {
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold">Tus Upload Test</h1>
         <p className="text-sm text-default-500">
-          Flow:{' '}
+          Flow: <code>POST {apiOrigin()}/api/v1/models</code> (create model) →{' '}
           <code>POST {apiOrigin()}/api/v1/models/&lt;model-id&gt;/upload</code>{' '}
           (session cookie) → tus endpoint + <code>resource_id</code> + one-time{' '}
           <code>upload_token</code> on each tus create, matching gateway{' '}
@@ -266,11 +301,11 @@ export default function TusTest() {
       <Card shadow="sm">
         <CardBody className="flex flex-col gap-3">
           <Input
-            label="Model ID"
-            placeholder="Registry model resource id"
-            value={modelId}
-            onValueChange={setModelId}
-            description="Required before upload. Each file gets a fresh upload token when the batch starts."
+            label="Model name"
+            placeholder="Name for the model to create"
+            value={modelName}
+            onValueChange={setModelName}
+            description="Required before upload. The page first creates a model, then requests upload tokens for that created model."
           />
         </CardBody>
       </Card>
@@ -281,7 +316,7 @@ export default function TusTest() {
             <Dashboard
               uppy={uppy}
               proudlyDisplayPoweredByUppy={false}
-              note="Add files, enter model ID, then Upload. Metadata resource_id and upload_token are set from the gateway right before tus runs."
+              note="Add files, enter a model name, then Upload. The page creates the model first, then sets resource_id and upload_token from the gateway right before tus runs."
               height={420}
             />
           ) : (

@@ -54,6 +54,27 @@ def test_create_model_and_run(api: httpx.Client) -> None:
     assert run["status"]
 
 
+def test_initiate_model_upload(api: httpx.Client) -> None:
+    name = unique_name("func-model-upload")
+    r = api.post(
+        "/api/v1/models",
+        json={
+            "name": name,
+            "location_uri": "https://example.com/model",
+            "execution_type": "docker",
+        },
+    )
+    assert r.status_code == 201
+    model_id = r.json()["id"]
+
+    r = api.post(f"/api/v1/models/{model_id}/upload")
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["resource_id"] == model_id
+    assert payload["upload_server_base_url"]
+    assert payload["token"]
+
+
 def test_update_model(api: httpx.Client) -> None:
     name = unique_name("func-model-upd")
     r = api.post(

@@ -4,7 +4,6 @@ from fastapi import APIRouter, Query
 
 from mismapi.auth.base import AuthenticatedPrincipalDep
 from mismapi.core.deps import RegistryServiceDep, SessionStoreDep, SettingsDep
-from mismapi.schemas.common import ModelId
 from mismapi.schemas.registry import (
     CreateRunRequest,
     CreateRunResponse,
@@ -130,7 +129,7 @@ async def update_model(
 
 @router.post("/models/{model_id}/upload", response_model=UploadInitiatedResponse)
 async def upload_model_file(
-    model_id: ModelId,
+    model_id: str,
     settings: SettingsDep,
     session_store: SessionStoreDep,
     principal: AuthenticatedPrincipalDep,
