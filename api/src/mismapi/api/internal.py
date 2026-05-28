@@ -75,7 +75,7 @@ cannot bind the upload to a registry resource for ownership checks.
 
 TUSD_HOOK_PRE_CREATE = "pre-create"
 TUSD_HOOK_POST_FINISH = "post-finish"
-FILES_ALLOWED_PATH_TEMPLATE = f"/models/{RESOURCE_ID_METADATA_KEY}/files"
+FILES_ALLOWED_PATH_TEMPLATE = "/models/{resource_id}/files"
 
 
 def _extract_resource_id(payload: TusHookRequest) -> str:
