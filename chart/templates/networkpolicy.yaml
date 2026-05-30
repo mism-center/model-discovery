@@ -14,12 +14,11 @@
     Gateway             → Redis (when bundled subchart is enabled)
     Gateway / Migrate   → Metadata Store (PostgreSQL)
     Upload Service      → Storage Interface
-    tusd                → Gateway     (HTTP hooks, /api/internal/tusd/hooks; gateway
-                                       trusts the transport because /api/internal/*
-                                       has no app-layer auth on post-finish — see
-                                       api/.../api/internal.py. tusd is deployed by
-                                       a separate Helm chart, so the source pod
-                                       selector is configured via values.)
+    tusd                → Gateway     (HTTP hooks, /api/internal/tusd/hooks; hook
+                                       callbacks must include the shared secret
+                                       configured by TUSD_HOOK_SECRET. tusd is
+                                       deployed by a separate Helm chart, so the
+                                       source pod selector is configured via values.)
   ─────────────────────────────────────────────────────────────────────────────
 */}}
 
@@ -54,6 +53,7 @@ spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/component: gateway
+      app.kubernetes.io/instance: {{ .Release.Name }}
   policyTypes:
     - Ingress
   ingress:
@@ -91,6 +91,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/component: gateway
+              app.kubernetes.io/instance: {{ .Release.Name }}
       ports:
         - protocol: TCP
           port: 6379
@@ -99,10 +100,9 @@ spec:
 ---
 # ── 1c. Discovery Gateway – also accepts tusd hook callbacks ──────────────────
 # tusd posts every enabled hook event (pre-create, post-finish, ...) to
-# POST /api/internal/tusd/hooks on the Gateway. pre-create authenticates
-# via an upload token the client sends in tus metadata (validated server-side),
-# but post-finish has no app-layer auth and instead relies on this
-# NetworkPolicy to ensure only the tusd pod can reach the endpoint.
+# POST /api/internal/tusd/hooks on the Gateway. The API verifies the shared
+# X-MISM-TUSD-HOOK-SECRET header, and this NetworkPolicy further narrows which
+# pods can reach the hook endpoint inside the cluster.
 #
 # tusd is NOT deployed by this chart (the legacy `uploadService` component
 # is unrelated and disabled in our deployments). It ships as a separate
@@ -122,6 +122,7 @@ spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/component: gateway
+      app.kubernetes.io/instance: {{ .Release.Name }}
   policyTypes:
     - Ingress
   ingress:
@@ -147,6 +148,7 @@ spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/component: search-service
+      app.kubernetes.io/instance: {{ .Release.Name }}
   policyTypes:
     - Ingress
   ingress:
@@ -154,6 +156,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/component: gateway
+              app.kubernetes.io/instance: {{ .Release.Name }}
       ports:
         - protocol: TCP
           port: {{ .Values.searchService.service.port }}
@@ -172,6 +175,7 @@ spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/component: upload-service
+      app.kubernetes.io/instance: {{ .Release.Name }}
   policyTypes:
     - Ingress
   ingress:
@@ -179,6 +183,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/component: gateway
+              app.kubernetes.io/instance: {{ .Release.Name }}
       ports:
         - protocol: TCP
           port: {{ .Values.uploadService.service.port }}
@@ -197,6 +202,7 @@ spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/component: storage-interface
+      app.kubernetes.io/instance: {{ .Release.Name }}
   policyTypes:
     - Ingress
   ingress:
@@ -204,6 +210,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/component: upload-service
+              app.kubernetes.io/instance: {{ .Release.Name }}
       ports:
         - protocol: TCP
           port: {{ .Values.storageInterface.service.port }}
@@ -222,6 +229,7 @@ spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/component: metadata-store
+      app.kubernetes.io/instance: {{ .Release.Name }}
   policyTypes:
     - Ingress
   ingress:
@@ -230,10 +238,12 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/component: gateway
+              app.kubernetes.io/instance: {{ .Release.Name }}
         # Migration Job pods
         - podSelector:
             matchLabels:
               app.kubernetes.io/component: migrate
+              app.kubernetes.io/instance: {{ .Release.Name }}
       ports:
         - protocol: TCP
           port: {{ .Values.metadataStore.service.port }}

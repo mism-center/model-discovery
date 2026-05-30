@@ -3,13 +3,13 @@ import logging
 import pytest
 from uvicorn.logging import AccessFormatter
 
-from mismapi.core.settings import Settings
 from mismapi.core.uvicorn_access_log import (
     RedactedAccessFormatter,
     SkipHealthCheckAccessFilter,
     install_uvicorn_access_formatter,
     redact_request_path,
 )
+from tests.conftest import make_settings
 
 
 @pytest.mark.parametrize(
@@ -106,7 +106,7 @@ def test_install_uvicorn_access_formatter_replaces_handler() -> None:
     )
     log.addHandler(handler)
     try:
-        settings = Settings(_env_file=None, PRODUCTION_MODE=True)  # type: ignore[call-arg]
+        settings = make_settings(PRODUCTION_MODE=True)
         install_uvicorn_access_formatter(settings)
         assert isinstance(handler.formatter, RedactedAccessFormatter)
         assert any(isinstance(f, SkipHealthCheckAccessFilter) for f in handler.filters)

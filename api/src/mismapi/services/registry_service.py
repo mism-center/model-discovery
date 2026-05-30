@@ -335,19 +335,10 @@ class RegistryService:
         FUTURE: replace string equality with `fga.check(user=principal.subject,
         relation="owner", object=f"resource:{resource_id}")`.
         """
-        not_authorized = APIError(
-            status_code=403,
-            code="not_authorized",
-            detail="Resource does not exist or principal is not its owner.",
-        )
-
-        try:
-            resource = self._registry.get_resource(resource_id)
-        except ResourceNotFoundError:
-            raise not_authorized from None
+        resource = self._get_resource_or_not_authorized(resource_id)
 
         if resource.owner != principal.subject:
-            raise not_authorized
+            raise self._not_authorized_error()
         return resource
 
     def mark_upload_complete(self, *, resource_id: str) -> Resource:
@@ -365,6 +356,9 @@ class RegistryService:
         except ResourceNotFoundError as exc:
             raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
 
+        return self._mark_upload_complete(resource)
+
+    def _mark_upload_complete(self, resource: Resource) -> Resource:
         new_metadata = dict(resource.metadata)
         new_metadata["upload_status"] = "UPLOAD_COMPLETE"
         resource.metadata = new_metadata
@@ -376,8 +370,19 @@ class RegistryService:
             self._session.rollback()
             raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
 
-        logger.info("Marked upload complete for resource %s", resource_id)
         return updated
+
+    @staticmethod
+    def _not_authorized_error() -> APIError:
+        """
+        TODO: Improve error messages and handling by subclassing APIError with specific errors.
+        That will help not only here but in many other places too.
+        """
+        return APIError(
+            status_code=403,
+            code="not_authorized",
+            detail="Resource does not exist or principal is not its owner.",
+        )
 
     # ── Lifecycle ────────────────────────────────────────────────────
 

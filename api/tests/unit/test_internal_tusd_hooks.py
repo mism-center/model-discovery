@@ -56,7 +56,7 @@ async def test_handle_pre_create_sets_change_file_info_paths() -> None:
         allowed_path=f"models/{resource_id}/files",
     )
     session_store_mock: Any = create_autospec(SessionStore, instance=True, spec_set=True)
-    session_store_mock.validate_upload_token = AsyncMock(return_value=claims)
+    session_store_mock.consume_upload_token = AsyncMock(return_value=claims)
 
     service_mock: Any = create_autospec(RegistryService, instance=True, spec_set=True)
 
@@ -66,7 +66,7 @@ async def test_handle_pre_create_sets_change_file_info_paths() -> None:
         cast(RegistryService, service_mock),
     )
 
-    session_store_mock.validate_upload_token.assert_awaited_once_with("token-1")
+    session_store_mock.consume_upload_token.assert_awaited_once_with("token-1")
     service_mock.get_resource_and_assert_ownership.assert_called_once()
 
     principal = service_mock.get_resource_and_assert_ownership.call_args.args[0]
@@ -77,6 +77,24 @@ async def test_handle_pre_create_sets_change_file_info_paths() -> None:
     )
 
     assert response.change_file_info is not None
-    assert response.change_file_info.id == f"models/{resource_id}/files"
+    assert response.change_file_info.id == f"models/{resource_id}/files/upload-1"
     assert response.change_file_info.storage is not None
-    assert response.change_file_info.storage.path == f"models/{resource_id}/files/{resource_id}"
+    assert response.change_file_info.storage.path == f"models/{resource_id}/files/upload-1"
+
+
+async def test_handle_pre_create_returns_tus_rejection_for_missing_token() -> None:
+    payload = _pre_create_payload(resource_id="model-123", upload_token="")
+    payload.event.upload.metadata.pop("upload_token")
+    session_store_mock: Any = create_autospec(SessionStore, instance=True, spec_set=True)
+    service_mock: Any = create_autospec(RegistryService, instance=True, spec_set=True)
+
+    response = await _handle_pre_create(
+        payload,
+        cast(SessionStore, session_store_mock),
+        cast(RegistryService, service_mock),
+    )
+
+    assert response.reject_upload is True
+    assert response.http_response.status_code == 400
+    assert "missing_upload_token" in response.http_response.body
+    session_store_mock.consume_upload_token.assert_not_called()

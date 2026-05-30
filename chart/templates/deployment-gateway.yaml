@@ -35,6 +35,11 @@ spec:
                   key: databasePassword
             - name: DATABASE_URL
               value: "postgresql+psycopg://{{ .Values.metadataStore.env.POSTGRES_USER }}:$(DATABASE_PASSWORD)@metadata-store:{{ .Values.metadataStore.service.port }}/{{ .Values.metadataStore.env.POSTGRES_DB }}"
+            - name: TUSD_HOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: model-discovery-secrets
+                  key: tusdHookSecret
             {{- range $key, $val := .Values.gateway.env }}
             - name: {{ $key }}
               value: {{ $val | quote }}

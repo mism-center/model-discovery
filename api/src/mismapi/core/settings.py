@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -26,14 +26,25 @@ class Settings(BaseSettings):
         str_strip_whitespace=True,
     )
 
+    def __init__(self, **data: Any) -> None:
+        """
+        Build settings from explicit kwargs plus configured env sources.
+
+        `BaseSettings` allows required fields to be omitted from the constructor
+        when they are supplied by environment variables or `.env`, but some
+        static analyzers model it like a normal Pydantic model constructor. This
+        explicit signature matches the runtime behavior without weakening the
+        field definitions themselves.
+        """
+        super().__init__(**data)
+
     deploy_type: Literal["cloud", "local"] = Field(default="cloud", alias="DEPLOY_TYPE")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
-    database_url: str = Field(
-        default="postgresql+psycopg://postgres:postgres@localhost/mism",
-        alias="DATABASE_URL",
-    )
+    database_url: str = Field(alias="DATABASE_URL")
 
-    tusd_base_url: BaseUrl = Field(default="http://localhost:8080", alias="TUSD_BASE_URL")
+    tusd_base_url: BaseUrl = Field(alias="TUSD_BASE_URL")
+    tusd_hook_secret: str = Field(alias="TUSD_HOOK_SECRET")
+    upload_max_bytes: int = Field(default=1024 * 1024 * 500, alias="UPLOAD_MAX_BYTES", gt=0)
 
     auth_mode: Literal["oidc"] = Field(default="oidc", alias="AUTH_MODE")
     disable_auth: bool = Field(default=False, alias="DISABLE_AUTH")
@@ -71,7 +82,7 @@ class Settings(BaseSettings):
     # When adding a new behavior gated by this flag, append it to the list above.
     production_mode: bool = Field(default=False, alias="PRODUCTION_MODE")
 
-    redis_url: BaseUrl = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
+    redis_url: BaseUrl = Field(alias="REDIS_URL")
     session_ttl_seconds: int = Field(default=3600, alias="SESSION_TTL_SECONDS")
     upload_token_ttl_seconds: int = Field(default=900, alias="UPLOAD_TOKEN_TTL_SECONDS")
     session_cookie_name: str = Field(default="mism_session", alias="SESSION_COOKIE_NAME")

@@ -23,7 +23,7 @@ class SessionStore(Protocol):
 
     async def mint_upload_token(self, user_id: str, max_bytes: int, allowed_path: str) -> str: ...
 
-    async def validate_upload_token(self, token: str) -> UploadTokenClaims: ...
+    async def consume_upload_token(self, token: str) -> UploadTokenClaims: ...
 
     async def revoke_upload_token(self, token: str) -> None: ...
 
@@ -86,24 +86,35 @@ class RedisSessionStore:
         )
         return token
 
-    async def validate_upload_token(self, token: str) -> UploadTokenClaims:
+    async def consume_upload_token(self, token: str) -> UploadTokenClaims:
         """
-        Read claims for a minted upload token without removing the key.
+        Atomically read and delete claims for a minted upload token.
 
-        The entry still expires at Redis TTL (`upload_token_ttl_seconds` at
-        mint time). `revoke_upload_token` removes it early after a successful
-        tus completion when tusd forwards `upload_token` in `post-finish`
-        metadata.
+        Upload tokens authorize exactly one tus create request. Consuming the
+        Redis key during `pre-create` prevents replaying a token to create
+        multiple uploads for the same registry resource.
         """
         key = f"{UPLOAD_TOKEN_KEY_PREFIX}{token}"
-        raw = await self.redis.get(key)
+        raw = await self.redis.execute_command("GETDEL", key)
         if not raw:
             raise APIError(
                 status_code=401,
                 code="auth_upload_token_invalid",
                 detail="Upload token is invalid or has expired",
             )
-        return UploadTokenClaims.model_validate_json(raw)
+        try:
+            return UploadTokenClaims.model_validate_json(raw)
+        except (ValueError, ValidationError) as exc:
+            logger.warning(
+                "upload_token_invalid_payload token_prefix=%s error=%s",
+                token[:8],
+                exc.__class__.__name__,
+            )
+            raise APIError(
+                status_code=401,
+                code="auth_upload_token_invalid",
+                detail="Upload token is invalid or has expired",
+            ) from exc
 
     async def revoke_upload_token(self, token: str) -> None:
         """Best-effort delete after a successful tus upload (post-finish)."""

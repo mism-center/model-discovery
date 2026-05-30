@@ -49,7 +49,7 @@ run: build
 ## Run the currently configured frontend verification suite (currently the static quality checks)
 test: check
 
-## Run ESLint (This takes forever right now for some reason. Figure out why.)
+## Run ESLint
 lint:
 	npm run lint
 

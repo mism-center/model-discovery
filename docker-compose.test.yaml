@@ -57,6 +57,8 @@ services:
     environment:
       DATABASE_URL: "postgresql+psycopg://postgres:postgres@db:5432/mism_test"
       REDIS_URL: "redis://redis:6379/0"
+      TUSD_BASE_URL: "http://localhost:8080"
+      TUSD_HOOK_SECRET: "test-tusd-hook-secret"
       DISABLE_AUTH: "true"
       STUB_UPSTREAM_SERVICES: "true"
     volumes:
