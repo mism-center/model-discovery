@@ -335,7 +335,10 @@ class RegistryService:
         FUTURE: replace string equality with `fga.check(user=principal.subject,
         relation="owner", object=f"resource:{resource_id}")`.
         """
-        resource = self._get_resource_or_not_authorized(resource_id)
+        try:
+            resource = self._registry.get_resource(resource_id)
+        except ResourceNotFoundError:
+            raise self._not_authorized_error() from None
 
         if resource.owner != principal.subject:
             raise self._not_authorized_error()
@@ -345,20 +348,14 @@ class RegistryService:
         """
         Stamp `metadata['upload_status'] = 'UPLOAD_COMPLETE'` on the resource.
 
-        Idempotent: re-stamping is a no-op. Stored in `metadata`
-        because `mism_registry.ResourceStatus` models publication lifecycle
-        (active/superseded/archived), not content lifecycle. If upload state
-        grows beyond a single flag (digests, indexer status, etc.), promote
-        this to a first-class field on `Resource` upstream.
+        Idempotent. Stored in `metadata` because `mism_registry.ResourceStatus`
+        models publication lifecycle (active/superseded/archived), not content lifecycle.
         """
         try:
             resource = self._registry.get_resource(resource_id)
         except ResourceNotFoundError as exc:
             raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
 
-        return self._mark_upload_complete(resource)
-
-    def _mark_upload_complete(self, resource: Resource) -> Resource:
         new_metadata = dict(resource.metadata)
         new_metadata["upload_status"] = "UPLOAD_COMPLETE"
         resource.metadata = new_metadata
