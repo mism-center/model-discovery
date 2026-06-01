@@ -19,6 +19,26 @@ spec:
       targetPort: http
       protocol: TCP
 {{- end }}
+{{- if and .Values.ingress.enabled .Values.ingress.blockInternalApi }}
+---
+# ──────────────────────────────────────────────
+# Public Ingress blocker for internal API paths
+# ──────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: discovery-internal-api-blocker
+  labels:
+    {{- include "model-discovery.labels" . | nindent 4 }}
+    app.kubernetes.io/component: internal-api-blocker
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP
+{{- end }}
 ---
 # ──────────────────────────────────────────────
 # Search Service

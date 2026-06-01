@@ -80,8 +80,6 @@ def _ensure_production_upload_config(settings: Settings) -> None:
 
     if _is_local_url(settings.tusd_base_url):
         missing_or_unsafe.append("TUSD_BASE_URL")
-    if not settings.tusd_hook_secret:
-        missing_or_unsafe.append("TUSD_HOOK_SECRET")
 
     if not missing_or_unsafe:
         return

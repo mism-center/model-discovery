@@ -79,28 +79,24 @@ def test_oidc_mode_rejects_whitespace_only_values() -> None:
     assert "OIDC_CLIENT_ID" in str(excinfo.value)
 
 
-def test_production_mode_rejects_local_tusd_url_and_missing_hook_secret() -> None:
+def test_production_mode_rejects_local_tusd_url() -> None:
     with pytest.raises(UploadConfigurationError) as excinfo:
         ensure_startup_config(
             _settings(
                 DISABLE_AUTH="true",
                 PRODUCTION_MODE="true",
                 TUSD_BASE_URL="http://localhost:8080",
-                TUSD_HOOK_SECRET="",
             )
         )
 
-    message = str(excinfo.value)
-    assert "TUSD_BASE_URL" in message
-    assert "TUSD_HOOK_SECRET" in message
+    assert "TUSD_BASE_URL" in str(excinfo.value)
 
 
-def test_production_mode_accepts_external_tusd_url_and_hook_secret() -> None:
+def test_production_mode_accepts_external_tusd_url() -> None:
     ensure_startup_config(
         _settings(
             DISABLE_AUTH="true",
             PRODUCTION_MODE="true",
             TUSD_BASE_URL="https://uploads.example.com",
-            TUSD_HOOK_SECRET="test-secret",
         )
     )

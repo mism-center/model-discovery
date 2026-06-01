@@ -21,9 +21,9 @@ Currently exposes a single tusd hook endpoint:
     stamps `metadata['upload_status'] = 'UPLOAD_COMPLETE'` on the
     model resource. When `upload_token` is still present in upload metadata,
     the token key is removed from Redis (`revoke_upload_token`) as a harmless
-    best-effort cleanup. The endpoint verifies `X-MISM-TUSD-HOOK-SECRET` when
-    `TUSD_HOOK_SECRET` is configured; production startup requires that secret
-    so public ingress traffic cannot forge completion hooks.
+    best-effort cleanup. Production deployments must keep this endpoint
+    reachable only from tusd inside the cluster so public traffic cannot forge
+    completion hooks.
   - any other event type: 200 no-op. tusd should only POST events that
     are listed in `--hooks-enabled-events`, but we tolerate unknown
     events to stay forward-compatible.
@@ -42,12 +42,10 @@ request.
 
 from __future__ import annotations
 
-import hmac
 import json
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, Header
+from fastapi import APIRouter
 
 from mismapi.auth.base import (
     AuthenticatedPrincipal,
@@ -55,7 +53,6 @@ from mismapi.auth.base import (
 from mismapi.core.deps import (
     RegistryServiceDep,
     SessionStoreDep,
-    SettingsDep,
 )
 from mismapi.core.errors import APIError
 from mismapi.schemas.auth import UploadTokenClaims
@@ -83,7 +80,6 @@ cannot bind the upload to a registry resource for ownership checks.
 
 TUSD_HOOK_PRE_CREATE = "pre-create"
 TUSD_HOOK_POST_FINISH = "post-finish"
-TUSD_HOOK_SECRET_HEADER = "X-MISM-TUSD-HOOK-SECRET"
 
 
 def _reject_upload(*, upload_id: str, status_code: int, code: str, detail: str) -> TusHookResponse:
@@ -102,21 +98,6 @@ def _reject_upload(*, upload_id: str, status_code: int, code: str, detail: str) 
             Header={"Content-Type": "application/json"},
         ),
     )
-
-
-def _verify_tusd_hook_secret(settings_secret: str, provided_secret: str | None) -> None:
-    if not settings_secret:
-        raise APIError(
-            status_code=500,
-            code="internal_error",
-            detail="tusd hook secret is not configured.",
-        )
-    if provided_secret is None or not hmac.compare_digest(settings_secret, provided_secret):
-        raise APIError(
-            status_code=401,
-            code="tusd_hook_unauthorized",
-            detail="Missing or invalid tusd hook secret.",
-        )
 
 
 def _upload_file_path(resource_id: str, upload_id: str) -> str:
@@ -275,8 +256,6 @@ async def tusd_hooks(
     payload: TusHookRequest,
     session_store: SessionStoreDep,
     service: RegistryServiceDep,
-    settings: SettingsDep,
-    tusd_hook_secret: Annotated[str | None, Header(alias=TUSD_HOOK_SECRET_HEADER)] = None,
 ) -> TusHookResponse:
     """
     Unified tusd HTTP hook endpoint.
@@ -287,8 +266,6 @@ async def tusd_hooks(
     `_handle_*` helpers above.
 
     """
-    _verify_tusd_hook_secret(settings.tusd_hook_secret, tusd_hook_secret)
-
     event_type = payload.type
 
     if event_type == TUSD_HOOK_PRE_CREATE:

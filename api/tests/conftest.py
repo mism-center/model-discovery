@@ -25,7 +25,6 @@ TEST_SETTINGS_DEFAULTS: dict[str, Any] = {
     "DATABASE_URL": "postgresql+psycopg://postgres:postgres@localhost/mism_test",
     "REDIS_URL": "redis://localhost:6379/15",
     "TUSD_BASE_URL": "http://tusd.test",
-    "TUSD_HOOK_SECRET": "test-tusd-hook-secret",
     "AUTH_MODE": "oidc",
     "OIDC_ISSUER_URL": "https://issuer.example.com",
     "OIDC_AUDIENCE": "discovery-api",

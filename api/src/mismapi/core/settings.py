@@ -47,7 +47,6 @@ class Settings(BaseSettings):
     api_prefix: str = Field(default="/api", alias="API_PATH_PREFIX")
 
     tusd_base_url: BaseUrl = Field(alias="TUSD_BASE_URL")
-    tusd_hook_secret: str = Field(alias="TUSD_HOOK_SECRET")
     upload_max_bytes: int = Field(default=1024 * 1024 * 500, alias="UPLOAD_MAX_BYTES", gt=0)
 
     # On-pod path where the iRODS PVC is mounted (see chart values.yaml ->

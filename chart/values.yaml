@@ -221,6 +221,9 @@ ingress:
   enabled: true
   className: "nginx"
   annotations: {}
+  # Keep /api/internal off the public ingress. tusd should call the gateway's
+  # ClusterIP service directly inside the cluster for /api/internal/tusd/hooks.
+  blockInternalApi: true
   host: "model-discovery.example.com"
   tls:
     enabled: false
@@ -231,8 +234,6 @@ ingress:
 # ────────────────────────────────────────────────────────────
 secrets:
   databasePassword: "changeme"
-  # Shared secret tusd must send as X-MISM-TUSD-HOOK-SECRET on hook callbacks.
-  tusdHookSecret: ""
 
 # ────────────────────────────────────────────────────────────
 # External Secrets Operator integration
@@ -254,17 +255,17 @@ networkPolicy:
   enabled: true
   ingressControllerNamespace: infra
   restrictEgress: false
-  # Allow ingress from an externally-deployed tusd to the Gateway's
+  # Allow in-cluster ingress from a separately deployed tusd to the Gateway's
   # /api/internal/tusd/hooks endpoint. tusd ships in a separate Helm chart,
-  # so we cannot detect its presence automatically — set `enabled: true`
-  # and adjust `podSelectorLabels` to match the labels the tusd chart
-  # applies to its pod template. The `app.kubernetes.io/name: tusd`
-  # default below is just a convention and MUST match whatever the tusd
-  # chart actually emits.
+  # so adjust `podSelectorLabels` to match the labels the tusd chart applies
+  # to its pod template. The `app.kubernetes.io/name: tusd` default below is
+  # just a convention and MUST match whatever the tusd chart actually emits.
   #
-  # tusd is assumed to be deployed in the same namespace as this release.
+  # tusd is assumed to be deployed in the same namespace as this release and
+  # should use the ClusterIP URL:
+  # http://discovery-gateway:8000
   tusd:
-    enabled: false
+    enabled: true
     podSelectorLabels:
       app.kubernetes.io/name: tusd
 
