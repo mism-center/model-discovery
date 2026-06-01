@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 REQUEST_VALIDATION_DETAIL_TEMPLATE = "Request validation failed for field '{field}'."
 UNKNOWN_VALIDATION_FIELD = "unknown field"
+UNPROCESSABLE_VALIDATION_ERROR_TYPES = {"enum", "literal_error"}
 
 
 class APIError(Exception):
@@ -45,11 +46,17 @@ def _normalize_error_location(raw_location: object) -> list[str]:
 
 
 def _summarize_request_validation(exc: RequestValidationError) -> ValidationFieldError:
+    status_code = 400
+    for error in exc.errors():
+        if error.get("type") in UNPROCESSABLE_VALIDATION_ERROR_TYPES:
+            status_code = 422
+            break
+
     for error in exc.errors():
         location = _normalize_error_location(error.get("loc"))
         if location:
-            return ValidationFieldError(field=location[-1])
-    return ValidationFieldError(field=UNKNOWN_VALIDATION_FIELD)
+            return ValidationFieldError(field=location[-1], status_code=status_code)
+    return ValidationFieldError(field=UNKNOWN_VALIDATION_FIELD, status_code=status_code)
 
 
 def register_exception_handlers(app: FastAPI) -> None:

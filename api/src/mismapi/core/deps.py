@@ -28,6 +28,9 @@ if TYPE_CHECKING:
     from mismapi.auth.session import SessionStore
     from mismapi.auth.session_refresh import SessionRefresher
     from mismapi.auth.validator import AuthValidator
+    from mismapi.clients.execution_client import ExecutionClient
+    from mismapi.clients.local_upload_client import LocalFileUploadClient
+    from mismapi.clients.upload_client import UploadServiceClient
 
 
 def _get_container(request: Request) -> AppContainer:
@@ -58,6 +61,16 @@ def _get_session_refresher(container: ContainerDep) -> SessionRefresher:
     return container.session_refresher
 
 
+def _get_upload_client(
+    container: ContainerDep,
+) -> UploadServiceClient | LocalFileUploadClient:
+    return container.upload_client
+
+
+def _get_execution_client(container: ContainerDep) -> ExecutionClient:
+    return container.execution_client
+
+
 def _get_registry_service(
     container: ContainerDep,
 ) -> Generator[RegistryService, None, None]:
@@ -76,4 +89,8 @@ SessionStoreDep = Annotated["SessionStore", Depends(_get_session_store)]
 AuthValidatorDep = Annotated["AuthValidator", Depends(_get_auth_validator)]
 OIDCServiceDep = Annotated["OIDCService", Depends(_get_oidc_service)]
 SessionRefresherDep = Annotated["SessionRefresher", Depends(_get_session_refresher)]
+UploadClientDep = Annotated[
+    "UploadServiceClient | LocalFileUploadClient", Depends(_get_upload_client)
+]
+ExecutionClientDep = Annotated["ExecutionClient", Depends(_get_execution_client)]
 RegistryServiceDep = Annotated[RegistryService, Depends(_get_registry_service)]

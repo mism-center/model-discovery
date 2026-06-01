@@ -42,9 +42,38 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     database_url: str = Field(alias="DATABASE_URL")
 
+    # All API + docs are mounted under this prefix so the UI can sit at "/".
+    # Use "" to mount at root; otherwise prefer a leading slash without a trailing slash.
+    api_prefix: str = Field(default="/api", alias="API_PATH_PREFIX")
+
     tusd_base_url: BaseUrl = Field(alias="TUSD_BASE_URL")
     tusd_hook_secret: str = Field(alias="TUSD_HOOK_SECRET")
     upload_max_bytes: int = Field(default=1024 * 1024 * 500, alias="UPLOAD_MAX_BYTES", gt=0)
+
+    # On-pod path where the iRODS PVC is mounted (see chart values.yaml ->
+    # irods.pvc.mountPath). Resource location_uris of the form
+    # "irods:///<rel>" or "/irods/<rel>" resolve to "{irods_mount_path}/<rel>".
+    irods_mount_path: str = Field(default="/irods", alias="IRODS_MOUNT_PATH")
+
+    upload_service_url: BaseUrl = Field(default="http://localhost:8200", alias="UPLOAD_SERVICE_URL")
+    upload_timeout_seconds: float = Field(default=60.0, alias="UPLOAD_TIMEOUT_SECONDS")
+    # "local" → write straight to the iRODS PVC (LocalFileUploadClient).
+    # "http"  → forward to a real upload service (UploadServiceClient).
+    upload_backend: Literal["local", "http"] = Field(default="local", alias="UPLOAD_BACKEND")
+
+    execution_api_url: str = Field(
+        default="http://localhost:8300",
+        alias="EXECUTION_API_URL",
+    )
+    execution_timeout_seconds: float = Field(default=120.0, alias="EXECUTION_TIMEOUT_SECONDS")
+
+    upload_chunk_size_bytes: int = Field(default=5 * 1024 * 1024, alias="UPLOAD_CHUNK_SIZE_BYTES")
+    upload_retry_max_attempts: int = Field(default=3, alias="UPLOAD_RETRY_MAX_ATTEMPTS")
+    upload_retry_backoff_seconds: float = Field(default=1.0, alias="UPLOAD_RETRY_BACKOFF_SECONDS")
+    upload_retry_trailing_buffer_bytes: int = Field(
+        default=15 * 1024 * 1024,
+        alias="UPLOAD_RETRY_TRAILING_BUFFER_BYTES",
+    )
 
     auth_mode: Literal["oidc"] = Field(default="oidc", alias="AUTH_MODE")
     disable_auth: bool = Field(default=False, alias="DISABLE_AUTH")
