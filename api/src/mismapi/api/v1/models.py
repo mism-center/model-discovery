@@ -205,7 +205,7 @@ async def update_model(
 
 
 @router.post("/models/{model_id}/upload", response_model=UploadInitiatedResponse)
-async def upload_model_file(
+async def initiate_model_file_upload(
     model_id: str,
     settings: SettingsDep,
     session_store: SessionStoreDep,
