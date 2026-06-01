@@ -29,7 +29,7 @@ class TusUpload(BaseModel):
 
     model_config = ConfigDict(extra="allow", validate_by_name=True, validate_by_alias=True)
 
-    id: str = Field(alias="ID")
+    id: str | None = Field(default=None, alias="ID")
     size: int | None = Field(default=None, alias="Size")
     offset: int = Field(default=0, alias="Offset")
     is_final: bool = Field(default=False, alias="IsFinal")

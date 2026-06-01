@@ -163,9 +163,12 @@ function createUppy(getModelName: () => string) {
       (id, i) => [id, sessions[i]] as [string, UploadInitiatedResponse]
     );
     for (const [id, s] of pairs) {
+      const file = uppy.getFile(id);
       uppy.setFileMeta(id, {
         resource_id: s.resource_id,
         upload_token: s.token,
+        filename: file?.name ?? 'upload.bin',
+        filetype: file?.type ?? '',
       });
     }
   });
