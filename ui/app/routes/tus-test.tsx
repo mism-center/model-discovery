@@ -11,6 +11,7 @@ import Dashboard from '@uppy/react/dashboard';
 import Tus from '@uppy/tus';
 import { useEffect, useRef, useState } from 'react';
 
+import type { components } from '~/api/generated/schema';
 import { resolveApiBaseUrl, resolveTusdPlaceholderUrl } from '~/utils/env';
 import '@uppy/core/css/style.min.css';
 import '@uppy/dashboard/css/style.min.css';
@@ -24,9 +25,9 @@ type UploadInitiatedResponse = {
   token: string;
 };
 
-type CreatedModelResponse = {
-  id: string;
-};
+type ModelListItem = components['schemas']['ModelListItem'];
+type ModelListResponse = components['schemas']['ModelListResponse'];
+type ModelResponse = Pick<ModelListItem, 'id' | 'name'>;
 
 function apiOrigin(): string {
   return resolveApiBaseUrl().replace(/\/+$/, '');
@@ -63,7 +64,35 @@ async function readApiErrorDetail(
   return detail || `${fallbackMessage} (${res.status})`;
 }
 
-async function createModel(modelName: string): Promise<CreatedModelResponse> {
+async function findModelByName(
+  modelName: string
+): Promise<ModelResponse | null> {
+  const limit = 100;
+  let offset = 0;
+
+  while (true) {
+    const params = new URLSearchParams({
+      name: modelName,
+      limit: String(limit),
+      offset: String(offset),
+    });
+    const url = `${apiOrigin()}/api/v1/models?${params.toString()}`;
+    const res = await fetch(url, { credentials: 'include' });
+
+    if (!res.ok) {
+      throw new Error(await readApiErrorDetail(res, 'Model lookup failed'));
+    }
+
+    const payload = (await res.json()) as ModelListResponse;
+    const match = payload.results.find((model) => model.name === modelName);
+    if (match) return match;
+
+    offset += payload.results.length;
+    if (offset >= payload.total || payload.results.length === 0) return null;
+  }
+}
+
+async function createModel(modelName: string): Promise<ModelResponse> {
   const url = `${apiOrigin()}/api/v1/models`;
   const res = await fetch(url, {
     method: 'POST',
@@ -81,7 +110,14 @@ async function createModel(modelName: string): Promise<CreatedModelResponse> {
     throw new Error(await readApiErrorDetail(res, 'Model creation failed'));
   }
 
-  return res.json() as Promise<CreatedModelResponse>;
+  return res.json() as Promise<ModelResponse>;
+}
+
+async function findOrCreateModel(modelName: string): Promise<ModelResponse> {
+  const existingModel = await findModelByName(modelName);
+  if (existingModel) return existingModel;
+
+  return createModel(modelName);
 }
 
 async function initiateModelUpload(
@@ -148,10 +184,10 @@ function createUppy(getModelName: () => string) {
       | { setOptions: (opts: { endpoint: string }) => void }
       | undefined;
 
-    const createdModel = await createModel(modelName);
+    const model = await findOrCreateModel(modelName);
 
     const sessions = await Promise.all(
-      fileIDs.map(() => initiateModelUpload(createdModel.id))
+      fileIDs.map(() => initiateModelUpload(model.id))
     );
 
     const endpoint = tusEndpointFromServerBase(
@@ -293,7 +329,9 @@ export default function TusTest() {
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold">Tus Upload Test</h1>
         <p className="text-sm text-default-500">
-          Flow: <code>POST {apiOrigin()}/api/v1/models</code> (create model) →{' '}
+          Flow: <code>GET {apiOrigin()}/api/v1/models?name=&lt;name&gt;</code>{' '}
+          (reuse exact name match if found) → otherwise{' '}
+          <code>POST {apiOrigin()}/api/v1/models</code> (create model) →{' '}
           <code>POST {apiOrigin()}/api/v1/models/&lt;model-id&gt;/upload</code>{' '}
           (session cookie) → tus endpoint + <code>resource_id</code> + one-time{' '}
           <code>upload_token</code> on each tus create, matching gateway{' '}
@@ -305,10 +343,10 @@ export default function TusTest() {
         <CardBody className="flex flex-col gap-3">
           <Input
             label="Model name"
-            placeholder="Name for the model to create"
+            placeholder="Name for the model to reuse or create"
             value={modelName}
             onValueChange={setModelName}
-            description="Required before upload. The page first creates a model, then requests upload tokens for that created model."
+            description="Required before upload. The page reuses an existing exact-name match when found; otherwise it creates a model before requesting upload tokens."
           />
         </CardBody>
       </Card>
@@ -319,7 +357,7 @@ export default function TusTest() {
             <Dashboard
               uppy={uppy}
               proudlyDisplayPoweredByUppy={false}
-              note="Add files, enter a model name, then Upload. The page creates the model first, then sets resource_id and upload_token from the gateway right before tus runs."
+              note="Add files, enter a model name, then Upload. The page reuses or creates the model, then sets resource_id and upload_token from the gateway right before tus runs."
               height={420}
             />
           ) : (

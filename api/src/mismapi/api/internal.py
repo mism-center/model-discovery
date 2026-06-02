@@ -194,7 +194,7 @@ async def _handle_pre_create(
     storage_mount_path: str,
 ) -> TusHookResponse:
     """
-    Return a successful `HookResponse` when the principal owns the model.
+    Return a successful `HookResponse` when the principal owns the model, the
 
     Expected auth/validation failures are represented as tus-native
     `RejectUpload` responses. That keeps the hook HTTP status 2xx so tusd can
@@ -212,6 +212,7 @@ async def _handle_pre_create(
             detail="Upload token is missing.",
         )
 
+    # Extract resource ID and filename from the payload
     try:
         resource_id = _extract_resource_id(payload)
         filename = _extract_sanitized_filename(payload)
@@ -223,6 +224,7 @@ async def _handle_pre_create(
             detail=exc.detail,
         )
 
+    # Verify the upload token and extract claims
     try:
         claims: UploadTokenClaims = await session_store.consume_upload_token(upload_token)
     except APIError as exc:
@@ -239,6 +241,8 @@ async def _handle_pre_create(
         audience="discovery-api",
         scopes=set(),
     )
+
+    # Verify the file size is within the allowed limit
     if payload.event.upload.size is None or (payload.event.upload.size > claims.max_bytes):
         return _reject_upload(
             upload_id=upload_id,
@@ -247,6 +251,7 @@ async def _handle_pre_create(
             detail="Upload exceeds permitted size",
         )
 
+    # Verify the upload path is allowed (must be under the correct resource ID)
     if not _check_allowed_path(claims, resource_id, upload_id):
         return _reject_upload(
             upload_id=upload_id,
