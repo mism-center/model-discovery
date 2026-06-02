@@ -1,17 +1,19 @@
 import logging
 import time
 
+import jwt
 from authlib.integrations.base_client.errors import MismatchingStateError
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 
+from mismapi.auth.base import AuthenticatedPrincipalDep
 from mismapi.core.deps import (
     OIDCServiceDep,
     SessionStoreDep,
     SettingsDep,
 )
 from mismapi.core.errors import APIError
-from mismapi.schemas.auth import OidcSessionRecord
+from mismapi.schemas.auth import CurrentUser, LogoutResponse, OidcSessionRecord
 from mismapi.utils import merge_query_params
 
 logger = logging.getLogger(__name__)
@@ -96,13 +98,54 @@ async def callback(
     return response
 
 
+@router.get("/me")
+async def me(
+    request: Request,
+    principal: AuthenticatedPrincipalDep,
+    settings: SettingsDep,
+    session_store: SessionStoreDep,
+) -> CurrentUser:
+    """Return the current authenticated user."""
+    claims: dict[str, object] = {}
+    session_id = request.cookies.get(settings.session_cookie_name)
+    if session_id:
+        session_data = await session_store.get(session_id)
+        if session_data and session_data.id_token:
+            try:
+                claims = jwt.decode(
+                    session_data.id_token,
+                    options={"verify_signature": False},
+                )
+            except jwt.InvalidTokenError:
+                claims = {}
+
+    def _str_or_none(value: object) -> str | None:
+        return value if isinstance(value, str) and value else None
+
+    return CurrentUser(
+        sub=principal.subject,
+        iss=principal.issuer,
+        scopes=sorted(principal.scopes),
+        email=_str_or_none(claims.get("email")),
+        name=_str_or_none(claims.get("name")),
+        preferred_username=_str_or_none(claims.get("preferred_username")),
+    )
+
+
 @router.post("/logout")
 async def logout(
     request: Request,
+    response: Response,
     settings: SettingsDep,
     session_store: SessionStoreDep,
     oidc_service: OIDCServiceDep,
-) -> Response:
+) -> LogoutResponse:
+    """Clear the local session and surface the IdP end-session URL if any.
+
+    Always returns JSON so the UI can decide whether to navigate top-level
+    to the IdP. Avoids cross-origin redirect responses that `fetch` can't
+    read.
+    """
     session_id = request.cookies.get(settings.session_cookie_name)
     id_token_hint = ""
     if session_id:
@@ -111,18 +154,14 @@ async def logout(
             id_token_hint = session_data.id_token or session_data.access_token or ""
         await session_store.delete(session_id)
 
-    def _cleared_cookie_response(resp: Response) -> Response:
-        resp.delete_cookie(
-            key=settings.session_cookie_name,
-            httponly=True,
-            secure=settings.production_mode,
-            samesite="lax",
-        )
-        return resp
-
+    end_session_url: str | None = None
     if id_token_hint:
-        logout_url = await oidc_service.build_end_session_url(id_token_hint=id_token_hint)
-        if logout_url is not None:
-            return _cleared_cookie_response(RedirectResponse(url=logout_url, status_code=302))
+        end_session_url = await oidc_service.build_end_session_url(id_token_hint=id_token_hint)
 
-    return _cleared_cookie_response(JSONResponse(content={"status": "logged_out"}))
+    response.delete_cookie(
+        key=settings.session_cookie_name,
+        httponly=True,
+        secure=settings.production_mode,
+        samesite="lax",
+    )
+    return LogoutResponse(end_session_url=end_session_url)

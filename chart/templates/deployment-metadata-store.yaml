@@ -36,6 +36,8 @@ spec:
                 secretKeyRef:
                   name: model-discovery-secrets
                   key: databasePassword
+            - name: PGDATA
+              value: {{ .Values.metadataStore.pgData }}
           livenessProbe:
             exec:
               command:

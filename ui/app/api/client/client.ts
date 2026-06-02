@@ -3,15 +3,26 @@ import createClient, { type Middleware } from 'openapi-fetch';
 import type { paths } from '~/api/generated/schema';
 import { ApiError } from './errors';
 
-const DEFAULT_BASE_URL =
-  import.meta.env?.VITE_API_BASE_URL ?? 'https://mism-discovery.apps.renci.org';
+const BROWSER_BASE_URL = '';
+
+export function resolveServerBaseUrl(): string {
+  const url = process.env.API_BASE_URL;
+  if (!url) {
+    throw new Error(
+      'API_BASE_URL is not set. Provide the in-cluster gateway origin for ' +
+        'SSR fetches (e.g. http://localhost:8000 locally, ' +
+        'http://discovery-gateway:8000 in cluster).'
+    );
+  }
+  return url.replace(/\/$/, '');
+}
 
 /**
  * Normalize non-2xx responses into `ApiError` so call sites don't have to
  * branch on `{ data, error }` from openapi-fetch for error handling.
  * Successful responses pass through untouched.
  */
-const errorMiddleware: Middleware = {
+export const errorMiddleware: Middleware = {
   async onResponse({ response, request }) {
     if (response.ok) return;
 
@@ -30,9 +41,9 @@ const errorMiddleware: Middleware = {
 };
 
 export const apiClient = createClient<paths>({
-  baseUrl: DEFAULT_BASE_URL,
-  // Ready for cookie-based auth the day it lands; harmless for anonymous
-  // requests to the search endpoint.
+  baseUrl: BROWSER_BASE_URL,
+  // Browser sends cookies for same-origin (proxy / shared ingress) and
+  // cross-origin (if CORS allow_credentials is configured).
   credentials: 'include',
 });
 

@@ -75,14 +75,14 @@ export const FACETS: readonly FacetConfig[] = [
     termsOp: 'in',
     resourceTypes: ['model', 'dataset'],
   },
-  {
-    id: 'license',
-    field: 'license',
-    label: 'License',
-    widget: 'terms',
-    termsOp: 'in',
-    resourceTypes: ['model', 'dataset'],
-  },
+  // {
+  //   id: 'license',
+  //   field: 'license',
+  //   label: 'License',
+  //   widget: 'terms',
+  //   termsOp: 'in',
+  //   resourceTypes: ['model', 'dataset'],
+  // },
   {
     id: 'created_at',
     field: 'created_at',

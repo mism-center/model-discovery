@@ -1,16 +1,15 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 
 from mismapi.api.auth import router as auth_router
 from mismapi.api.v1.datasets import router as datasets_router
 from mismapi.api.v1.models import router as models_router
 from mismapi.api.v1.search import router as search_router
 from mismapi.api.v1.upload_files import router as upload_files_router
-from mismapi.auth.base import require_principal
 
 
 def build_api_router() -> APIRouter:
     api_router = APIRouter(prefix="/api")
-    v1_router = APIRouter(prefix="/v1", dependencies=[Depends(require_principal)])
+    v1_router = APIRouter(prefix="/v1")
     v1_router.include_router(models_router, tags=["Models"])
     v1_router.include_router(datasets_router, tags=["Datasets"])
     v1_router.include_router(search_router, tags=["Search"])

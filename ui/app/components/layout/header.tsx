@@ -10,6 +10,7 @@ import {
   DropdownItem,
   Button,
   Input,
+  Skeleton,
   type DropdownItemProps,
   extendVariants,
 } from '@heroui/react';
@@ -26,6 +27,8 @@ import {
   ChevronDownIcon,
   MagnifyingGlassIcon,
 } from '@heroicons/react/16/solid';
+
+import { signIn, signOut, useUser, type CurrentUser } from '~/api/auth/user';
 
 interface NavbarDropdownItemProps extends DropdownItemProps {
   isActive?: boolean;
@@ -116,6 +119,82 @@ function HeaderSearchBar() {
   );
 }
 
+function displayName(user: CurrentUser): string {
+  return user.name || user.preferred_username || user.email || user.sub;
+}
+
+function HeaderAuth() {
+  const { user, isLoading } = useUser();
+
+  if (isLoading && user === null) {
+    return <Skeleton className="rounded-md h-8 w-20" />;
+  }
+
+  if (!user) {
+    return (
+      <Button
+        size="sm"
+        variant="flat"
+        className={cn(
+          'h-8 px-3 py-2 rounded-md shrink-0',
+          'bg-white border border-white/25 text-primary',
+          'hover:bg-white/90 opacity-100! transition-colors duration-200',
+          'text-[13px] font-bold'
+        )}
+        onPress={() => signIn()}
+      >
+        Sign in
+      </Button>
+    );
+  }
+
+  const name = displayName(user);
+
+  return (
+    <Dropdown placement="bottom-end" radius="sm">
+      <DropdownTrigger>
+        <Button
+          size="sm"
+          variant="flat"
+          endContent={<ChevronDownIcon className="size-4 -mr-1" />}
+          className={cn(
+            'h-8 px-3 py-2 rounded-md shrink-0',
+            'bg-white/10 border border-white/20 text-white',
+            'hover:bg-white/15 opacity-100! transition-colors duration-200',
+            'text-[13px] font-semibold'
+          )}
+        >
+          {name}
+        </Button>
+      </DropdownTrigger>
+      <DropdownMenu aria-label="Account menu">
+        {user.email ? (
+          <DropdownItem
+            key="email"
+            isReadOnly
+            className="opacity-100 cursor-default"
+            textValue={user.email}
+          >
+            <div className="text-xs text-default-500">Signed in as</div>
+            <div className="text-sm font-medium text-default-900">
+              {user.email}
+            </div>
+          </DropdownItem>
+        ) : null}
+        <DropdownItem
+          key="signout"
+          color="danger"
+          onPress={() => {
+            void signOut();
+          }}
+        >
+          Sign out
+        </DropdownItem>
+      </DropdownMenu>
+    </Dropdown>
+  );
+}
+
 export function Header() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
@@ -198,9 +277,9 @@ export function Header() {
           </NavLink>
         </NavbarItem>
       </NavbarContent>
-      {isSearchActive && (
-        <NavbarContent justify="end" className="flex-1">
-          <NavbarItem className="flex justify-end w-full">
+      <NavbarContent justify="end" className="flex-1 gap-2">
+        {isSearchActive && (
+          <NavbarItem className="flex justify-end flex-1">
             <div
               className="grid"
               style={{
@@ -215,8 +294,11 @@ export function Header() {
               </div>
             </div>
           </NavbarItem>
-        </NavbarContent>
-      )}
+        )}
+        <NavbarItem>
+          <HeaderAuth />
+        </NavbarItem>
+      </NavbarContent>
     </Navbar>
   );
 }

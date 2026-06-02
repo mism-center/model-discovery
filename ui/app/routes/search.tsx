@@ -1,5 +1,6 @@
 import { HydrationBoundary, dehydrate } from '@tanstack/react-query';
 
+import { serverApiClient } from '~/api/client/server-client';
 import { getQueryClient } from '~/api/query/query-client';
 import SearchSection from '~/components/sections/search/search';
 import { searchQueryOptions } from '~/search/query/search-query';
@@ -29,7 +30,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   const state = searchStateFromParams(url.searchParams);
 
   const queryClient = getQueryClient();
-  await queryClient.prefetchQuery(searchQueryOptions(state));
+  await queryClient.prefetchQuery(
+    searchQueryOptions(state, serverApiClient(request))
+  );
 
   return { dehydratedState: dehydrate(queryClient) };
 }
