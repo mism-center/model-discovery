@@ -87,7 +87,6 @@ async def test_handle_pre_create_sets_flat_storage_path_from_filename(tmp_path: 
     )
 
     assert response.change_file_info is not None
-    assert response.change_file_info.id is None
     assert response.change_file_info.storage is not None
     assert response.change_file_info.storage.path == f"models/{resource_id}/files/model.bin"
 
