@@ -107,11 +107,6 @@ def _reject_upload(*, upload_id: str, status_code: int, code: str, detail: str) 
     )
 
 
-def _upload_file_path(resource_id: str, filename: str) -> str:
-    base_path = UPLOAD_ALLOWED_PATH_TEMPLATE.format(resource_id=resource_id)
-    return f"{base_path}/{filename}"
-
-
 def _extract_sanitized_filename(payload: TusHookRequest) -> str:
     raw_filename = payload.event.upload.metadata.get(FILENAME_METADATA_KEY, "").strip()
     if not raw_filename:
@@ -272,7 +267,8 @@ async def _handle_pre_create(
             detail=exc.detail,
         )
 
-    upload_file_path = _upload_file_path(resource_id, filename)
+    base_file_dir = UPLOAD_ALLOWED_PATH_TEMPLATE.format(resource_id=resource_id)
+    upload_file_path = f"{base_file_dir}/{filename}"
     try:
         _assert_upload_file_does_not_exist(storage_mount_path, upload_file_path)
     except APIError as exc:
@@ -293,6 +289,7 @@ async def _handle_pre_create(
 
     return TusHookResponse(
         ChangeFileInfo=FileInfoChanges(
+            ID=base_file_dir,
             Storage=Storage(Path=upload_file_path),
         )
     )
