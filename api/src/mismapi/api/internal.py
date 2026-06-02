@@ -195,6 +195,8 @@ async def _handle_pre_create(
 ) -> TusHookResponse:
     """
     Return a successful `HookResponse` when the principal owns the model, the
+    file is within the allowed number of bytes, the upload token is valid, and
+    the file path is within the allowed file path from the upload token.
 
     Expected auth/validation failures are represented as tus-native
     `RejectUpload` responses. That keeps the hook HTTP status 2xx so tusd can
