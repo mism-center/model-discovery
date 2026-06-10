@@ -7,6 +7,7 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import RedirectResponse
 
 from mismapi.auth.base import AuthenticatedPrincipalDep
+from mismapi.auth.return_to import DEFAULT_LANDING_PATH, resolve_return_to
 from mismapi.core.deps import (
     OIDCServiceDep,
     SessionStoreDep,
@@ -28,8 +29,14 @@ AUTH_ERROR_DESCRIPTION_MAX_LEN = 120
 async def login(
     request: Request,
     oidc_service: OIDCServiceDep,
+    return_to_key: str = "",
+    return_to_query: str = "",
 ) -> RedirectResponse:
-    return await oidc_service.authorize_redirect(request)
+    return await oidc_service.authorize_redirect(
+        request,
+        return_to_key=return_to_key or None,
+        return_to_query=return_to_query or None,
+    )
 
 
 @router.get("/callback")
@@ -41,6 +48,8 @@ async def callback(
     code: str = "",
     state: str = "",
 ) -> RedirectResponse:
+    return_to_key, return_to_query = await oidc_service.pop_return_to(request)
+
     idp_error = request.query_params.get("error")
     if idp_error:
         raw_desc = request.query_params.get("error_description") or ""
@@ -53,7 +62,7 @@ async def callback(
         params: dict[str, str] = {"auth_error": idp_error}
         if desc_trunc:
             params["auth_error_description"] = desc_trunc
-        base = settings.oidc_post_login_redirect_uri or LOGIN_PATH
+        base = settings.oidc_post_login_redirect_uri or DEFAULT_LANDING_PATH
         return RedirectResponse(url=merge_query_params(base, params), status_code=302)
 
     if not code or not state:
@@ -83,10 +92,11 @@ async def callback(
         )
     )
 
-    response = RedirectResponse(
-        url=settings.oidc_post_login_redirect_uri or LOGIN_PATH,
-        status_code=302,
-    )
+    if return_to_key:
+        landing = resolve_return_to(return_to_key, return_to_query)
+    else:
+        landing = settings.oidc_post_login_redirect_uri or DEFAULT_LANDING_PATH
+    response = RedirectResponse(url=landing, status_code=302)
     response.set_cookie(
         key=settings.session_cookie_name,
         value=session_id,

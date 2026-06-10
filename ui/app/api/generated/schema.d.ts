@@ -38,26 +38,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/auth/me': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Me
-     * @description Return the current authenticated user.
-     */
-    get: operations['me_api_auth_me_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/api/auth/logout': {
     parameters: {
       query?: never;
@@ -67,14 +47,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /**
-     * Logout
-     * @description Clear the local session and surface the IdP end-session URL if any.
-     *
-     *     Always returns JSON so the UI can decide whether to navigate top-level
-     *     to the IdP. Avoids cross-origin redirect responses that `fetch` can't
-     *     read.
-     */
+    /** Logout */
     post: operations['logout_api_auth_logout_post'];
     delete?: never;
     options?: never;
@@ -124,10 +97,19 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    /**
+     * List Model Runs
+     * @description Fetch all runs for a model, enriched with hydrated input/output resources.
+     *
+     *     Designed to populate the UI's "Model Runs" page in a single call.
+     */
+    get: operations['list_model_runs_api_v1_models__model_id__runs_get'];
     put?: never;
-    /** Create Run */
-    post: operations['create_run_api_v1_models__model_id__runs_post'];
+    /**
+     * Execute Run
+     * @description Create a run and immediately trigger execution on the Execution API.
+     */
+    post: operations['execute_run_api_v1_models__model_id__runs_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -169,6 +151,95 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/runs/{run_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Run
+     * @description Fetch a run by id, optionally refreshing status via the Execution service.
+     *
+     *     Order matters when refresh=true:
+     *       1. Call Execution API → it performs a lazy status check and writes the
+     *          updated state into the DAL.
+     *       2. Read the Run record from the DAL → now reflects the latest status.
+     *
+     *     If the Execution call fails we surface the error to the caller; if it
+     *     times out the client gets a 504 (see ExecutionClient.get_status).
+     */
+    get: operations['get_run_api_v1_runs__run_id__get'];
+    put?: never;
+    post?: never;
+    /**
+     * Cancel Run
+     * @description Cancel a run by proxying DELETE to the Execution service.
+     *
+     *     Order matters:
+     *       1. Call Execution API DELETE → it stops the run and updates DAL status
+     *          to CANCELLED.
+     *       2. Read the now-updated Run record from the DAL → reflects the cancel.
+     *
+     *     Returns the same shape as GET /runs/{run_id} so the UI can swap-in the
+     *     response without a second round-trip.
+     */
+    delete: operations['cancel_run_api_v1_runs__run_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/resources/{resource_id}/files': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Resource Files
+     * @description List every file in the resource's artifact directory.
+     */
+    get: operations['list_resource_files_api_v1_resources__resource_id__files_get'];
+    put?: never;
+    /**
+     * Upload Resource File
+     * @description Upload a file artifact for any resource (model, dataset, tool, …).
+     *
+     *     The path is scoped by ``resource_id`` so the same flow handles every
+     *     registry resource type. The configured upload backend (`UPLOAD_BACKEND=local`
+     *     writes to the iRODS PVC; `UPLOAD_BACKEND=http` forwards to the upload
+     *     service) is selected at app startup; the route is backend-agnostic.
+     */
+    post: operations['upload_resource_file_api_v1_resources__resource_id__files_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/resources/{resource_id}/download': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Download Resource
+     * @description Download artifacts for a resource — single file or whole directory zip.
+     */
+    get: operations['download_resource_api_v1_resources__resource_id__download_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/search': {
     parameters: {
       query?: never;
@@ -183,23 +254,6 @@ export interface paths {
      * @description Full-text search across models and datasets with filters and aggregations.
      */
     post: operations['search_resources_api_v1_search_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/models/{model_id}/files': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Upload Model File */
-    post: operations['upload_model_file_api_v1_models__model_id__files_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -239,13 +293,36 @@ export interface components {
       /** Buckets */
       buckets: components['schemas']['AggBucketDTO'][];
     };
-    /** Body_upload_model_file_api_v1_models__model_id__files_post */
-    Body_upload_model_file_api_v1_models__model_id__files_post: {
+    /** AuthorDTO */
+    AuthorDTO: {
+      /** Name */
+      name: string;
+      /**
+       * Orcid
+       * @default
+       */
+      orcid: string;
+      /**
+       * Affiliation
+       * @default
+       */
+      affiliation: string;
+      /**
+       * Role
+       * @default
+       */
+      role: string;
+    };
+    /** Body_upload_resource_file_api_v1_resources__resource_id__files_post */
+    Body_upload_resource_file_api_v1_resources__resource_id__files_post: {
       /** File */
       file: string;
     };
-    /** CreateRunRequest */
-    CreateRunRequest: {
+    /**
+     * ExecuteRunRequest
+     * @description Create a run AND trigger execution on the Execution API.
+     */
+    ExecuteRunRequest: {
       /** Input Resource Ids */
       input_resource_ids?: string[];
       /** Parameters */
@@ -262,9 +339,18 @@ export interface components {
        * @default
        */
       notes: string;
+      /**
+       * Mode
+       * @default batch
+       * @enum {string}
+       */
+      mode: 'batch' | 'interactive';
     };
-    /** CreateRunResponse */
-    CreateRunResponse: {
+    /**
+     * ExecuteRunResponse
+     * @description Combined response: run record + execution launch result.
+     */
+    ExecuteRunResponse: {
       /** Id */
       id: string;
       /** Model Id */
@@ -283,24 +369,13 @@ export interface components {
        * Format: date-time
        */
       created_at: string;
-    };
-    /**
-     * CurrentUser
-     * @description Authenticated user view returned by ``GET /api/auth/me``.
-     */
-    CurrentUser: {
-      /** Sub */
-      sub: string;
-      /** Iss */
-      iss: string;
-      /** Scopes */
-      scopes: string[];
-      /** Email */
-      email?: string | null;
-      /** Name */
-      name?: string | null;
-      /** Preferred Username */
-      preferred_username?: string | null;
+      /**
+       * Execution
+       * @description Raw response from the Execution API (batch or interactive).
+       */
+      execution?: {
+        [key: string]: unknown;
+      };
     };
     /**
      * ExecutionType
@@ -320,21 +395,34 @@ export interface components {
       /** Detail */
       detail?: components['schemas']['ValidationError'][];
     };
-    /**
-     * LogoutResponse
-     * @description Result of ``POST /api/auth/logout``.
-     *
-     *     ``end_session_url`` is the IdP's RP-initiated-logout URL when the
-     *     configured OIDC provider exposes one. The UI is expected to navigate
-     *     top-level to this URL so the IdP can clear its own session; when ``None``
-     *     the local session has already been cleared and no further action is
-     *     required.
-     */
-    LogoutResponse: {
-      /** End Session Url */
-      end_session_url?: string | null;
+    /** IOSlotDTO */
+    IOSlotDTO: {
+      /** Name */
+      name: string;
+      /** Tags */
+      tags?: string[];
+      /**
+       * Required
+       * @default true
+       */
+      required: boolean;
+      /**
+       * Description
+       * @default
+       */
+      description: string;
     };
-    ModelId: string;
+    /** IOSpecDTO */
+    IOSpecDTO: {
+      /** Inputs */
+      inputs?: components['schemas']['IOSlotDTO'][];
+      /** Outputs */
+      outputs?: components['schemas']['IOSlotDTO'][];
+      /** Parameters Schema */
+      parameters_schema?: {
+        [key: string]: unknown;
+      } | null;
+    };
     /** ModelListItem */
     ModelListItem: {
       /** Id */
@@ -345,8 +433,11 @@ export interface components {
       resource_type: string;
       /** Location Uri */
       location_uri: string;
-      /** Execution Type */
-      execution_type?: string | null;
+      /**
+       * Description
+       * @default
+       */
+      description: string;
       /**
        * Version
        * @default
@@ -359,16 +450,70 @@ export interface components {
        * @default
        */
       owner: string;
+      /** Execution Type */
+      execution_type?: string | null;
+      /** Format Tags */
+      format_tags?: string[];
+      /** Authors */
+      authors?: components['schemas']['AuthorDTO'][];
       /**
-       * Description
+       * Organization
        * @default
        */
-      description: string;
+      organization: string;
+      /**
+       * Contact Email
+       * @default
+       */
+      contact_email: string;
+      /** Publications */
+      publications?: components['schemas']['PublicationDTO'][];
+      /** Funding */
+      funding?: string[];
+      /** Modeling Scales */
+      modeling_scales?: string[];
+      /** Organisms */
+      organisms?: string[];
+      /** Domains */
+      domains?: string[];
+      /** Date Published */
+      date_published?: string | null;
+      /**
+       * Digest Sha256
+       * @default
+       */
+      digest_sha256: string;
+      /** Size Bytes */
+      size_bytes?: number | null;
+      /** External Ids */
+      external_ids?: {
+        [key: string]: string;
+      };
+      /**
+       * License
+       * @default
+       */
+      license: string;
+      /**
+       * Execution Ref
+       * @default
+       */
+      execution_ref: string;
+      io_spec?: components['schemas']['IOSpecDTO'] | null;
+      /** Metadata */
+      metadata?: {
+        [key: string]: unknown;
+      };
       /**
        * Created At
        * Format: date-time
        */
       created_at: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
     };
     /** ModelListResponse */
     ModelListResponse: {
@@ -377,8 +522,90 @@ export interface components {
       /** Results */
       results: components['schemas']['ModelListItem'][];
     };
+    /**
+     * ModelRunDetailItem
+     * @description A run enriched with hydrated input and output resources.
+     */
+    ModelRunDetailItem: {
+      run: components['schemas']['RunDetailItem'];
+      /** Input Resources */
+      input_resources?: components['schemas']['ResourceSummaryItem'][];
+      /** Output Resources */
+      output_resources?: components['schemas']['ResourceSummaryItem'][];
+    };
+    /**
+     * ModelRunDetailsResponse
+     * @description All runs for a model, with the model summary and hydrated run details.
+     */
+    ModelRunDetailsResponse: {
+      model: components['schemas']['ResourceSummaryItem'];
+      /** Runs */
+      runs?: components['schemas']['ModelRunDetailItem'][];
+      /** Total */
+      total: number;
+    };
+    /** PublicationDTO */
+    PublicationDTO: {
+      /** Title */
+      title: string;
+      /**
+       * Doi
+       * @default
+       */
+      doi: string;
+      /**
+       * Url
+       * @default
+       */
+      url: string;
+      /**
+       * Citation
+       * @default
+       */
+      citation: string;
+    };
     /** RegisterDatasetRequest */
     RegisterDatasetRequest: {
+      /**
+       * Digest Sha256
+       * @default
+       */
+      digest_sha256: string;
+      /** Size Bytes */
+      size_bytes?: number | null;
+      /** External Ids */
+      external_ids?: {
+        [key: string]: string;
+      };
+      /**
+       * License
+       * @default
+       */
+      license: string;
+      /** Modeling Scales */
+      modeling_scales?: string[];
+      /** Organisms */
+      organisms?: string[];
+      /** Domains */
+      domains?: string[];
+      /** Date Published */
+      date_published?: string | null;
+      /** Authors */
+      authors?: components['schemas']['AuthorDTO'][];
+      /**
+       * Organization
+       * @default
+       */
+      organization: string;
+      /**
+       * Contact Email
+       * @default
+       */
+      contact_email: string;
+      /** Publications */
+      publications?: components['schemas']['PublicationDTO'][];
+      /** Funding */
+      funding?: string[];
       /** Name */
       name: string;
       /** Location Uri */
@@ -434,19 +661,111 @@ export interface components {
       owner: string;
       /** Format Tags */
       format_tags?: string[];
+      /** Authors */
+      authors?: components['schemas']['AuthorDTO'][];
+      /**
+       * Organization
+       * @default
+       */
+      organization: string;
+      /**
+       * Contact Email
+       * @default
+       */
+      contact_email: string;
+      /** Publications */
+      publications?: components['schemas']['PublicationDTO'][];
+      /** Funding */
+      funding?: string[];
+      /** Modeling Scales */
+      modeling_scales?: string[];
+      /** Organisms */
+      organisms?: string[];
+      /** Domains */
+      domains?: string[];
+      /** Date Published */
+      date_published?: string | null;
+      /**
+       * Digest Sha256
+       * @default
+       */
+      digest_sha256: string;
+      /** Size Bytes */
+      size_bytes?: number | null;
+      /** External Ids */
+      external_ids?: {
+        [key: string]: string;
+      };
+      /**
+       * License
+       * @default
+       */
+      license: string;
+      /** Metadata */
+      metadata?: {
+        [key: string]: unknown;
+      };
       /**
        * Created At
        * Format: date-time
        */
       created_at: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
     };
     /** RegisterModelRequest */
     RegisterModelRequest: {
+      /**
+       * Digest Sha256
+       * @default
+       */
+      digest_sha256: string;
+      /** Size Bytes */
+      size_bytes?: number | null;
+      /** External Ids */
+      external_ids?: {
+        [key: string]: string;
+      };
+      /**
+       * License
+       * @default
+       */
+      license: string;
+      /** Modeling Scales */
+      modeling_scales?: string[];
+      /** Organisms */
+      organisms?: string[];
+      /** Domains */
+      domains?: string[];
+      /** Date Published */
+      date_published?: string | null;
+      /** Authors */
+      authors?: components['schemas']['AuthorDTO'][];
+      /**
+       * Organization
+       * @default
+       */
+      organization: string;
+      /**
+       * Contact Email
+       * @default
+       */
+      contact_email: string;
+      /** Publications */
+      publications?: components['schemas']['PublicationDTO'][];
+      /** Funding */
+      funding?: string[];
       /** Name */
       name: string;
       /** Location Uri */
       location_uri: string;
       execution_type: components['schemas']['ExecutionType'];
+      /** Execution Ref */
+      execution_ref?: string | null;
+      io_spec?: components['schemas']['IOSpecDTO'] | null;
       /**
        * Description
        * @default
@@ -457,6 +776,8 @@ export interface components {
        * @default
        */
       version: string;
+      /** Format Tags */
+      format_tags?: string[];
       /**
        * Owner
        * @default
@@ -477,8 +798,11 @@ export interface components {
       resource_type: string;
       /** Location Uri */
       location_uri: string;
-      /** Execution Type */
-      execution_type?: string | null;
+      /**
+       * Description
+       * @default
+       */
+      description: string;
       /**
        * Version
        * @default
@@ -491,17 +815,286 @@ export interface components {
        * @default
        */
       owner: string;
+      /** Execution Type */
+      execution_type?: string | null;
+      /**
+       * Execution Ref
+       * @default
+       */
+      execution_ref: string;
+      io_spec?: components['schemas']['IOSpecDTO'] | null;
+      /** Format Tags */
+      format_tags?: string[];
+      /** Authors */
+      authors?: components['schemas']['AuthorDTO'][];
+      /**
+       * Organization
+       * @default
+       */
+      organization: string;
+      /**
+       * Contact Email
+       * @default
+       */
+      contact_email: string;
+      /** Publications */
+      publications?: components['schemas']['PublicationDTO'][];
+      /** Funding */
+      funding?: string[];
+      /** Modeling Scales */
+      modeling_scales?: string[];
+      /** Organisms */
+      organisms?: string[];
+      /** Domains */
+      domains?: string[];
+      /** Date Published */
+      date_published?: string | null;
+      /**
+       * Digest Sha256
+       * @default
+       */
+      digest_sha256: string;
+      /** Size Bytes */
+      size_bytes?: number | null;
+      /** External Ids */
+      external_ids?: {
+        [key: string]: string;
+      };
+      /**
+       * License
+       * @default
+       */
+      license: string;
+      /** Metadata */
+      metadata?: {
+        [key: string]: unknown;
+      };
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
+    /**
+     * ResourceFileItem
+     * @description One entry in a resource's artifact directory.
+     */
+    ResourceFileItem: {
+      /**
+       * Path
+       * @description Relative path from the resource directory root.
+       */
+      path: string;
+      /**
+       * Name
+       * @description Final path segment (basename).
+       */
+      name: string;
+      /** Size Bytes */
+      size_bytes: number;
+      /**
+       * Is Dir
+       * @default false
+       */
+      is_dir: boolean;
+      /** Modified At */
+      modified_at?: string | null;
+    };
+    /**
+     * ResourceFilesResponse
+     * @description Listing of files for a resource.
+     */
+    ResourceFilesResponse: {
+      /** Resource Id */
+      resource_id: string;
+      /** Location Uri */
+      location_uri: string;
+      /** Files */
+      files?: components['schemas']['ResourceFileItem'][];
+      /** Total */
+      total: number;
+    };
+    /**
+     * ResourceSummaryItem
+     * @description Lightweight summary of a Resource for embedding inside run detail responses.
+     */
+    ResourceSummaryItem: {
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+      /** Resource Type */
+      resource_type: string;
+      /** Location Uri */
+      location_uri: string;
       /**
        * Description
        * @default
        */
       description: string;
       /**
+       * Version
+       * @default
+       */
+      version: string;
+      /** Status */
+      status: string;
+      /**
+       * Owner
+       * @default
+       */
+      owner: string;
+      /** Format Tags */
+      format_tags?: string[];
+      /** Authors */
+      authors?: components['schemas']['AuthorDTO'][];
+      /**
+       * Organization
+       * @default
+       */
+      organization: string;
+      /**
+       * Contact Email
+       * @default
+       */
+      contact_email: string;
+      /** Publications */
+      publications?: components['schemas']['PublicationDTO'][];
+      /** Funding */
+      funding?: string[];
+      /** Modeling Scales */
+      modeling_scales?: string[];
+      /** Organisms */
+      organisms?: string[];
+      /** Domains */
+      domains?: string[];
+      /** Date Published */
+      date_published?: string | null;
+      /**
+       * Digest Sha256
+       * @default
+       */
+      digest_sha256: string;
+      /** Size Bytes */
+      size_bytes?: number | null;
+      /** External Ids */
+      external_ids?: {
+        [key: string]: string;
+      };
+      /**
+       * License
+       * @default
+       */
+      license: string;
+      /** Execution Type */
+      execution_type?: string | null;
+      /**
+       * Execution Ref
+       * @default
+       */
+      execution_ref: string;
+      io_spec?: components['schemas']['IOSpecDTO'] | null;
+      /** Metadata */
+      metadata?: {
+        [key: string]: unknown;
+      };
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
+    /**
+     * RunDetailItem
+     * @description Full Run record as returned to the UI.
+     */
+    RunDetailItem: {
+      /** Id */
+      id: string;
+      /** Model Id */
+      model_id: string;
+      /**
+       * Model Version
+       * @default
+       */
+      model_version: string;
+      /** Status */
+      status: string;
+      /** Input Resource Ids */
+      input_resource_ids?: string[];
+      /** Output Resource Ids */
+      output_resource_ids?: string[];
+      /** Parameters */
+      parameters?: {
+        [key: string]: unknown;
+      };
+      /** Started At */
+      started_at?: string | null;
+      /** Completed At */
+      completed_at?: string | null;
+      /**
+       * Error Message
+       * @default
+       */
+      error_message: string;
+      /**
+       * Log Uri
+       * @default
+       */
+      log_uri: string;
+      /**
+       * Triggered By
+       * @default
+       */
+      triggered_by: string;
+      /**
+       * Notes
+       * @default
+       */
+      notes: string;
+      /**
        * Created At
        * Format: date-time
        */
       created_at: string;
     };
+    /**
+     * RunDetailResponse
+     * @description Single run, hydrated, with the latest execution-service status snapshot.
+     *
+     *     Returned by GET /runs/{run_id}. The Discovery API calls the Execution API
+     *     first so the exec service can perform its lazy DAL refresh; the run record
+     *     here is then read from the DAL with that fresh state already applied.
+     */
+    RunDetailResponse: {
+      run: components['schemas']['RunDetailItem'];
+      /** Input Resources */
+      input_resources?: components['schemas']['ResourceSummaryItem'][];
+      /** Output Resources */
+      output_resources?: components['schemas']['ResourceSummaryItem'][];
+      /**
+       * Execution Status
+       * @description Raw response from the Execution service /api/v1/runs/{run_id} call.
+       */
+      execution_status?: {
+        [key: string]: unknown;
+      };
+    };
+    /**
+     * RunStatus
+     * @enum {string}
+     */
+    RunStatus: 'registered' | 'running' | 'completed' | 'failed' | 'cancelled';
     /** SearchFilterDTO */
     SearchFilterDTO: {
       /** Field */
@@ -510,7 +1103,7 @@ export interface components {
        * Op
        * @enum {string}
        */
-      op: 'eq' | 'overlap' | 'contains' | 'gte' | 'lte';
+      op: 'eq' | 'in' | 'overlap' | 'contains' | 'gte' | 'lte';
       /** Value */
       value: unknown;
     };
@@ -580,14 +1173,58 @@ export interface components {
       owner: string;
       /** Execution Type */
       execution_type?: string | null;
+      /**
+       * Execution Ref
+       * @default
+       */
+      execution_ref: string;
+      io_spec?: components['schemas']['IOSpecDTO'] | null;
+      /** Format Tags */
+      format_tags?: string[];
+      /** Authors */
+      authors?: components['schemas']['AuthorDTO'][];
+      /**
+       * Organization
+       * @default
+       */
+      organization: string;
+      /**
+       * Contact Email
+       * @default
+       */
+      contact_email: string;
+      /** Publications */
+      publications?: components['schemas']['PublicationDTO'][];
+      /** Funding */
+      funding?: string[];
       /** Organisms */
       organisms?: string[];
       /** Domains */
       domains?: string[];
       /** Modeling Scales */
       modeling_scales?: string[];
-      /** Format Tags */
-      format_tags?: string[];
+      /** Date Published */
+      date_published?: string | null;
+      /**
+       * Digest Sha256
+       * @default
+       */
+      digest_sha256: string;
+      /** Size Bytes */
+      size_bytes?: number | null;
+      /** External Ids */
+      external_ids?: {
+        [key: string]: string;
+      };
+      /**
+       * License
+       * @default
+       */
+      license: string;
+      /** Metadata */
+      metadata?: {
+        [key: string]: unknown;
+      };
       /**
        * Created At
        * Format: date-time
@@ -618,6 +1255,34 @@ export interface components {
     };
     /** UpdateDatasetRequest */
     UpdateDatasetRequest: {
+      /** Digest Sha256 */
+      digest_sha256?: string | null;
+      /** Size Bytes */
+      size_bytes?: number | null;
+      /** External Ids */
+      external_ids?: {
+        [key: string]: string;
+      } | null;
+      /** License */
+      license?: string | null;
+      /** Modeling Scales */
+      modeling_scales?: string[] | null;
+      /** Organisms */
+      organisms?: string[] | null;
+      /** Domains */
+      domains?: string[] | null;
+      /** Date Published */
+      date_published?: string | null;
+      /** Authors */
+      authors?: components['schemas']['AuthorDTO'][] | null;
+      /** Organization */
+      organization?: string | null;
+      /** Contact Email */
+      contact_email?: string | null;
+      /** Publications */
+      publications?: components['schemas']['PublicationDTO'][] | null;
+      /** Funding */
+      funding?: string[] | null;
       /** Name */
       name?: string | null;
       /** Description */
@@ -637,6 +1302,34 @@ export interface components {
     };
     /** UpdateModelRequest */
     UpdateModelRequest: {
+      /** Digest Sha256 */
+      digest_sha256?: string | null;
+      /** Size Bytes */
+      size_bytes?: number | null;
+      /** External Ids */
+      external_ids?: {
+        [key: string]: string;
+      } | null;
+      /** License */
+      license?: string | null;
+      /** Modeling Scales */
+      modeling_scales?: string[] | null;
+      /** Organisms */
+      organisms?: string[] | null;
+      /** Domains */
+      domains?: string[] | null;
+      /** Date Published */
+      date_published?: string | null;
+      /** Authors */
+      authors?: components['schemas']['AuthorDTO'][] | null;
+      /** Organization */
+      organization?: string | null;
+      /** Contact Email */
+      contact_email?: string | null;
+      /** Publications */
+      publications?: components['schemas']['PublicationDTO'][] | null;
+      /** Funding */
+      funding?: string[] | null;
       /** Name */
       name?: string | null;
       /** Description */
@@ -648,6 +1341,11 @@ export interface components {
       /** Location Uri */
       location_uri?: string | null;
       execution_type?: components['schemas']['ExecutionType'] | null;
+      /** Execution Ref */
+      execution_ref?: string | null;
+      io_spec?: components['schemas']['IOSpecDTO'] | null;
+      /** Format Tags */
+      format_tags?: string[] | null;
       /** Metadata */
       metadata?: {
         [key: string]: unknown;
@@ -660,7 +1358,8 @@ export interface components {
        * @default accepted
        */
       status: string;
-      model_id: components['schemas']['ModelId'];
+      /** Resource Id */
+      resource_id: string;
       /** Upload Id */
       upload_id: string;
       /** Tracking Id */
@@ -748,26 +1447,6 @@ export interface operations {
       };
     };
   };
-  me_api_auth_me_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['CurrentUser'];
-        };
-      };
-    };
-  };
   logout_api_auth_logout_post: {
     parameters: {
       query?: never;
@@ -783,7 +1462,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['LogoutResponse'];
+          'application/json': unknown;
         };
       };
     };
@@ -898,7 +1577,41 @@ export interface operations {
       };
     };
   };
-  create_run_api_v1_models__model_id__runs_post: {
+  list_model_runs_api_v1_models__model_id__runs_get: {
+    parameters: {
+      query?: {
+        /** @description Optional filter — only include runs with this status. */
+        status?: components['schemas']['RunStatus'] | null;
+      };
+      header?: never;
+      path: {
+        model_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ModelRunDetailsResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  execute_run_api_v1_models__model_id__runs_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -909,7 +1622,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['CreateRunRequest'];
+        'application/json': components['schemas']['ExecuteRunRequest'];
       };
     };
     responses: {
@@ -919,7 +1632,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['CreateRunResponse'];
+          'application/json': components['schemas']['ExecuteRunResponse'];
         };
       };
       /** @description Validation Error */
@@ -1043,6 +1756,171 @@ export interface operations {
       };
     };
   };
+  get_run_api_v1_runs__run_id__get: {
+    parameters: {
+      query?: {
+        /** @description When true (default), call the Execution service first so its lazy DAL refresh fires before we read the Run record — guaranteeing the freshest status. Set to false to skip the round-trip and return whatever the DAL has cached (cheap; useful for list-row previews). */
+        refresh?: boolean;
+      };
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RunDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  cancel_run_api_v1_runs__run_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RunDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_resource_files_api_v1_resources__resource_id__files_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        resource_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ResourceFilesResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  upload_resource_file_api_v1_resources__resource_id__files_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        resource_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'multipart/form-data': components['schemas']['Body_upload_resource_file_api_v1_resources__resource_id__files_post'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UploadAcceptedResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  download_resource_api_v1_resources__resource_id__download_get: {
+    parameters: {
+      query?: {
+        /** @description Relative path to a single file inside the resource directory. Omit to download the entire directory as a zip archive. */
+        file?: string | null;
+      };
+      header?: never;
+      path: {
+        resource_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   search_resources_api_v1_search_post: {
     parameters: {
       query?: never;
@@ -1063,41 +1941,6 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['SearchResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  upload_model_file_api_v1_models__model_id__files_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        model_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'multipart/form-data': components['schemas']['Body_upload_model_file_api_v1_models__model_id__files_post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['UploadAcceptedResponse'];
         };
       };
       /** @description Validation Error */

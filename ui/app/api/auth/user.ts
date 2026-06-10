@@ -29,12 +29,27 @@ export async function fetchUser(
   }
 }
 
+// Pathname -> server route key (mirrors ROUTE_PATHS in the API's return_to
+// allowlist).
+const RETURN_TO_KEYS: Record<string, string> = {
+  '/search': 'search',
+};
+
 /**
  * Trigger an OIDC login. Top-level navigation so the browser follows the
- * 302 chain to the IdP and back through `/api/auth/callback` cleanly.
+ * 302 chain to the IdP and back through `/api/auth/callback` cleanly. Sends
+ * the current route key + query so the callback can return the user here.
  */
 export function signIn(): void {
-  globalThis.location.assign('/api/auth/login');
+  const key = RETURN_TO_KEYS[globalThis.location.pathname];
+  const params = new URLSearchParams();
+  if (key) {
+    params.set('return_to_key', key);
+    const query = globalThis.location.search.replace(/^\?/, '');
+    if (query) params.set('return_to_query', query);
+  }
+  const qs = params.toString();
+  globalThis.location.assign(`/api/auth/login${qs ? `?${qs}` : ''}`);
 }
 
 /**

@@ -147,10 +147,22 @@ class OIDCService:
         self._settings = settings
         self._client = client
 
-    async def authorize_redirect(self, request: Request) -> RedirectResponse:
+    async def authorize_redirect(
+        self,
+        request: Request,
+        *,
+        return_to_key: str | None = None,
+        return_to_query: str | None = None,
+    ) -> RedirectResponse:
+        extra: dict[str, str] = {}
+        if return_to_key:
+            extra["return_to_key"] = return_to_key
+        if return_to_query:
+            extra["return_to_query"] = return_to_query
         result = await self._client.authorize_redirect(
             request,
             self._settings.oidc_redirect_uri,
+            **extra,
         )
         if not isinstance(result, RedirectResponse):
             raise APIError(
@@ -159,6 +171,23 @@ class OIDCService:
                 detail="Authlib did not return a redirect response.",
             )
         return result
+
+    async def pop_return_to(self, request: Request) -> tuple[str | None, str | None]:
+        """Read the stored `return_to` key+query for the inbound callback `state`.
+
+        Must run before `authorize_access_token`, which clears the state data.
+        Reads through Authlib's framework integration the same way Authlib does
+        internally (session vs cache), so it stays correct regardless of backend.
+        """
+        state = request.query_params.get("state")
+        if not state:
+            return None, None
+        framework = self._client.framework
+        session = None if framework.cache else request.session
+        data = await framework.get_state_data(session, state)
+        if not data:
+            return None, None
+        return data.get("return_to_key"), data.get("return_to_query")
 
     async def authorize_access_token(self, request: Request) -> TokenResponse:
         """

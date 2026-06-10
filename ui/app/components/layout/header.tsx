@@ -167,23 +167,25 @@ function HeaderAuth() {
           {name}
         </Button>
       </DropdownTrigger>
-      <DropdownMenu aria-label="Account menu">
-        {user.email ? (
-          <DropdownItem
-            key="email"
-            isReadOnly
-            className="opacity-100 cursor-default"
-            textValue={user.email}
-          >
-            <div className="text-xs text-default-500">Signed in as</div>
-            <div className="text-sm font-medium text-default-900">
-              {user.email}
-            </div>
-          </DropdownItem>
-        ) : null}
+      <DropdownMenu aria-label="Account menu" className="min-w-56">
+        <DropdownItem
+          key="identity"
+          isReadOnly
+          showDivider
+          className="opacity-100! cursor-default data-[hover=true]:bg-transparent"
+          textValue={user.email ?? name}
+        >
+          <div className="text-[11px] uppercase tracking-wide text-default-700">
+            Signed in as
+          </div>
+          <div className="text-sm font-semibold text-default-900 truncate">
+            {user.email ?? name}
+          </div>
+        </DropdownItem>
         <DropdownItem
           key="signout"
           color="danger"
+          className="text-danger font-medium"
           onPress={() => {
             void signOut();
           }}
