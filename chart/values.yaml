@@ -32,10 +32,10 @@ gateway:
     AUTH_MODE: "oidc"
     DISABLE_AUTH: "false"
     STUB_UPSTREAM_SERVICES: "false"
-    PRODUCTION_MODE: "true"
+    PRODUCTION_MODE: "false"
     # Browser-reachable tusd base URL returned by POST /api/v1/models/{id}/upload.
     # Override per environment, e.g. https://uploads.example.com.
-    TUSD_BASE_URL: ""
+    TUSD_BASE_URL: "changeme"
     UPLOAD_MAX_BYTES: "524288000"
     # Subpath that hosts the API + Swagger/ReDoc/openapi.json.
     # Docs land at {API_PATH_PREFIX}/docs. Set to "" to mount at root.
@@ -63,6 +63,7 @@ gateway:
     # Execution API
     EXECUTION_API_URL: ""
     EXECUTION_TIMEOUT_SECONDS: "120"
+    # Note: DATABASE_URL and REDIS_URL are built in deployment templates and do not need to be set here
 
 irods:
   # PersistentVolumeClaim
