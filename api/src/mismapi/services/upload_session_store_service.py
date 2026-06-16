@@ -50,7 +50,7 @@ class UploadSessionStoreService:
         multiple uploads for the same registry resource.
         """
         key = f"{UPLOAD_TOKEN_KEY_PREFIX}{token}"
-        raw = await self.redis.execute_command("GETDEL", key)
+        raw = await self.redis.get(key)
         if not raw:
             raise APIError(
                 status_code=401,
@@ -58,7 +58,9 @@ class UploadSessionStoreService:
                 detail="Upload token is invalid or has expired",
             )
         try:
-            return UploadTokenClaims.model_validate_json(raw)
+            claims = UploadTokenClaims.model_validate_json(raw)
+            await self.redis.delete(key)
+            return claims
         except (ValueError, ValidationError) as exc:
             logger.warning(
                 "upload_token_invalid_payload token_prefix=%s error=%s",
