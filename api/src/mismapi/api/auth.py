@@ -106,9 +106,15 @@ async def logout(
     session_id = request.cookies.get(settings.session_cookie_name)
     id_token_hint = ""
     if session_id:
-        session_data = await session_store.get(session_id)
-        if session_data:
-            id_token_hint = session_data.id_token or session_data.access_token or ""
+        try:
+            data = await session_store.get(session_id)
+            if data:
+                record = OidcSessionRecord.model_validate(data.model_dump())
+                id_token_hint = record.id_token or record.access_token or ""
+            else:
+                
+        except Exception:
+            pass
         await session_store.delete(session_id)
 
     def _cleared_cookie_response(resp: Response) -> Response:

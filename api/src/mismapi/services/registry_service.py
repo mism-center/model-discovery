@@ -585,17 +585,19 @@ class RegistryService:
             raise self._not_authorized_error()
         return resource
 
-    def mark_upload_complete(self, *, resource_id: str) -> Resource:
+    def mark_upload_complete(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        resource_id: str,
+    ) -> Resource:
         """
-        Stamp `metadata['upload_status'] = 'UPLOAD_COMPLETE'` on the resource.
+        Stamp `metadata['upload_status'] = 'UPLOAD_COMPLETE'` on a resource owned by `principal`.
 
         Idempotent. Stored in `metadata` because `mism_registry.ResourceStatus`
         models publication lifecycle (active/superseded/archived), not content lifecycle.
         """
-        try:
-            resource = self._registry.get_resource(resource_id)
-        except ResourceNotFoundError as exc:
-            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+        resource = self.get_resource_and_assert_ownership(principal, resource_id=resource_id)
 
         new_metadata = dict(resource.metadata)
         new_metadata["upload_status"] = "UPLOAD_COMPLETE"

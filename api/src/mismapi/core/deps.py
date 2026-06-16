@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from mismapi.clients.execution_client import ExecutionClient
     from mismapi.clients.local_upload_client import LocalFileUploadClient
     from mismapi.clients.upload_client import UploadServiceClient
+    from mismapi.services.upload_session_store_service import UploadSessionStoreService
 
 
 def _get_container(request: Request) -> AppContainer:
@@ -47,6 +48,10 @@ def _get_settings(container: ContainerDep) -> Settings:
 
 def _get_session_store(container: ContainerDep) -> SessionStore:
     return container.session_store
+
+
+def _get_upload_session_store_service(container: ContainerDep) -> UploadSessionStoreService:
+    return container.upload_session_store_service
 
 
 def _get_auth_validator(container: ContainerDep) -> AuthValidator:
@@ -86,6 +91,9 @@ def _get_registry_service(
 
 SettingsDep = Annotated[Settings, Depends(_get_settings)]
 SessionStoreDep = Annotated["SessionStore", Depends(_get_session_store)]
+UploadSessionStoreServiceDep = Annotated[
+    "UploadSessionStoreService", Depends(_get_upload_session_store_service)
+]
 AuthValidatorDep = Annotated["AuthValidator", Depends(_get_auth_validator)]
 OIDCServiceDep = Annotated["OIDCService", Depends(_get_oidc_service)]
 SessionRefresherDep = Annotated["SessionRefresher", Depends(_get_session_refresher)]

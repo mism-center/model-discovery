@@ -11,7 +11,7 @@ Currently exposes a single tusd hook endpoint:
   - `pre-create`: the client supplies an `upload_token` value (minted by
     this API, stored in Redis for `UPLOAD_TOKEN_TTL_SECONDS`), `resource_id`,
     and `filename` in tus upload metadata. We consume claims via
-    `SessionStore.consume_upload_token` (atomically deleting the key so the
+    `UploadSessionStoreService.consume_upload_token` (atomically deleting the key so the
     token is single-use). We then build an `AuthenticatedPrincipal` from
     `claims.user_id`, reject the upload if the declared size exceeds
     `claims.max_bytes`, then call `RegistryService.get_resource_and_assert_ownership`
@@ -19,13 +19,17 @@ Currently exposes a single tusd hook endpoint:
     the file is stored flat at `models/{resource_id}/files/{filename}`. On
     ownership failure, invalid filename, or filename collision, we return
     `HookResponse` with `RejectUpload=True` so tusd aborts the upload.
-  - `post-finish`: fires server-to-server after the upload completes and
-    stamps `metadata['upload_status'] = 'UPLOAD_COMPLETE'` on the
-    model resource. When `upload_token` is still present in upload metadata,
-    the token key is removed from Redis (`revoke_upload_token`) as a harmless
-    best-effort cleanup. Production deployments must keep this endpoint
-    reachable only from tusd inside the cluster so public traffic cannot forge
-    completion hooks.
+  - `post-finish`: fires server-to-server after the upload completes. We look
+    up the tus upload ID captured during `pre-create`, reconstruct the principal
+    that authorized the upload, require that the hook's resource_id still matches
+    the stored upload record, and re-check ownership before stamping
+    `metadata['upload_status'] = 'UPLOAD_COMPLETE'` on the model resource. When
+    `upload_token` is still present in upload metadata, the token key is removed
+    from Redis (`revoke_upload_token`) as a harmless best-effort cleanup.
+    Production deployments must keep this endpoint reachable only from tusd
+    inside the cluster so public traffic cannot forge the `post-finish` hook, but
+    the attack surface is limited since it requires an upload session to be in progress
+    and the client must pass the upload_id in the hook request.
   - any other event type: 200 no-op. tusd should only POST events that
     are listed in `--hooks-enabled-events`, but we tolerate unknown
     events to stay forward-compatible.
@@ -46,6 +50,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from pathlib import Path
 
 from fastapi import APIRouter
@@ -56,11 +61,11 @@ from mismapi.auth.base import (
 )
 from mismapi.core.deps import (
     RegistryServiceDep,
-    SessionStoreDep,
     SettingsDep,
+    UploadSessionStoreServiceDep,
 )
 from mismapi.core.errors import APIError
-from mismapi.schemas.auth import UploadTokenClaims
+from mismapi.schemas.auth import TusUploadRecord, UploadTokenClaims
 from mismapi.schemas.tus import (
     FileInfoChanges,
     Storage,
@@ -69,6 +74,7 @@ from mismapi.schemas.tus import (
     TusHTTPResponse,
 )
 from mismapi.services.registry_service import RegistryService
+from mismapi.services.upload_session_store_service import UploadSessionStoreService
 from mismapi.utils import UPLOAD_ALLOWED_PATH_TEMPLATE
 
 logger = logging.getLogger(__name__)
@@ -166,6 +172,24 @@ def _extract_resource_id(payload: TusHookRequest) -> str:
     return resource_id
 
 
+def _principal_for_user_id(user_id: str) -> AuthenticatedPrincipal:
+    return AuthenticatedPrincipal(
+        subject=user_id,
+        issuer="discovery-api",
+        audience="discovery-api",
+        scopes=set(),
+    )
+
+
+def _not_authorized_tus_upload_error(upload_id: str) -> APIError:
+    logger.warning("tus_upload_not_authorized upload_id=%s", upload_id)
+    return APIError(
+        status_code=403,
+        code="not_authorized",
+        detail="Upload does not exist or is not authorized for this resource.",
+    )
+
+
 def _check_allowed_path(claims: UploadTokenClaims, resource_id: str, upload_id: str) -> bool:
     allowed_path = claims.allowed_path
     expected_allowed_path = UPLOAD_ALLOWED_PATH_TEMPLATE.format(resource_id=resource_id)
@@ -184,7 +208,7 @@ def _check_allowed_path(claims: UploadTokenClaims, resource_id: str, upload_id: 
 
 async def _handle_pre_create(
     payload: TusHookRequest,
-    session_store: SessionStoreDep,
+    upload_session_store: UploadSessionStoreService,
     service: RegistryService,
     storage_mount_path: str,
 ) -> TusHookResponse:
@@ -223,7 +247,7 @@ async def _handle_pre_create(
 
     # Verify the upload token and extract claims
     try:
-        claims: UploadTokenClaims = await session_store.consume_upload_token(upload_token)
+        claims: UploadTokenClaims = await upload_session_store.consume_upload_token(upload_token)
     except APIError as exc:
         return _reject_upload(
             upload_id=upload_id,
@@ -232,12 +256,7 @@ async def _handle_pre_create(
             detail=exc.detail,
         )
 
-    principal = AuthenticatedPrincipal(
-        subject=claims.user_id,
-        issuer="discovery-api",
-        audience="discovery-api",
-        scopes=set(),
-    )
+    principal = _principal_for_user_id(claims.user_id)
 
     # Verify the file size is within the allowed limit
     if payload.event.upload.size is None or (payload.event.upload.size > claims.max_bytes):
@@ -269,6 +288,7 @@ async def _handle_pre_create(
 
     base_file_dir = UPLOAD_ALLOWED_PATH_TEMPLATE.format(resource_id=resource_id)
     upload_file_path = f"{base_file_dir}/{filename}"
+    tus_upload_id = f"{base_file_dir}/.uploads/{uuid.uuid4().hex}"
     try:
         _assert_upload_file_does_not_exist(storage_mount_path, upload_file_path)
     except APIError as exc:
@@ -279,17 +299,32 @@ async def _handle_pre_create(
             detail=exc.detail,
         )
 
+    try:
+        await upload_session_store.register_tus_upload(
+            tus_upload_id,
+            user_id=claims.user_id,
+            resource_id=resource_id,
+        )
+    except APIError as exc:
+        return _reject_upload(
+            upload_id=upload_id,
+            status_code=exc.status_code,
+            code=exc.code,
+            detail=exc.detail,
+        )
+
     logger.debug(
-        "tus_authorize_ok resource_id=%s subject=%s upload_id=%s upload_path=%s",
+        "tus_authorize_ok resource_id=%s subject=%s upload_id=%s tus_upload_id=%s upload_path=%s",
         resource_id,
         principal.subject,
         upload_id,
+        tus_upload_id,
         upload_file_path,
     )
 
     return TusHookResponse(
         ChangeFileInfo=FileInfoChanges(
-            ID=base_file_dir,
+            ID=tus_upload_id,
             Storage=Storage(Path=upload_file_path),
         )
     )
@@ -298,24 +333,39 @@ async def _handle_pre_create(
 async def _handle_post_finish(
     payload: TusHookRequest,
     service: RegistryService,
-    session_store: SessionStoreDep,
+    upload_session_store: UploadSessionStoreService,
 ) -> TusHookResponse:
     """
     Mark the upload complete in the registry and drop the upload token from
     Redis when tusd still forwards it in metadata (so the slot does not linger
     until TTL after a successful upload).
     """
+    upload_id = payload.event.upload.id or ""
+    if not upload_id:
+        raise APIError(
+            status_code=400,
+            code="missing_upload_id",
+            detail="tus post-finish hook is missing the upload ID.",
+        )
+
     resource_id = _extract_resource_id(payload)
-    service.mark_upload_complete(resource_id=resource_id)
+    upload_record: TusUploadRecord | None = await upload_session_store.get_tus_upload(upload_id)
+    if upload_record is None or upload_record.resource_id != resource_id:
+        raise _not_authorized_tus_upload_error(upload_id)
+
+    principal = _principal_for_user_id(upload_record.user_id)
+    service.mark_upload_complete(principal, resource_id=resource_id)
+    await upload_session_store.delete_tus_upload(upload_id)
 
     upload_token = payload.event.upload.metadata.get("upload_token")
     if upload_token:
-        await session_store.revoke_upload_token(upload_token)
+        await upload_session_store.revoke_upload_token(upload_token)
 
     logger.debug(
-        "tus_complete_ok resource_id=%s upload_id=%s size=%s",
+        "tus_complete_ok resource_id=%s subject=%s upload_id=%s size=%s",
         resource_id,
-        payload.event.upload.id,
+        principal.subject,
+        upload_id,
         payload.event.upload.size,
     )
     return TusHookResponse()
@@ -329,7 +379,7 @@ async def _handle_post_finish(
 )
 async def tusd_hooks(
     payload: TusHookRequest,
-    session_store: SessionStoreDep,
+    upload_session_store: UploadSessionStoreServiceDep,
     service: RegistryServiceDep,
     settings: SettingsDep,
 ) -> TusHookResponse:
@@ -347,13 +397,13 @@ async def tusd_hooks(
     if event_type == TUSD_HOOK_PRE_CREATE:
         return await _handle_pre_create(
             payload,
-            session_store,
+            upload_session_store,
             service,
             settings.irods_mount_path,
         )
 
     if event_type == TUSD_HOOK_POST_FINISH:
-        return await _handle_post_finish(payload, service, session_store)
+        return await _handle_post_finish(payload, service, upload_session_store)
 
     logger.info(
         "tusd_hook_ignored type=%s upload_id=%s",

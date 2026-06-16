@@ -31,6 +31,7 @@ from mismapi.clients.local_upload_client import LocalFileUploadClient
 from mismapi.clients.upload_client import UploadServiceClient
 from mismapi.core.config_validation import ensure_startup_config
 from mismapi.core.settings import Settings
+from mismapi.services.upload_session_store_service import UploadSessionStoreService
 
 if TYPE_CHECKING:
     from authlib.integrations.starlette_client import StarletteOAuth2App
@@ -48,6 +49,7 @@ class AppContainer:
     settings: Settings
     redis: Redis
     session_store: SessionStore
+    upload_session_store_service: UploadSessionStoreService
     # Either a real HTTP client (UploadServiceClient) or the local-disk
     # stand-in (LocalFileUploadClient) — selected via settings.upload_backend.
     # Both implement the same async protocol consumed by the upload route.
@@ -113,10 +115,15 @@ class AppContainer:
             settings.redis_url,
             decode_responses=False,
         )
-        session_store: SessionStore = RedisSessionStore(
+        redis_session_store = RedisSessionStore(
             redis=redis_client,
             session_ttl_seconds=settings.session_ttl_seconds,
+        )
+        session_store: SessionStore = redis_session_store
+        upload_session_store_service = UploadSessionStoreService(
+            redis=redis_client,
             upload_token_ttl_seconds=settings.upload_token_ttl_seconds,
+            tus_upload_ttl_seconds=settings.tus_upload_ttl_seconds,
         )
 
         oidc_client = get_oidc_client(build_oauth_registry(settings))
@@ -135,6 +142,7 @@ class AppContainer:
             settings=settings,
             redis=redis_client,
             session_store=session_store,
+            upload_session_store_service=upload_session_store_service,
             upload_client=upload_client,
             execution_client=execution_client,
             auth_validator=auth_validator,

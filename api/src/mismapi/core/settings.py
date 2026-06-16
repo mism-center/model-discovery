@@ -111,6 +111,7 @@ class Settings(BaseSettings):
     redis_url: BaseUrl = Field(alias="REDIS_URL")
     session_ttl_seconds: int = Field(default=3600, alias="SESSION_TTL_SECONDS")
     upload_token_ttl_seconds: int = Field(default=900, alias="UPLOAD_TOKEN_TTL_SECONDS")
+    tus_upload_ttl_seconds: int = Field(default=86400, alias="TUS_UPLOAD_TTL_SECONDS")
     session_cookie_name: str = Field(default="mism_session", alias="SESSION_COOKIE_NAME")
 
     # Production mode

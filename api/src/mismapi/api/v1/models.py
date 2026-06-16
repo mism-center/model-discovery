@@ -7,7 +7,12 @@ from mism_registry.resource import Resource
 from mismapi.api.v1._run_helpers import resource_summary as _resource_summary
 from mismapi.api.v1._run_helpers import run_detail as _run_detail
 from mismapi.auth.base import AuthenticatedPrincipalDep
-from mismapi.core.deps import ExecutionClientDep, RegistryServiceDep, SessionStoreDep, SettingsDep
+from mismapi.core.deps import (
+    ExecutionClientDep,
+    RegistryServiceDep,
+    SettingsDep,
+    UploadSessionStoreServiceDep,
+)
 from mismapi.schemas.registry import (
     ExecuteRunRequest,
     ExecuteRunResponse,
@@ -208,14 +213,14 @@ async def update_model(
 async def initiate_model_file_upload(
     model_id: str,
     settings: SettingsDep,
-    session_store: SessionStoreDep,
+    upload_session_store: UploadSessionStoreServiceDep,
     service: RegistryServiceDep,
     principal: AuthenticatedPrincipalDep,
 ) -> UploadInitiatedResponse:
 
     service.get_resource_and_assert_ownership(principal, resource_id=model_id)
     allowed_path = UPLOAD_ALLOWED_PATH_TEMPLATE.format(resource_id=model_id)
-    token = await session_store.mint_upload_token(
+    token = await upload_session_store.mint_upload_token(
         principal.subject,
         settings.upload_max_bytes,
         allowed_path,

@@ -16,3 +16,10 @@ class UploadTokenClaims(BaseModel):
     user_id: str
     max_bytes: int
     allowed_path: str
+
+
+class TusUploadRecord(BaseModel):
+    """Authorization context captured when tusd accepts an upload."""
+
+    user_id: str
+    resource_id: str
