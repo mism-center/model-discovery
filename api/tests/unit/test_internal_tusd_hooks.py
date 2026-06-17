@@ -34,9 +34,9 @@ def _make_upload_session_store_mock(
     mock.consume_upload_token = AsyncMock(return_value=claims)
     mock.try_lock_filename = AsyncMock(return_value=lock_acquired)
     mock.release_filename_lock = AsyncMock()
-    mock.register_tus_upload = AsyncMock()
-    mock.get_tus_upload = AsyncMock(return_value=upload_record)
-    mock.delete_tus_upload = AsyncMock()
+    mock.register_upload = AsyncMock()
+    mock.get_upload_session = AsyncMock(return_value=upload_record)
+    mock.delete_upload_session = AsyncMock()
     mock.revoke_upload_token = AsyncMock()
     return mock
 
@@ -163,7 +163,7 @@ async def test_handle_pre_create_sets_flat_storage_path_from_filename(tmp_path: 
         filename="model.bin",
         owner=response.change_file_info.id,
     )
-    upload_session_store_mock.register_tus_upload.assert_awaited_once_with(
+    upload_session_store_mock.register_upload.assert_awaited_once_with(
         response.change_file_info.id,
         user_id="user-1",
         resource_id=resource_id,
@@ -190,7 +190,7 @@ async def test_handle_pre_create_returns_tus_rejection_for_missing_token(tmp_pat
     assert "missing_upload_token" in response.http_response.body
     upload_session_store_mock.consume_upload_token.assert_not_called()
     upload_session_store_mock.try_lock_filename.assert_not_called()
-    upload_session_store_mock.register_tus_upload.assert_not_called()
+    upload_session_store_mock.register_upload.assert_not_called()
 
 
 async def test_handle_pre_create_rejects_existing_filename(tmp_path: Path) -> None:
@@ -217,7 +217,7 @@ async def test_handle_pre_create_rejects_existing_filename(tmp_path: Path) -> No
     assert response.reject_upload is True
     assert response.http_response.status_code == 409
     assert "already exists for this model" in response.http_response.body
-    upload_session_store_mock.register_tus_upload.assert_not_called()
+    upload_session_store_mock.register_upload.assert_not_called()
     # Lock was acquired before the existence check; it must be released so a
     # later upload of the same filename (after the user resolves the collision)
     # isn't blocked until TTL.
@@ -261,7 +261,7 @@ async def test_handle_pre_create_rejects_when_filename_lock_is_held(tmp_path: Pa
     # Did not acquire the lock, so we must not release it (would CAS-no-op but
     # is still wrong to call).
     upload_session_store_mock.release_filename_lock.assert_not_called()
-    upload_session_store_mock.register_tus_upload.assert_not_called()
+    upload_session_store_mock.register_upload.assert_not_called()
 
 
 async def test_handle_pre_create_allows_concurrent_uploads_of_different_filenames(
@@ -293,7 +293,7 @@ async def test_handle_pre_create_allows_concurrent_uploads_of_different_filename
         filename="weights.bin",
         owner=ANY,
     )
-    upload_session_store_mock.register_tus_upload.assert_awaited_once()
+    upload_session_store_mock.register_upload.assert_awaited_once()
 
 
 async def test_handle_pre_create_returns_tus_rejection_for_invalid_token(tmp_path: Path) -> None:
@@ -320,7 +320,7 @@ async def test_handle_pre_create_returns_tus_rejection_for_invalid_token(tmp_pat
     assert "auth_upload_token_invalid" in response.http_response.body
     service_mock.get_resource_and_assert_ownership.assert_not_called()
     upload_session_store_mock.try_lock_filename.assert_not_called()
-    upload_session_store_mock.register_tus_upload.assert_not_called()
+    upload_session_store_mock.register_upload.assert_not_called()
 
 
 async def test_handle_pre_create_sanitizes_filename(tmp_path: Path) -> None:
@@ -364,12 +364,12 @@ async def test_handle_post_finish_rechecks_stored_upload_owner_before_marking_co
     )
 
     assert response.reject_upload is False
-    upload_session_store_mock.get_tus_upload.assert_awaited_once_with(upload_id)
+    upload_session_store_mock.get_upload_session.assert_awaited_once_with(upload_id)
     service_mock.mark_upload_complete.assert_called_once()
     principal = service_mock.mark_upload_complete.call_args.args[0]
     assert principal.subject == "user-1"
     assert service_mock.mark_upload_complete.call_args.kwargs["resource_id"] == resource_id
-    upload_session_store_mock.delete_tus_upload.assert_awaited_once_with(upload_id)
+    upload_session_store_mock.delete_upload_session.assert_awaited_once_with(upload_id)
     upload_session_store_mock.release_filename_lock.assert_awaited_once_with(
         resource_id=resource_id,
         filename="model.bin",
@@ -394,7 +394,7 @@ async def test_handle_post_finish_rejects_unknown_upload_id() -> None:
     assert exc_info.value.status_code == 403
     assert exc_info.value.code == "not_authorized"
     service_mock.mark_upload_complete.assert_not_called()
-    upload_session_store_mock.delete_tus_upload.assert_not_called()
+    upload_session_store_mock.delete_upload_session.assert_not_called()
 
 
 async def test_handle_post_finish_rejects_resource_id_mismatch_for_upload_id() -> None:
@@ -416,7 +416,7 @@ async def test_handle_post_finish_rejects_resource_id_mismatch_for_upload_id() -
     assert exc_info.value.status_code == 403
     assert exc_info.value.code == "not_authorized"
     service_mock.mark_upload_complete.assert_not_called()
-    upload_session_store_mock.delete_tus_upload.assert_not_called()
+    upload_session_store_mock.delete_upload_session.assert_not_called()
 
 
 async def test_handle_post_finish_rejects_missing_upload_id() -> None:
@@ -432,7 +432,7 @@ async def test_handle_post_finish_rejects_missing_upload_id() -> None:
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.code == "missing_upload_id"
-    upload_session_store_mock.get_tus_upload.assert_not_called()
+    upload_session_store_mock.get_upload_session.assert_not_called()
     service_mock.mark_upload_complete.assert_not_called()
 
 
@@ -451,13 +451,13 @@ async def test_handle_pre_terminate_releases_lock_and_deletes_upload_record() ->
     )
 
     assert response.reject_termination is False
-    upload_session_store_mock.get_tus_upload.assert_awaited_once_with(upload_id)
+    upload_session_store_mock.get_upload_session.assert_awaited_once_with(upload_id)
     upload_session_store_mock.release_filename_lock.assert_awaited_once_with(
         resource_id=resource_id,
         filename="model.bin",
         owner=upload_id,
     )
-    upload_session_store_mock.delete_tus_upload.assert_awaited_once_with(upload_id)
+    upload_session_store_mock.delete_upload_session.assert_awaited_once_with(upload_id)
 
 
 async def test_handle_pre_terminate_no_ops_when_upload_record_is_missing() -> None:
@@ -473,7 +473,7 @@ async def test_handle_pre_terminate_no_ops_when_upload_record_is_missing() -> No
     # still clean up the bytes if the client asked it to.
     assert response.reject_termination is False
     upload_session_store_mock.release_filename_lock.assert_not_called()
-    upload_session_store_mock.delete_tus_upload.assert_not_called()
+    upload_session_store_mock.delete_upload_session.assert_not_called()
 
 
 async def test_handle_pre_terminate_no_ops_when_upload_id_is_missing() -> None:
@@ -485,6 +485,6 @@ async def test_handle_pre_terminate_no_ops_when_upload_id_is_missing() -> None:
     )
 
     assert response.reject_termination is False
-    upload_session_store_mock.get_tus_upload.assert_not_called()
+    upload_session_store_mock.get_upload_session.assert_not_called()
     upload_session_store_mock.release_filename_lock.assert_not_called()
-    upload_session_store_mock.delete_tus_upload.assert_not_called()
+    upload_session_store_mock.delete_upload_session.assert_not_called()
