@@ -89,6 +89,9 @@ format-check:
 typecheck:
 	$(UV) run python -m mypy src tests
 
+## Run all CI steps. This is helpful for running all checks locally before committing.
+ci: lint format-check typecheck test-ci
+
 ## Remove pytest, Ruff, and mypy caches
 clean:
 	rm -rf .pytest_cache .ruff_cache .mypy_cache
@@ -96,7 +99,7 @@ clean:
 
 
 integration-test: integration-up
-	
+
 
 integration-down:
 	docker compose -f ../docker-compose.test.yaml down -v

@@ -80,7 +80,7 @@ def test_create_model_success() -> None:
     service.create_model.assert_called_once()
 
 
-def test_create_model_missing_name_returns_422() -> None:
+def test_create_model_missing_name_returns_400() -> None:
     service = MagicMock(spec=RegistryService)
     client = _make_app_with_service(service)
 
@@ -92,11 +92,11 @@ def test_create_model_missing_name_returns_422() -> None:
         },
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 400
     service.create_model.assert_not_called()
 
 
-def test_create_model_missing_execution_type_returns_422() -> None:
+def test_create_model_missing_execution_type_returns_400() -> None:
     service = MagicMock(spec=RegistryService)
     client = _make_app_with_service(service)
 
@@ -108,7 +108,7 @@ def test_create_model_missing_execution_type_returns_422() -> None:
         },
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 400
     service.create_model.assert_not_called()
 
 
