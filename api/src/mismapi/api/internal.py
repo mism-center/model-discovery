@@ -15,21 +15,37 @@ Currently exposes a single tusd hook endpoint:
     token is single-use). We then build an `AuthenticatedPrincipal` from
     `claims.user_id`, reject the upload if the declared size exceeds
     `claims.max_bytes`, then call `RegistryService.get_resource_and_assert_ownership`
-    so the user owns the model registry row for `resource_id`. On success,
-    the file is stored flat at `models/{resource_id}/files/{filename}`. On
-    ownership failure, invalid filename, or filename collision, we return
-    `HookResponse` with `RejectUpload=True` so tusd aborts the upload.
+    so the user owns the model registry row for `resource_id`. Before allowing
+    the upload through, we atomically claim a Redis lock on
+    `(resource_id, filename)` (`try_lock_filename`) and only then check that
+    no file already exists at the destination path. This closes the TOCTOU
+    window between the existence check and tusd actually writing the file:
+    two concurrent uploads of the same `(resource_id, filename)` cannot both
+    pass through. On success, the file is stored flat at
+    `models/{resource_id}/files/{filename}`. On ownership failure, invalid
+    filename, lock contention, or filename collision, we return `HookResponse`
+    with `RejectUpload=True` so tusd aborts the upload.
   - `post-finish`: fires server-to-server after the upload completes. We look
     up the tus upload ID captured during `pre-create`, reconstruct the principal
     that authorized the upload, require that the hook's resource_id still matches
     the stored upload record, and re-check ownership before stamping
-    `metadata['upload_status'] = 'UPLOAD_COMPLETE'` on the model resource. When
-    `upload_token` is still present in upload metadata, the token key is removed
-    from Redis (`revoke_upload_token`) as a harmless best-effort cleanup.
-    Production deployments must keep this endpoint reachable only from tusd
-    inside the cluster so public traffic cannot forge the `post-finish` hook, but
-    the attack surface is limited since it requires an upload session to be in progress
-    and the client must pass the upload_id in the hook request.
+    `metadata['upload_status'] = 'UPLOAD_COMPLETE'` on the model resource. We
+    then release the `(resource_id, filename)` lock via CAS so it doesn't sit
+    until TTL after a normal completion. When `upload_token` is still present in
+    upload metadata, the token key is removed from Redis (`revoke_upload_token`)
+    as a harmless best-effort cleanup. Production deployments must keep this
+    endpoint reachable only from tusd inside the cluster so public traffic cannot
+    forge the `post-finish` hook, but the attack surface is limited since it
+    requires an upload session to be in progress and the client must pass the
+    upload_id in the hook request.
+  - `pre-terminate`: fires when a client DELETEs an in-flight tus upload. We
+    look up the stored upload record, release the `(resource_id, filename)`
+    lock so the slot frees up immediately (otherwise it would sit until TTL),
+    and delete the upload record. We never set `RejectTermination=True`: the
+    user asked tusd to clean up and we let it. Enabling this event in
+    `--hooks-enabled-events` on the tusd deployment is recommended so
+    abandoned uploads don't block re-uploads of the same filename for the
+    full `TUS_UPLOAD_TTL_SECONDS` window.
   - any other event type: 200 no-op. tusd should only POST events that
     are listed in `--hooks-enabled-events`, but we tolerate unknown
     events to stay forward-compatible.
@@ -93,6 +109,7 @@ file basename in tusd storage. `pre-create` also requires metadata key
 
 TUSD_HOOK_PRE_CREATE = "pre-create"
 TUSD_HOOK_POST_FINISH = "post-finish"
+TUSD_HOOK_PRE_TERMINATE = "pre-terminate"
 
 
 def _reject_upload(*, upload_id: str, status_code: int, code: str, detail: str) -> TusHookResponse:
@@ -289,9 +306,35 @@ async def _handle_pre_create(
     base_file_dir = UPLOAD_ALLOWED_PATH_TEMPLATE.format(resource_id=resource_id)
     upload_file_path = f"{base_file_dir}/{filename}"
     tus_upload_id = f"{base_file_dir}/.uploads/{uuid.uuid4().hex}"
+
+    # Atomically reserve (resource_id, filename) before the on-disk existence
+    # check so two concurrent pre-create hooks for the same target file can't
+    # both pass the check and overwrite each other's bytes. The tus upload ID
+    # we just synthesized doubles as the CAS owner for the eventual release.
+    lock_acquired = await upload_session_store.try_lock_filename(
+        resource_id=resource_id,
+        filename=filename,
+        owner=tus_upload_id,
+    )
+    if not lock_acquired:
+        return _reject_upload(
+            upload_id=upload_id,
+            status_code=409,
+            code="upload_in_progress",
+            detail=(
+                f"Another upload for '{filename}' is already in progress for this model. "
+                "Please wait for it to finish, cancel it, or choose a different filename."
+            ),
+        )
+
     try:
         _assert_upload_file_does_not_exist(storage_mount_path, upload_file_path)
     except APIError as exc:
+        await upload_session_store.release_filename_lock(
+            resource_id=resource_id,
+            filename=filename,
+            owner=tus_upload_id,
+        )
         return _reject_upload(
             upload_id=upload_id,
             status_code=exc.status_code,
@@ -300,12 +343,18 @@ async def _handle_pre_create(
         )
 
     try:
-        await upload_session_store.register_tus_upload(
+        await upload_session_store.register_upload(
             tus_upload_id,
             user_id=claims.user_id,
             resource_id=resource_id,
+            filename=filename,
         )
     except APIError as exc:
+        await upload_session_store.release_filename_lock(
+            resource_id=resource_id,
+            filename=filename,
+            owner=tus_upload_id,
+        )
         return _reject_upload(
             upload_id=upload_id,
             status_code=exc.status_code,
@@ -349,13 +398,23 @@ async def _handle_post_finish(
         )
 
     resource_id = _extract_resource_id(payload)
-    upload_record: TusUploadRecord | None = await upload_session_store.get_tus_upload(upload_id)
+    upload_record: TusUploadRecord | None = await upload_session_store.get_upload_session(upload_id)
     if upload_record is None or upload_record.resource_id != resource_id:
         raise _not_authorized_tus_upload_error(upload_id)
 
     principal = _principal_for_user_id(upload_record.user_id)
     service.mark_upload_complete(principal, resource_id=resource_id)
-    await upload_session_store.delete_tus_upload(upload_id)
+    await upload_session_store.delete_upload_session(upload_id)
+
+    # Release the (resource_id, filename) lock acquired in pre-create so the
+    # filename frees up immediately on normal completion instead of waiting for
+    # the lock TTL. CAS-keyed on the upload ID so we never release a different
+    # upload's lock.
+    await upload_session_store.release_filename_lock(
+        resource_id=resource_id,
+        filename=upload_record.filename,
+        owner=upload_id,
+    )
 
     upload_token = payload.event.upload.metadata.get("upload_token")
     if upload_token:
@@ -367,6 +426,46 @@ async def _handle_post_finish(
         principal.subject,
         upload_id,
         payload.event.upload.size,
+    )
+    return TusHookResponse()
+
+
+async def _handle_pre_terminate(
+    payload: TusHookRequest,
+    upload_session_store: UploadSessionStoreService,
+) -> TusHookResponse:
+    """
+    Release the `(resource_id, filename)` lock and drop the upload record when
+    a client terminates an in-flight tus upload (DELETE on the upload URL).
+
+    We never set `RejectTermination=True`: the client asked tusd to clean up
+    the bytes and we let it. If we don't have a record for the upload (e.g. it
+    was never created through our pre-create hook, or our record already
+    expired), we still allow termination. The lock release is best-effort
+    and keyed on the upload ID, so an already-released or already-expired lock
+    is a no-op.
+    """
+    upload_id = payload.event.upload.id or ""
+    if not upload_id:
+        logger.info("tus_pre_terminate_missing_upload_id")
+        return TusHookResponse()
+
+    upload_record: TusUploadRecord | None = await upload_session_store.get_upload_session(upload_id)
+    if upload_record is None:
+        logger.info("tus_pre_terminate_unknown_upload_id upload_id=%s", upload_id)
+        return TusHookResponse()
+
+    await upload_session_store.release_filename_lock(
+        resource_id=upload_record.resource_id,
+        filename=upload_record.filename,
+        owner=upload_id,
+    )
+    await upload_session_store.delete_upload_session(upload_id)
+
+    logger.debug(
+        "tus_terminate_ok resource_id=%s upload_id=%s",
+        upload_record.resource_id,
+        upload_id,
     )
     return TusHookResponse()
 
@@ -404,6 +503,9 @@ async def tusd_hooks(
 
     if event_type == TUSD_HOOK_POST_FINISH:
         return await _handle_post_finish(payload, service, upload_session_store)
+
+    if event_type == TUSD_HOOK_PRE_TERMINATE:
+        return await _handle_pre_terminate(payload, upload_session_store)
 
     logger.info(
         "tusd_hook_ignored type=%s upload_id=%s",

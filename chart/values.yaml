@@ -265,6 +265,17 @@ networkPolicy:
   # tusd is assumed to be deployed in the same namespace as this release and
   # should use the ClusterIP URL:
   # http://discovery-gateway:8000
+  #
+  # The tusd chart MUST enable at minimum these hook events via
+  # `--hooks-enabled-events` so this Gateway can enforce upload authorization
+  # and the (resource_id, filename) lock that prevents two concurrent uploads
+  # from overwriting each other:
+  #   - pre-create   (required: ownership/size/path checks + lock acquire)
+  #   - post-finish  (required: marks upload complete + releases lock)
+  #   - pre-terminate (recommended: releases lock immediately when the client
+  #                    cancels an in-flight upload; without it, an abandoned
+  #                    upload blocks re-uploads of the same filename for the
+  #                    full TUS_UPLOAD_TTL_SECONDS window — 24h by default)
   tusd:
     enabled: true
     podSelectorLabels:

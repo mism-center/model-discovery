@@ -19,7 +19,14 @@ class UploadTokenClaims(BaseModel):
 
 
 class TusUploadRecord(BaseModel):
-    """Authorization context captured when tusd accepts an upload."""
+    """
+    Authorization context captured when tusd accepts an upload.
+
+    `filename` is captured so `post-finish` / `pre-terminate` can release the
+    `(resource_id, filename)` lock that `pre-create` acquired to serialize
+    concurrent uploads targeting the same destination path.
+    """
 
     user_id: str
     resource_id: str
+    filename: str
