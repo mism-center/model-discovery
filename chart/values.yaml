@@ -72,6 +72,7 @@ irods:
     name: "irods-pvc"
     storage: "5Gi"
     accessMode: "ReadWriteMany"
+    # Note: This value MUST match the IRODS_MOUNT_PATH env var in the API container
     mountPath: "/irods"
     subPath: ""
 
