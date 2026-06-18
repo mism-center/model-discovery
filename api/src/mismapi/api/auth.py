@@ -23,6 +23,7 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 LOGIN_PATH = "/api/auth/login"
 AUTH_ERROR_DESCRIPTION_MAX_LEN = 120
+RETURN_TO_SESSION_KEY = "return_to"
 
 
 @router.get("/login")
@@ -32,11 +33,16 @@ async def login(
     return_to_key: str = "",
     return_to_query: str = "",
 ) -> RedirectResponse:
-    return await oidc_service.authorize_redirect(
-        request,
-        return_to_key=return_to_key or None,
-        return_to_query=return_to_query or None,
-    )
+    # Carry return_to through the IdP round-trip in the SessionMiddleware
+    # cookie (already required by Authlib). Read again in /callback.
+    if return_to_key:
+        request.session[RETURN_TO_SESSION_KEY] = {
+            "key": return_to_key,
+            "query": return_to_query,
+        }
+    else:
+        request.session.pop(RETURN_TO_SESSION_KEY, None)
+    return await oidc_service.authorize_redirect(request)
 
 
 @router.get("/callback")
@@ -48,7 +54,9 @@ async def callback(
     code: str = "",
     state: str = "",
 ) -> RedirectResponse:
-    return_to_key, return_to_query = await oidc_service.pop_return_to(request)
+    # Pop early: also clears the entry on the idp_error / mismatched-state paths
+    # so a stale return_to can't leak into a subsequent, unrelated login attempt.
+    return_to = request.session.pop(RETURN_TO_SESSION_KEY, None)
 
     idp_error = request.query_params.get("error")
     if idp_error:
@@ -92,8 +100,8 @@ async def callback(
         )
     )
 
-    if return_to_key:
-        landing = resolve_return_to(return_to_key, return_to_query)
+    if return_to and return_to.get("key"):
+        landing = resolve_return_to(return_to.get("key"), return_to.get("query"))
     else:
         landing = settings.oidc_post_login_redirect_uri or DEFAULT_LANDING_PATH
     response = RedirectResponse(url=landing, status_code=302)
