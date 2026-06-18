@@ -276,8 +276,9 @@ networkPolicy:
   #   - pre-terminate (recommended: releases lock immediately when the client
   #                    cancels an in-flight upload; without it, an abandoned
   #                    upload blocks re-uploads of the same filename for the
-  #                    full TUS_UPLOAD_TTL_SECONDS window — 24h by default)
+  #                    full TUS_UPLOAD_TTL_SECONDS window — 1h by default)
   tusd:
+    # Note: This MUST be set to true for the expected NetworkPolicy to be applied.
     enabled: true
     podSelectorLabels:
       app.kubernetes.io/name: tusd
