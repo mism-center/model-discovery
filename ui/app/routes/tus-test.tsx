@@ -100,7 +100,10 @@ async function createModel(modelName: string): Promise<ModelResponse> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name: modelName,
-      location_uri: `${apiOrigin()}/api/v1/models/${encodeURIComponent(modelName)}`,
+      // Leave empty: the post-finish tus hook stamps `location_uri` to the
+      // actual upload directory (`irods:///models/{id}/files`). The API
+      // rejects non-iRODS/non-path schemes here at create time.
+      location_uri: '',
       execution_type: 'docker',
       description: 'Created by tus upload test page',
     }),

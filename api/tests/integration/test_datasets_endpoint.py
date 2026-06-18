@@ -23,7 +23,7 @@ def _make_dataset(
         id=id,
         name=name,
         resource_type=ResourceType.DATASET,
-        location_uri="s3://bucket/data.csv",
+        location_uri="irods:///datasets/d-1",
         description=description,
         version="1.0",
         status=ResourceStatus.ACTIVE,
@@ -61,7 +61,7 @@ def test_create_dataset_success() -> None:
         "/api/v1/datasets",
         json={
             "name": "Example Dataset",
-            "location_uri": "s3://bucket/data.csv",
+            "location_uri": "irods:///datasets/d-1",
             "format_tags": ["csv"],
         },
     )
@@ -85,7 +85,7 @@ def test_create_dataset_minimal() -> None:
         "/api/v1/datasets",
         json={
             "name": "Minimal",
-            "location_uri": "s3://bucket/file",
+            "location_uri": "irods:///datasets/d-1",
         },
     )
 
@@ -98,7 +98,7 @@ def test_create_dataset_missing_name_returns_400() -> None:
 
     response = client.post(
         "/api/v1/datasets",
-        json={"location_uri": "s3://bucket/file"},
+        json={"location_uri": "irods:///datasets/d-1"},
     )
 
     assert response.status_code == 400
@@ -235,7 +235,7 @@ def test_list_datasets_response_shape() -> None:
     assert item["id"] == "d-1"
     assert item["name"] == "Example Dataset"
     assert item["resource_type"] == ResourceType.DATASET.value
-    assert item["location_uri"] == "s3://bucket/data.csv"
+    assert item["location_uri"] == "irods:///datasets/d-1"
     assert item["version"] == "1.0"
     assert item["status"] == ResourceStatus.ACTIVE.value
     assert item["owner"] == "user-1"
@@ -256,7 +256,7 @@ def test_create_dataset_forwards_attribution_fields() -> None:
         "/api/v1/datasets",
         json={
             "name": "Attr Dataset",
-            "location_uri": "s3://bucket/f.csv",
+            "location_uri": "irods:///datasets/attr",
             "authors": [{"name": "Bob", "orcid": "", "affiliation": "UNC", "role": "curator"}],
             "organization": "UNC",
             "contact_email": "bob@unc.edu",
@@ -284,7 +284,7 @@ def test_create_dataset_forwards_scientific_fields() -> None:
         "/api/v1/datasets",
         json={
             "name": "Sci Dataset",
-            "location_uri": "s3://bucket/sci.csv",
+            "location_uri": "irods:///datasets/sci",
             "modeling_scales": ["population"],
             "organisms": ["rat"],
             "domains": ["neuroscience"],
@@ -310,7 +310,7 @@ def test_create_dataset_forwards_integrity_fields() -> None:
         "/api/v1/datasets",
         json={
             "name": "Integrity Dataset",
-            "location_uri": "s3://bucket/ig.csv",
+            "location_uri": "irods:///datasets/ig",
             "digest_sha256": "xyz789",
             "size_bytes": 2048,
             "external_ids": {"zenodo": "654321"},
@@ -334,7 +334,7 @@ def test_create_dataset_response_includes_new_fields() -> None:
     client = _make_app_with_service(service)
     response = client.post(
         "/api/v1/datasets",
-        json={"name": "New Fields Dataset", "location_uri": "s3://bucket/nf.csv"},
+        json={"name": "New Fields Dataset", "location_uri": "irods:///datasets/nf"},
     )
 
     assert response.status_code == 201

@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
+import pytest
 from fastapi.testclient import TestClient
 from mism_registry.enums import ExecutionType, ResourceStatus, ResourceType
 from mism_registry.resource import Resource
@@ -26,7 +27,7 @@ def _make_model(
         id=id,
         name=name,
         resource_type=ResourceType.MODEL,
-        location_uri="git+https://example.com/model.git",
+        location_uri="irods:///models/m-1",
         execution_type=execution_type,
         execution_ref=execution_ref,
         description=description,
@@ -65,7 +66,7 @@ def test_create_model_success() -> None:
         "/api/v1/models",
         json={
             "name": "Example Model",
-            "location_uri": "git+https://example.com/model.git",
+            "location_uri": "irods:///models/m-1",
             "execution_type": "python",
         },
     )
@@ -87,7 +88,7 @@ def test_create_model_missing_name_returns_400() -> None:
     response = client.post(
         "/api/v1/models",
         json={
-            "location_uri": "git+https://example.com/model.git",
+            "location_uri": "irods:///models/m-1",
             "execution_type": "python",
         },
     )
@@ -104,7 +105,7 @@ def test_create_model_missing_execution_type_returns_400() -> None:
         "/api/v1/models",
         json={
             "name": "Example Model",
-            "location_uri": "git+https://example.com/model.git",
+            "location_uri": "irods:///models/m-1",
         },
     )
 
@@ -120,7 +121,7 @@ def test_create_model_invalid_execution_type_returns_422() -> None:
         "/api/v1/models",
         json={
             "name": "Example Model",
-            "location_uri": "git+https://example.com/model.git",
+            "location_uri": "irods:///models/m-1",
             "execution_type": "bogus",
         },
     )
@@ -141,7 +142,7 @@ def test_create_model_forwards_execution_ref() -> None:
         "/api/v1/models",
         json={
             "name": "Example Model",
-            "location_uri": "docker://foo:1",
+            "location_uri": "irods:///models/m-1",
             "execution_type": "docker",
             "execution_ref": "docker://foo:1",
         },
@@ -163,7 +164,7 @@ def test_create_model_response_includes_execution_ref() -> None:
         "/api/v1/models",
         json={
             "name": "Example Model",
-            "location_uri": "docker://foo:1",
+            "location_uri": "irods:///models/m-1",
             "execution_type": "docker",
             "execution_ref": "docker://foo:1",
         },
@@ -183,7 +184,7 @@ def test_create_model_without_execution_ref_defaults_to_empty() -> None:
         "/api/v1/models",
         json={
             "name": "Example Model",
-            "location_uri": "git+https://example.com/model.git",
+            "location_uri": "irods:///models/m-1",
             "execution_type": "python",
         },
     )
@@ -205,7 +206,7 @@ def test_create_model_null_execution_ref_defaults_to_empty() -> None:
         "/api/v1/models",
         json={
             "name": "Example Model",
-            "location_uri": "git+https://example.com/model.git",
+            "location_uri": "irods:///models/m-1",
             "execution_type": "python",
             "execution_ref": None,
         },
@@ -317,7 +318,7 @@ def test_create_model_forwards_attribution_fields() -> None:
         "/api/v1/models",
         json={
             "name": "Bio Model",
-            "location_uri": "https://example.com/bio",
+            "location_uri": "irods:///models/bio",
             "execution_type": "docker",
             "authors": [
                 {
@@ -355,7 +356,7 @@ def test_create_model_forwards_scientific_fields() -> None:
         "/api/v1/models",
         json={
             "name": "Sci Model",
-            "location_uri": "https://example.com/sci",
+            "location_uri": "irods:///models/sci",
             "execution_type": "python",
             "modeling_scales": ["cellular", "tissue"],
             "organisms": ["human"],
@@ -382,7 +383,7 @@ def test_create_model_forwards_integrity_fields() -> None:
         "/api/v1/models",
         json={
             "name": "Integrity Model",
-            "location_uri": "https://example.com/ig",
+            "location_uri": "irods:///models/ig",
             "execution_type": "docker",
             "digest_sha256": "abc123",
             "size_bytes": 4096,
@@ -409,7 +410,7 @@ def test_create_model_forwards_io_spec() -> None:
         "/api/v1/models",
         json={
             "name": "IOSpec Model",
-            "location_uri": "https://example.com/io",
+            "location_uri": "irods:///models/io",
             "execution_type": "docker",
             "io_spec": {
                 "inputs": [
@@ -439,7 +440,7 @@ def test_create_model_response_includes_new_fields() -> None:
         "/api/v1/models",
         json={
             "name": "New Fields Model",
-            "location_uri": "https://example.com/nf",
+            "location_uri": "irods:///models/nf",
             "execution_type": "python",
         },
     )
@@ -509,3 +510,89 @@ def test_update_model_omitted_new_fields_are_none() -> None:
     assert kwargs["license"] is None
     assert kwargs["authors"] is None
     assert kwargs["io_spec"] is None
+
+
+# ── location_uri validation ────────────────────────────────────
+# The download endpoint can only resolve iRODS URIs and plain paths.
+# Create/update must reject everything else up front so the failure mode is
+# obvious instead of surfacing as a 400 at download time.
+
+
+@pytest.mark.parametrize(
+    "bad_uri",
+    [
+        "http://localhost:8000/api/v1/models/foo",
+        "https://example.com/model",
+        "s3://bucket/key",
+        "docker://foo:1",
+        "git+https://example.com/model.git",
+    ],
+)
+def test_create_model_rejects_unsupported_location_uri_scheme(bad_uri: str) -> None:
+    service = MagicMock(spec=RegistryService)
+    client = _make_app_with_service(service)
+
+    response = client.post(
+        "/api/v1/models",
+        json={
+            "name": "Example Model",
+            "location_uri": bad_uri,
+            "execution_type": "python",
+        },
+    )
+
+    assert response.status_code == 400
+    service.create_model.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "good_uri",
+    [
+        "irods:///models/m-1",
+        "irods://models/m-1",
+        "/models/m-1",
+        "models/m-1",
+        "",  # empty allowed — upload flow stamps the real URI in post-finish
+    ],
+)
+def test_create_model_accepts_supported_location_uri_shapes(good_uri: str) -> None:
+    service = MagicMock(spec=RegistryService)
+    service.create_model.return_value = _make_model()
+
+    client = _make_app_with_service(service)
+    response = client.post(
+        "/api/v1/models",
+        json={
+            "name": "Example Model",
+            "location_uri": good_uri,
+            "execution_type": "python",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    service.create_model.assert_called_once()
+
+
+def test_update_model_rejects_unsupported_location_uri_scheme() -> None:
+    service = MagicMock(spec=RegistryService)
+    client = _make_app_with_service(service)
+
+    response = client.put(
+        "/api/v1/models/m-1",
+        json={"location_uri": "https://example.com/model"},
+    )
+
+    assert response.status_code == 400
+    service.update_model.assert_not_called()
+
+
+def test_update_model_omitted_location_uri_is_no_op() -> None:
+    """PUT without location_uri keeps the validator a no-op (None passes through)."""
+    service = MagicMock(spec=RegistryService)
+    service.update_model.return_value = _make_model()
+
+    client = _make_app_with_service(service)
+    response = client.put("/api/v1/models/m-1", json={"description": "x"})
+
+    assert response.status_code == 200
+    assert service.update_model.call_args.kwargs["location_uri"] is None

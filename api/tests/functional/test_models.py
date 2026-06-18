@@ -16,7 +16,7 @@ def test_create_and_list_model(api: httpx.Client) -> None:
         "/api/v1/models",
         json={
             "name": name,
-            "location_uri": "https://example.com/model",
+            "location_uri": "irods:///models/functional",
             "execution_type": "docker",
             "description": "functional test model",
         },
@@ -40,7 +40,7 @@ def test_create_model_and_run(api: httpx.Client) -> None:
         "/api/v1/models",
         json={
             "name": name,
-            "location_uri": "https://example.com/model",
+            "location_uri": "irods:///models/functional",
             "execution_type": "docker",
         },
     )
@@ -60,7 +60,7 @@ def test_initiate_model_upload(api: httpx.Client) -> None:
         "/api/v1/models",
         json={
             "name": name,
-            "location_uri": "https://example.com/model",
+            "location_uri": "irods:///models/functional",
             "execution_type": "docker",
         },
     )
@@ -81,7 +81,7 @@ def test_update_model(api: httpx.Client) -> None:
         "/api/v1/models",
         json={
             "name": name,
-            "location_uri": "https://example.com/model",
+            "location_uri": "irods:///models/functional",
             "execution_type": "docker",
         },
     )

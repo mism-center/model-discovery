@@ -3,7 +3,9 @@ from typing import Any, Literal
 
 from mism_registry import ExecutionType
 from mism_registry.types import Author, IOSlot, IOSpec, Publication
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from mismapi.core.file_storage import validate_location_uri
 
 # ── Nested DTOs ──────────────────────────────────────────────────────
 
@@ -126,6 +128,13 @@ class RegisterModelRequest(_AttributionFields, _ScientificFields, _IntegrityFiel
     owner: str = ""
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    # Reject location_uris the download endpoint cannot resolve (only iRODS
+    # URIs and plain paths are servable). Empty string is allowed so callers
+    # can defer to the upload flow, which stamps the real URI in post-finish.
+    _validate_location_uri = field_validator("location_uri")(
+        lambda cls, v: validate_location_uri(v)
+    )
+
 
 class RegisterModelResponse(BaseModel):
     id: str
@@ -190,6 +199,12 @@ class UpdateModelRequest(_AttributionFields, _ScientificFields, _IntegrityFields
     external_ids: dict[str, str] | None = None  # type: ignore[assignment]
     license: str | None = None  # type: ignore[assignment]
 
+    # None = no-op (don't touch location_uri); empty string allowed (upload
+    # flow will reconcile). Reject schemes the download endpoint can't resolve.
+    _validate_location_uri = field_validator("location_uri")(
+        lambda cls, v: v if v is None else validate_location_uri(v)
+    )
+
 
 # ── Dataset schemas ──────────────────────────────────────────────────
 
@@ -202,6 +217,10 @@ class RegisterDatasetRequest(_AttributionFields, _ScientificFields, _IntegrityFi
     owner: str = ""
     format_tags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    _validate_location_uri = field_validator("location_uri")(
+        lambda cls, v: validate_location_uri(v)
+    )
 
 
 class RegisterDatasetResponse(BaseModel):
@@ -260,6 +279,10 @@ class UpdateDatasetRequest(_AttributionFields, _ScientificFields, _IntegrityFiel
     size_bytes: int | None = None
     external_ids: dict[str, str] | None = None  # type: ignore[assignment]
     license: str | None = None  # type: ignore[assignment]
+
+    _validate_location_uri = field_validator("location_uri")(
+        lambda cls, v: v if v is None else validate_location_uri(v)
+    )
 
 
 # ── Run schemas ──────────────────────────────────────────────────────

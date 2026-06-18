@@ -16,7 +16,7 @@ def test_create_and_list_dataset(api: httpx.Client) -> None:
         "/api/v1/datasets",
         json={
             "name": name,
-            "location_uri": "s3://bucket/data.csv",
+            "location_uri": "irods:///datasets/functional",
             "format_tags": ["csv"],
             "description": "functional test dataset",
         },
@@ -41,7 +41,7 @@ def test_update_dataset(api: httpx.Client) -> None:
         "/api/v1/datasets",
         json={
             "name": name,
-            "location_uri": "s3://bucket/data.csv",
+            "location_uri": "irods:///datasets/functional",
         },
     )
     assert r.status_code == 201
