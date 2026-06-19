@@ -8,7 +8,15 @@ services:
     ports:
       - "5433:5432"
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 2s
       timeout: 5s
       retries: 10
@@ -23,16 +31,15 @@ services:
         condition: service_healthy
     environment:
       MISM_DAL_DATABASE_URL: "postgresql+psycopg://postgres:postgres@db:5432/mism_test"
-    entrypoint:
-      [
+    entrypoint: [
         "python",
         "-c",
         "from alembic.config import Config; from alembic import command;
-          import mism_registry.backends.migrations as m; import os; cfg =
-          Config(); cfg.set_main_option('script_location',
-          os.path.dirname(m.__file__)); cfg.set_main_option('sqlalchemy.url',
-          os.environ['MISM_DAL_DATABASE_URL']); command.upgrade(cfg, 'head');
-          print('Migrations complete')",
+        import mism_registry.backends.migrations as m; import os; cfg =
+        Config(); cfg.set_main_option('script_location',
+        os.path.dirname(m.__file__)); cfg.set_main_option('sqlalchemy.url',
+        os.environ['MISM_DAL_DATABASE_URL']); command.upgrade(cfg, 'head');
+        print('Migrations complete')",
       ]
 
   api:
@@ -43,10 +50,14 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
     environment:
       DATABASE_URL: "postgresql+psycopg://postgres:postgres@db:5432/mism_test"
+      REDIS_URL: "redis://redis:6379/0"
+      TUSD_BASE_URL: "http://localhost:8080"
       DISABLE_AUTH: "true"
       STUB_UPSTREAM_SERVICES: "true"
     volumes:
@@ -54,13 +65,12 @@ services:
     ports:
       - "8000:8000"
     healthcheck:
-      test:
-        [
+      test: [
           "CMD",
           "python",
           "-c",
           "import urllib.request;
-            urllib.request.urlopen('http://localhost:8000/healthz')",
+          urllib.request.urlopen('http://localhost:8000/healthz')",
         ]
       interval: 3s
       timeout: 5s

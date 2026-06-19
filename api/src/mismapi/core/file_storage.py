@@ -18,14 +18,64 @@ which means it's also the single place that enforces:
   * Only iRODS-mounted resources are accepted (other schemes 400).
   * The resolved path stays inside the mount root — no ``..`` escapes.
   * The resolved path actually exists.
+
+``validate_location_uri`` exposes the same scheme contract to API request
+schemas so unsupported schemes (``http://``, ``s3://``, etc.) are rejected at
+create/update time rather than only at download time.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
 from mismapi.core.errors import APIError
+
+_LocationUriKind = Literal["irods", "path"]
+
+
+def _classify_location_uri(location_uri: str) -> _LocationUriKind:
+    """Return the scheme kind of ``location_uri`` or raise ``ValueError``.
+
+    The accepted shapes are:
+
+      * ``irods://...`` and ``irods:///...`` — explicit iRODS scheme
+      * scheme-less paths (absolute or relative) — implicit iRODS
+
+    Anything else (``http://``, ``https://``, ``s3://``, ``docker://``,
+    ``git+https://``, ...) is rejected because the download endpoint cannot
+    resolve it. Used by both ``resolve_location_uri`` and the API request
+    validators so the create-time contract matches the download-time contract.
+    """
+    # Note: on Windows, `urlsplit("C:\\foo")` returns scheme="c" because the
+    # drive letter looks like a URL scheme. Detect that case explicitly so
+    # plain absolute paths still take the implicit-iRODS branch.
+    parts = urlsplit(location_uri)
+    is_plain_path = parts.scheme == "" or (len(parts.scheme) == 1 and parts.scheme.isalpha())
+    if parts.scheme == "irods":
+        return "irods"
+    if is_plain_path:
+        return "path"
+    raise ValueError(
+        f"Unsupported location_uri scheme '{parts.scheme}'. "
+        "location_uri must use the 'irods://' scheme or be a path (relative or absolute); "
+        "the download endpoint cannot resolve other schemes."
+    )
+
+
+def validate_location_uri(location_uri: str) -> str:
+    """Validate the scheme of a user-supplied ``location_uri``.
+
+    Returns the input unchanged when valid. Empty strings are accepted so
+    callers can create a resource without committing to a path up front — the
+    tus ``post-finish`` hook stamps a real iRODS URI once an upload completes.
+    Raises ``ValueError`` on unsupported schemes so Pydantic surfaces a 4xx.
+    """
+    if not location_uri:
+        return location_uri
+    _classify_location_uri(location_uri)
+    return location_uri
 
 
 def resolve_location_uri(location_uri: str, mount_path: str) -> Path:
@@ -44,32 +94,28 @@ def resolve_location_uri(location_uri: str, mount_path: str) -> Path:
     mount_root = Path(mount_path).resolve()
 
     # 1. Extract the path component, scheme-aware.
-    # Note: on Windows, `urlsplit("C:\\foo")` returns scheme="c" because the
-    # drive letter looks like a URL scheme. Detect that case explicitly so
-    # plain absolute paths still take the implicit-iRODS branch.
+    try:
+        kind = _classify_location_uri(location_uri)
+    except ValueError as exc:
+        raise APIError(
+            status_code=400,
+            code="unsupported_location_scheme",
+            detail=str(exc),
+        ) from exc
+
     parts = urlsplit(location_uri)
-    is_plain_path = parts.scheme == "" or (len(parts.scheme) == 1 and parts.scheme.isalpha())
-    if parts.scheme == "irods":
+    if kind == "irods":
         # urlsplit("irods:///foo/bar") -> path="/foo/bar"
         # urlsplit("irods://foo/bar")  -> netloc="foo", path="/bar"  ← treat netloc as first segment
         rel = (parts.netloc + parts.path).lstrip("/")
-    elif is_plain_path:
-        # No scheme (or single-letter Windows drive) → implicit iRODS.
+    else:
+        # Plain path (no scheme, or single-letter Windows drive) → implicit iRODS.
         # Strip the mount prefix if present so "/irods/foo/bar", "/foo/bar",
         # and "foo/bar" all collapse to the same relative path under mount_root.
         if location_uri.startswith(mount_path):
             rel = location_uri[len(mount_path) :].lstrip("/").lstrip("\\")
         else:
             rel = location_uri.lstrip("/").lstrip("\\")
-    else:
-        raise APIError(
-            status_code=400,
-            code="unsupported_location_scheme",
-            detail=(
-                f"Cannot serve files for scheme '{parts.scheme}'. "
-                "Only iRODS-mounted resources are downloadable."
-            ),
-        )
 
     # 2. Resolve and validate it stays inside the mount.
     candidate = (mount_root / rel).resolve()

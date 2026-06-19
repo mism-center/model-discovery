@@ -10,3 +10,23 @@ class OidcSessionRecord(BaseModel):
     refresh_token: str = ""
     id_token: str = ""
     expires_at: str = ""
+
+
+class UploadTokenClaims(BaseModel):
+    user_id: str
+    max_bytes: int
+    allowed_path: str
+
+
+class TusUploadRecord(BaseModel):
+    """
+    Authorization context captured when tusd accepts an upload.
+
+    `filename` is captured so `post-finish` / `pre-terminate` can release the
+    `(resource_id, filename)` lock that `pre-create` acquired to serialize
+    concurrent uploads targeting the same destination path.
+    """
+
+    user_id: str
+    resource_id: str
+    filename: str

@@ -36,11 +36,9 @@ spec:
                 secretKeyRef:
                   name: model-discovery-secrets
                   key: databasePassword
-#            # PGDATA must be a SUBDIRECTORY of the PVC mount. ext4 PVCs
-#            # always contain a lost+found entry, which causes initdb to
-#            # fail with "directory exists but is not empty".
+            # PVC root contains lost+found on ext4; point PGDATA at a configurable subdir so initdb sees an empty target.
             - name: PGDATA
-              value: {{ .Values.metadataStore.pgData }}
+              value: {{ .Values.metadataStore.pgData | quote }}
           livenessProbe:
             exec:
               command:

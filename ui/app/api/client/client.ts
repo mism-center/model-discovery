@@ -1,10 +1,8 @@
 import createClient, { type Middleware } from 'openapi-fetch';
 
 import type { paths } from '~/api/generated/schema';
+import { resolveApiBaseUrl } from '~/utils/env';
 import { ApiError } from './errors';
-
-const DEFAULT_BASE_URL =
-  import.meta.env?.VITE_API_BASE_URL ?? 'https://mism-discovery.apps.renci.org';
 
 /**
  * Normalize non-2xx responses into `ApiError` so call sites don't have to
@@ -30,7 +28,7 @@ const errorMiddleware: Middleware = {
 };
 
 export const apiClient = createClient<paths>({
-  baseUrl: DEFAULT_BASE_URL,
+  baseUrl: resolveApiBaseUrl(),
   // Ready for cookie-based auth the day it lands; harmless for anonymous
   // requests to the search endpoint.
   credentials: 'include',

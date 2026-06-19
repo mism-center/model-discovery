@@ -35,6 +35,7 @@ from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.core.errors import APIError
 from mismapi.core.file_storage import resolve_location_uri, safe_join
 from mismapi.core.settings import get_settings
+from mismapi.utils import UPLOAD_ALLOWED_PATH_TEMPLATE
 
 logger = logging.getLogger(__name__)
 
@@ -557,6 +558,87 @@ class RegistryService:
             tags=tags,
             organisms=organisms,
             scales=scales,
+        )
+
+    # ── Upload lifecycle ─────────────────────────────────────────────
+
+    def get_resource_and_assert_ownership(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        resource_id: str,
+    ) -> Resource:
+        """
+        Look up `resource_id` and verify `principal` owns it.
+
+        On any failure (resource missing OR caller is not the owner) raises a
+        single, indistinguishable 403 with code `not_authorized`.
+
+        FUTURE: replace string equality with `fga.check(user=principal.subject,
+        relation="owner", object=f"resource:{resource_id}")`.
+        """
+        try:
+            resource = self._registry.get_resource(resource_id)
+        except ResourceNotFoundError:
+            raise self._not_authorized_error() from None
+
+        if resource.owner != principal.subject:
+            raise self._not_authorized_error()
+        return resource
+
+    def mark_upload_complete(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        resource_id: str,
+    ) -> Resource:
+        """
+        Stamp `metadata['upload_status'] = 'UPLOAD_COMPLETE'` on a resource owned by `principal`
+        and reconcile its `location_uri` to where the upload actually landed.
+
+        Why reconcile `location_uri` here? At create time the user supplies an
+        arbitrary (iRODS or path) `location_uri`, but tus always writes to a
+        deterministic path under `UPLOAD_ALLOWED_PATH_TEMPLATE`. If the two
+        disagree, the download endpoint (which reads `location_uri`) cannot
+        find the just-uploaded files. Stamping the canonical iRODS URI here —
+        in the same atomic update as `upload_status` — keeps the two in sync
+        without forcing the user to compute the path correctly at create time.
+
+        Idempotent. `upload_status` is kept in `metadata` because
+        `mism_registry.ResourceStatus` models publication lifecycle
+        (active/superseded/archived), not content lifecycle.
+        """
+        resource = self.get_resource_and_assert_ownership(principal, resource_id=resource_id)
+
+        new_metadata = dict(resource.metadata)
+        new_metadata["upload_status"] = "UPLOAD_COMPLETE"
+        resource.metadata = new_metadata
+
+        # Reconcile location_uri with the actual storage path tusd wrote to.
+        # `UPLOAD_ALLOWED_PATH_TEMPLATE` is the single source of truth for the
+        # upload destination and is also used by the tus pre-create hook.
+        upload_path = UPLOAD_ALLOWED_PATH_TEMPLATE.format(resource_id=resource_id)
+        resource.location_uri = f"irods:///{upload_path}"
+
+        try:
+            updated = self._registry.update_resource(resource)
+            self._session.commit()
+        except RegistryValidationError as exc:
+            self._session.rollback()
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+
+        return updated
+
+    @staticmethod
+    def _not_authorized_error() -> APIError:
+        """
+        TODO: Improve error messages and handling by subclassing APIError with specific errors.
+        That will help not only here but in many other places too.
+        """
+        return APIError(
+            status_code=403,
+            code="not_authorized",
+            detail="Resource does not exist or principal is not its owner.",
         )
 
     # ── Lifecycle ────────────────────────────────────────────────────

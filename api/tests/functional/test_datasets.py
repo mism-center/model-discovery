@@ -16,7 +16,7 @@ def test_create_and_list_dataset(api: httpx.Client) -> None:
         "/api/v1/datasets",
         json={
             "name": name,
-            "location_uri": "s3://bucket/data.csv",
+            "location_uri": "irods:///datasets/functional",
             "format_tags": ["csv"],
             "description": "functional test dataset",
         },
@@ -41,7 +41,7 @@ def test_update_dataset(api: httpx.Client) -> None:
         "/api/v1/datasets",
         json={
             "name": name,
-            "location_uri": "s3://bucket/data.csv",
+            "location_uri": "irods:///datasets/functional",
         },
     )
     assert r.status_code == 201
@@ -55,6 +55,6 @@ def test_update_dataset(api: httpx.Client) -> None:
     assert r.json()["description"] == "updated via functional test"
 
 
-def test_create_dataset_missing_fields_returns_422(api: httpx.Client) -> None:
+def test_create_dataset_missing_fields_returns_400(api: httpx.Client) -> None:
     r = api.post("/api/v1/datasets", json={"description": "no name or uri"})
-    assert r.status_code == 422
+    assert r.status_code == 400

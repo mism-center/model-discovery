@@ -7,7 +7,12 @@ from mism_registry.resource import Resource
 from mismapi.api.v1._run_helpers import resource_summary as _resource_summary
 from mismapi.api.v1._run_helpers import run_detail as _run_detail
 from mismapi.auth.base import AuthenticatedPrincipalDep
-from mismapi.core.deps import ExecutionClientDep, RegistryServiceDep
+from mismapi.core.deps import (
+    ExecutionClientDep,
+    RegistryServiceDep,
+    SettingsDep,
+    UploadSessionStoreServiceDep,
+)
 from mismapi.schemas.registry import (
     ExecuteRunRequest,
     ExecuteRunResponse,
@@ -24,6 +29,8 @@ from mismapi.schemas.registry import (
     pub_to_dto,
 )
 from mismapi.schemas.search import ModelListItem, ModelListResponse
+from mismapi.schemas.upload import UploadInitiatedResponse
+from mismapi.utils import UPLOAD_ALLOWED_PATH_TEMPLATE
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +207,30 @@ async def update_model(
     )
 
     return _model_response(resource)
+
+
+@router.post("/models/{model_id}/upload", response_model=UploadInitiatedResponse)
+async def initiate_model_file_upload(
+    model_id: str,
+    settings: SettingsDep,
+    upload_session_store: UploadSessionStoreServiceDep,
+    service: RegistryServiceDep,
+    principal: AuthenticatedPrincipalDep,
+) -> UploadInitiatedResponse:
+
+    service.get_resource_and_assert_ownership(principal, resource_id=model_id)
+    allowed_path = UPLOAD_ALLOWED_PATH_TEMPLATE.format(resource_id=model_id)
+    token = await upload_session_store.mint_upload_token(
+        principal.subject,
+        settings.upload_max_bytes,
+        allowed_path,
+    )
+
+    return UploadInitiatedResponse(
+        upload_server_base_url=settings.tusd_base_url,
+        resource_id=model_id,
+        token=token,
+    )
 
 
 @router.post(

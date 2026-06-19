@@ -2,10 +2,10 @@ from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
+from mism_registry import ModelRunDetail, ModelRunSummary
 from mism_registry.enums import ExecutionType, ResourceStatus, ResourceType, RunStatus
 from mism_registry.resource import Resource
 from mism_registry.run import Run
-from mism_registry.run_detail import ModelRunDetail, ModelRunSummary
 
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
 from mismapi.core.deps import _get_registry_service

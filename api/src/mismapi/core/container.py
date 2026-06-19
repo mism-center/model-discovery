@@ -11,7 +11,7 @@ read from the container; nothing else should.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -30,8 +30,8 @@ from mismapi.clients.execution_client import ExecutionClient
 from mismapi.clients.local_upload_client import LocalFileUploadClient
 from mismapi.clients.upload_client import UploadServiceClient
 from mismapi.core.config_validation import ensure_startup_config
-from mismapi.core.errors import APIError
 from mismapi.core.settings import Settings
+from mismapi.services.upload_session_store_service import UploadSessionStoreService
 
 if TYPE_CHECKING:
     from authlib.integrations.starlette_client import StarletteOAuth2App
@@ -49,6 +49,7 @@ class AppContainer:
     settings: Settings
     redis: Redis
     session_store: SessionStore
+    upload_session_store_service: UploadSessionStoreService
     # Either a real HTTP client (UploadServiceClient) or the local-disk
     # stand-in (LocalFileUploadClient) — selected via settings.upload_backend.
     # Both implement the same async protocol consumed by the upload route.
@@ -62,7 +63,7 @@ class AppContainer:
     _session_factory: sessionmaker[Session]
 
     @contextmanager
-    def open_session(self) -> Iterator[Session]:
+    def open_session(self) -> Generator[Session]:
         """
         Open a SQLAlchemy session and yield it.
         """
@@ -110,13 +111,19 @@ class AppContainer:
             stub_upstream=settings.stub_upstream_services,
         )
 
-        redis_client: Redis = Redis.from_url(  # type: ignore[type-arg]
+        redis_client: Redis = Redis.from_url(  # pyright: ignore[reportUnknownMemberType]
             settings.redis_url,
             decode_responses=False,
         )
-        session_store: SessionStore = RedisSessionStore(
+        redis_session_store = RedisSessionStore(
             redis=redis_client,
             session_ttl_seconds=settings.session_ttl_seconds,
+        )
+        session_store: SessionStore = redis_session_store
+        upload_session_store_service = UploadSessionStoreService(
+            redis=redis_client,
+            upload_token_ttl_seconds=settings.upload_token_ttl_seconds,
+            tus_upload_ttl_seconds=settings.tus_upload_ttl_seconds,
         )
 
         oidc_client = get_oidc_client(build_oauth_registry(settings))
@@ -135,6 +142,7 @@ class AppContainer:
             settings=settings,
             redis=redis_client,
             session_store=session_store,
+            upload_session_store_service=upload_session_store_service,
             upload_client=upload_client,
             execution_client=execution_client,
             auth_validator=auth_validator,
@@ -154,10 +162,8 @@ class AppContainer:
             if self.settings.disable_auth:
                 return
             await self.oidc_service.prime_metadata()
-        except APIError as exc:
-            logger.warning("oidc_discovery_prime_failed error=%s", exc)
-        except Exception:
-            logger.exception("oidc_discovery_prime_failed_unexpected")
+        except Exception as exc:
+            logger.exception("oidc_discovery_prime_failed error=%s", exc)
 
     async def aclose(self) -> None:
         """Tear down every collaborator, best-effort. Errors are logged, never raised."""

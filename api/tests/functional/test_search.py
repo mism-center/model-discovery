@@ -20,7 +20,7 @@ def _seed_search_fixtures(api: httpx.Client) -> dict[str, str]:
         "/api/v1/models",
         json={
             "name": f"Cardiac Simulator {tag}",
-            "location_uri": "https://example.com/cardiac",
+            "location_uri": "irods:///models/cardiac",
             "execution_type": "docker",
             "description": "A computational model for cardiac tissue electrophysiology",
             "owner": f"owner-{tag}",
@@ -33,7 +33,7 @@ def _seed_search_fixtures(api: httpx.Client) -> dict[str, str]:
         "/api/v1/datasets",
         json={
             "name": f"ECG Signal Dataset {tag}",
-            "location_uri": "https://example.com/ecg",
+            "location_uri": "irods:///datasets/ecg",
             "description": "Electrocardiogram signals from cardiac patients",
             "owner": f"owner-{tag}",
             "format_tags": ["csv", "hdf5"],
@@ -46,7 +46,7 @@ def _seed_search_fixtures(api: httpx.Client) -> dict[str, str]:
         "/api/v1/models",
         json={
             "name": f"Neural Classifier {tag}",
-            "location_uri": "https://example.com/nn",
+            "location_uri": "irods:///models/nn",
             "execution_type": "python",
             "description": "Deep learning classifier for brain MRI images",
             "owner": f"other-{tag}",
@@ -414,7 +414,7 @@ def test_create_model_with_full_fields_roundtrip(api: httpx.Client) -> None:
         "/api/v1/models",
         json={
             "name": name,
-            "location_uri": "https://example.com/model",
+            "location_uri": "irods:///models/full",
             "execution_type": "docker",
             "description": "Full-field model",
             "authors": [
@@ -498,7 +498,7 @@ def test_create_dataset_with_full_fields_roundtrip(api: httpx.Client) -> None:
         "/api/v1/datasets",
         json={
             "name": name,
-            "location_uri": "s3://bucket/data.csv",
+            "location_uri": "irods:///datasets/full",
             "description": "Full-field dataset",
             "authors": [
                 {"name": "Bob Smith", "orcid": "", "affiliation": "UNC", "role": "curator"}
@@ -547,7 +547,7 @@ def test_update_model_new_fields(api: httpx.Client) -> None:
     name = unique_name("upd-model-new")
     r = api.post(
         "/api/v1/models",
-        json={"name": name, "location_uri": "https://example.com/m", "execution_type": "python"},
+        json={"name": name, "location_uri": "irods:///models/upd", "execution_type": "python"},
     )
     assert r.status_code == 201
     model_id = r.json()["id"]
@@ -576,7 +576,7 @@ def test_update_dataset_new_fields(api: httpx.Client) -> None:
     name = unique_name("upd-dataset-new")
     r = api.post(
         "/api/v1/datasets",
-        json={"name": name, "location_uri": "s3://bucket/f.csv"},
+        json={"name": name, "location_uri": "irods:///datasets/upd"},
     )
     assert r.status_code == 201
     dataset_id = r.json()["id"]
@@ -605,7 +605,7 @@ def test_list_models_response_includes_new_fields(api: httpx.Client) -> None:
         "/api/v1/models",
         json={
             "name": name,
-            "location_uri": "https://example.com/m",
+            "location_uri": "irods:///models/list-new",
             "execution_type": "docker",
             "organization": "TestOrg",
             "organisms": ["human"],
@@ -630,7 +630,7 @@ def test_list_datasets_response_includes_new_fields(api: httpx.Client) -> None:
         "/api/v1/datasets",
         json={
             "name": name,
-            "location_uri": "s3://bucket/f.csv",
+            "location_uri": "irods:///datasets/list-new",
             "license": "MIT",
             "size_bytes": 100,
         },

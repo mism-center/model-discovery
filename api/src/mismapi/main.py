@@ -2,7 +2,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from mismapi.api.router import build_api_router
@@ -12,11 +12,6 @@ from mismapi.core.logging import configure_root_logger
 from mismapi.core.settings import Settings, get_settings
 from mismapi.core.uvicorn_access_log import install_uvicorn_access_formatter
 from mismapi.middleware.request_context import RequestContextMiddleware
-
-_DEV_CORS_ORIGINS = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-]
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -65,15 +60,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.state.settings = resolved_settings
 
-    if resolved_settings.mism_env in ("local", "development"):
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=_DEV_CORS_ORIGINS,
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
-        )
-
     if not resolved_settings.disable_auth:
         app.add_middleware(
             SessionMiddleware,
@@ -85,6 +71,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             https_only=resolved_settings.production_mode,
         )
     app.add_middleware(RequestContextMiddleware)
+    if resolved_settings.deploy_type == "local":
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
     app.include_router(build_api_router())
     register_exception_handlers(app)
 

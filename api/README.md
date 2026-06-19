@@ -26,6 +26,7 @@ Gateway REST API for MISM, built with FastAPI. It fronts internal microservices 
    - `SEARCH_SERVICE_URL`
    - `UPLOAD_SERVICE_URL`
    - auth settings, if auth is enabled (`OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_AUDIENCE`, `OIDC_REDIRECT_URI`)
+   - Make sure `DEPLOY_TYPE` is set to `local` if deploying locally. This configures CORS correctly for deploying to locahost.
 
 4. Run the app:
 

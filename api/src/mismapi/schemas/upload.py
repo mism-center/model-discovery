@@ -1,6 +1,12 @@
 from pydantic import BaseModel, Field
 
 
+class UploadInitiatedResponse(BaseModel):
+    upload_server_base_url: str
+    resource_id: str
+    token: str
+
+
 class UploadAcceptedResponse(BaseModel):
     status: str = Field(default="accepted")
     # Resource the upload was scoped to — model, dataset, or any other registry resource.

@@ -14,7 +14,7 @@ shapes responses.
 import io
 import logging
 import zipfile
-from collections.abc import Iterator
+from collections.abc import Buffer, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -83,9 +83,10 @@ class _StreamingBuffer(io.RawIOBase):
     def seekable(self) -> bool:
         return False
 
-    def write(self, data: bytes) -> int:  # type: ignore[override]
-        n = len(data)
-        self._buffer.extend(data)
+    def write(self, data: Buffer) -> int:
+        view = memoryview(data)
+        n = view.nbytes
+        self._buffer.extend(view)
         self._pos += n
         return n
 
