@@ -323,6 +323,74 @@ async def test_handle_pre_create_returns_tus_rejection_for_invalid_token(tmp_pat
     upload_session_store_mock.register_upload.assert_not_called()
 
 
+async def test_handle_pre_create_rejects_upload_exceeding_max_bytes(tmp_path: Path) -> None:
+    """`pre-create` must reject an upload whose declared `Size` exceeds the
+    `max_bytes` claim baked into the upload token, returning a tus-native
+    `RejectUpload` with HTTP 413 so tusd surfaces the cap to the client.
+    The token was already consumed at this point, but no lock / record /
+    ownership work should have run."""
+    resource_id = "model-123"
+    claims = UploadTokenClaims(
+        user_id="user-1",
+        max_bytes=1024,
+        allowed_path=f"models/{resource_id}/files",
+    )
+    upload_session_store_mock = _make_upload_session_store_mock(claims=claims)
+    service_mock: Any = create_autospec(RegistryService, instance=True, spec_set=True)
+
+    payload = _pre_create_payload(resource_id=resource_id)
+    # Declared upload size deliberately just over claims.max_bytes.
+    payload.event.upload.size = claims.max_bytes + 1
+
+    response = await _handle_pre_create(
+        payload,
+        cast(UploadSessionStoreService, upload_session_store_mock),
+        cast(RegistryService, service_mock),
+        str(tmp_path),
+    )
+
+    assert response.reject_upload is True
+    assert response.http_response.status_code == 413
+    assert "upload_exceeds_permitted_size" in response.http_response.body
+    # Token was already consumed, but downstream steps must not have run.
+    upload_session_store_mock.consume_upload_token.assert_awaited_once()
+    service_mock.get_resource_and_assert_ownership.assert_not_called()
+    upload_session_store_mock.try_lock_filename.assert_not_called()
+    upload_session_store_mock.register_upload.assert_not_called()
+    upload_session_store_mock.release_filename_lock.assert_not_called()
+
+
+async def test_handle_pre_create_rejects_upload_with_unknown_size(tmp_path: Path) -> None:
+    """If tusd doesn't know the upload size yet (e.g. streaming with deferred
+    length), we can't enforce `max_bytes`, so we reject up front rather than
+    risk admitting an over-cap upload."""
+    resource_id = "model-123"
+    claims = UploadTokenClaims(
+        user_id="user-1",
+        max_bytes=1024,
+        allowed_path=f"models/{resource_id}/files",
+    )
+    upload_session_store_mock = _make_upload_session_store_mock(claims=claims)
+    service_mock: Any = create_autospec(RegistryService, instance=True, spec_set=True)
+
+    payload = _pre_create_payload(resource_id=resource_id)
+    payload.event.upload.size = None
+
+    response = await _handle_pre_create(
+        payload,
+        cast(UploadSessionStoreService, upload_session_store_mock),
+        cast(RegistryService, service_mock),
+        str(tmp_path),
+    )
+
+    assert response.reject_upload is True
+    assert response.http_response.status_code == 413
+    assert "upload_exceeds_permitted_size" in response.http_response.body
+    service_mock.get_resource_and_assert_ownership.assert_not_called()
+    upload_session_store_mock.try_lock_filename.assert_not_called()
+    upload_session_store_mock.register_upload.assert_not_called()
+
+
 async def test_handle_pre_create_sanitizes_filename(tmp_path: Path) -> None:
     resource_id = "model-123"
     claims = UploadTokenClaims(
