@@ -22,7 +22,7 @@ Currently exposes a single tusd hook endpoint:
     window between the existence check and tusd actually writing the file:
     two concurrent uploads of the same `(resource_id, filename)` cannot both
     pass through. On success, the file is stored flat at
-    `models/{resource_id}/files/{filename}`. On ownership failure, invalid
+    `{resource_id}/{version}/{filename}`. On ownership failure, invalid
     filename, lock contention, or filename collision, we return `HookResponse`
     with `RejectUpload=True` so tusd aborts the upload.
   - `post-finish`: fires server-to-server after the upload completes. We look
@@ -91,7 +91,7 @@ from mismapi.schemas.tus import (
 )
 from mismapi.services.registry_service import RegistryService
 from mismapi.services.upload_session_store_service import UploadSessionStoreService
-from mismapi.utils import UPLOAD_ALLOWED_PATH_TEMPLATE
+from mismapi.utils import upload_dir
 
 logger = logging.getLogger(__name__)
 
@@ -207,16 +207,14 @@ def _not_authorized_tus_upload_error(upload_id: str) -> APIError:
     )
 
 
-def _check_allowed_path(claims: UploadTokenClaims, resource_id: str, upload_id: str) -> bool:
-    allowed_path = claims.allowed_path
-    expected_allowed_path = UPLOAD_ALLOWED_PATH_TEMPLATE.format(resource_id=resource_id)
-    if allowed_path != expected_allowed_path:
+def _check_allowed_path(
+    claims: UploadTokenClaims, expected_allowed_path: str, upload_id: str
+) -> bool:
+    if claims.allowed_path != expected_allowed_path:
         logger.debug(
-            "tus_authorize_failed upload_id=%s resource_id=%s allowed_path=%s "
-            + "expected_allowed_path=%s",
+            "tus_authorize_failed upload_id=%s allowed_path=%s expected_allowed_path=%s",
             upload_id,
-            resource_id,
-            allowed_path,
+            claims.allowed_path,
             expected_allowed_path,
         )
         return False
@@ -284,17 +282,10 @@ async def _handle_pre_create(
             detail="Upload exceeds permitted size",
         )
 
-    # Verify the upload path is allowed (must be under the correct resource ID)
-    if not _check_allowed_path(claims, resource_id, upload_id):
-        return _reject_upload(
-            upload_id=upload_id,
-            status_code=403,
-            code="upload_path_invalid",
-            detail="Upload file does not have expected resource ID",
-        )
-
+    # Fetch first so the destination dir can include the resource's version; the
+    # ownership check doubles as authorization.
     try:
-        service.get_resource_and_assert_ownership(principal, resource_id=resource_id)
+        resource = service.get_resource_and_assert_ownership(principal, resource_id=resource_id)
     except APIError as exc:
         return _reject_upload(
             upload_id=upload_id,
@@ -303,7 +294,18 @@ async def _handle_pre_create(
             detail=exc.detail,
         )
 
-    base_file_dir = UPLOAD_ALLOWED_PATH_TEMPLATE.format(resource_id=resource_id)
+    base_file_dir = upload_dir(resource_id, resource.version)
+
+    # Verify the upload path is allowed (token's allowed_path must match the
+    # resource's current <resource_id>/<version> destination).
+    if not _check_allowed_path(claims, base_file_dir, upload_id):
+        return _reject_upload(
+            upload_id=upload_id,
+            status_code=403,
+            code="upload_path_invalid",
+            detail="Upload file does not have expected resource ID",
+        )
+
     upload_file_path = f"{base_file_dir}/{filename}"
     tus_upload_id = f"{base_file_dir}/.uploads/{uuid.uuid4().hex}"
 

@@ -64,7 +64,7 @@ def test_mark_upload_complete_reconciles_location_uri_to_upload_dir() -> None:
     """The whole point of the reconciliation fix.
 
     The user can create a model with any (allowed) ``location_uri`` — even an
-    empty one — but tus always writes to ``models/{id}/files/``. After the
+    empty one — but tus always writes to ``<id>/<version>/``. After the
     upload finishes the resource's URI must point at that directory so
     ``GET /resources/{id}/files`` and ``GET /resources/{id}/download`` find
     the uploaded artifacts.
@@ -73,7 +73,7 @@ def test_mark_upload_complete_reconciles_location_uri_to_upload_dir() -> None:
 
     updated = service.mark_upload_complete(_principal(), resource_id="m-1")
 
-    assert updated.location_uri == "irods:///models/m-1/files"
+    assert updated.location_uri == "m-1/0.1.0"
     assert updated.metadata["upload_status"] == "UPLOAD_COMPLETE"
 
 
@@ -83,7 +83,7 @@ def test_mark_upload_complete_reconciles_even_when_location_uri_was_empty() -> N
 
     updated = service.mark_upload_complete(_principal(), resource_id="m-1")
 
-    assert updated.location_uri == "irods:///models/m-1/files"
+    assert updated.location_uri == "m-1/0.1.0"
 
 
 def test_mark_upload_complete_is_idempotent() -> None:
@@ -93,7 +93,7 @@ def test_mark_upload_complete_is_idempotent() -> None:
     first = service.mark_upload_complete(_principal(), resource_id="m-1")
     second = service.mark_upload_complete(_principal(), resource_id="m-1")
 
-    assert first.location_uri == second.location_uri == "irods:///models/m-1/files"
+    assert first.location_uri == second.location_uri == "m-1/0.1.0"
     assert second.metadata["upload_status"] == "UPLOAD_COMPLETE"
 
 

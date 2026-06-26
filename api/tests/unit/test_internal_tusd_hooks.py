@@ -18,6 +18,17 @@ from mismapi.schemas.tus import TusHookRequest
 from mismapi.services.registry_service import RegistryService
 from mismapi.services.upload_session_store_service import UploadSessionStoreService
 
+# Upload destination is now <resource_id>/<version>; tests pin a known version.
+VERSION = "v1"
+
+
+def _make_service_mock(*, version: str = VERSION) -> Any:
+    """RegistryService mock whose owned resource carries a real `.version` string
+    (pre-create reads it to build the <resource_id>/<version> destination)."""
+    mock: Any = create_autospec(RegistryService, instance=True, spec_set=True)
+    mock.get_resource_and_assert_ownership.return_value.version = version
+    return mock
+
 
 def _make_upload_session_store_mock(
     *,
@@ -109,20 +120,20 @@ def test_check_allowed_path_accepts_exact_resource_path() -> None:
     claims = UploadTokenClaims(
         user_id="user-1",
         max_bytes=1024,
-        allowed_path="models/model-123/files",
+        allowed_path="model-123/v1",
     )
 
-    assert _check_allowed_path(claims, resource_id="model-123", upload_id="upload-1")
+    assert _check_allowed_path(claims, "model-123/v1", upload_id="upload-1")
 
 
 def test_check_allowed_path_rejects_non_matching_path() -> None:
     claims = UploadTokenClaims(
         user_id="user-1",
         max_bytes=1024,
-        allowed_path="models/model-abc/files",
+        allowed_path="model-abc/v1",
     )
 
-    assert not _check_allowed_path(claims, resource_id="model-123", upload_id="upload-1")
+    assert not _check_allowed_path(claims, "model-123/v1", upload_id="upload-1")
 
 
 async def test_handle_pre_create_sets_flat_storage_path_from_filename(tmp_path: Path) -> None:
@@ -130,11 +141,11 @@ async def test_handle_pre_create_sets_flat_storage_path_from_filename(tmp_path: 
     claims = UploadTokenClaims(
         user_id="user-1",
         max_bytes=10_000,
-        allowed_path=f"models/{resource_id}/files",
+        allowed_path=f"{resource_id}/{VERSION}",
     )
     upload_session_store_mock = _make_upload_session_store_mock(claims=claims)
 
-    service_mock: Any = create_autospec(RegistryService, instance=True, spec_set=True)
+    service_mock: Any = _make_service_mock()
 
     response = await _handle_pre_create(
         _pre_create_payload(resource_id=resource_id, upload_token="token-1"),
@@ -155,9 +166,9 @@ async def test_handle_pre_create_sets_flat_storage_path_from_filename(tmp_path: 
 
     assert response.change_file_info is not None
     assert response.change_file_info.id is not None
-    assert response.change_file_info.id.startswith(f"models/{resource_id}/files/.uploads/")
+    assert response.change_file_info.id.startswith(f"{resource_id}/{VERSION}/.uploads/")
     assert response.change_file_info.storage is not None
-    assert response.change_file_info.storage.path == f"models/{resource_id}/files/model.bin"
+    assert response.change_file_info.storage.path == f"{resource_id}/{VERSION}/model.bin"
     upload_session_store_mock.try_lock_filename.assert_awaited_once_with(
         resource_id=resource_id,
         filename="model.bin",
@@ -176,7 +187,7 @@ async def test_handle_pre_create_returns_tus_rejection_for_missing_token(tmp_pat
     payload = _pre_create_payload(resource_id="model-123", upload_token="")
     payload.event.upload.metadata.pop("upload_token")
     upload_session_store_mock = _make_upload_session_store_mock()
-    service_mock: Any = create_autospec(RegistryService, instance=True, spec_set=True)
+    service_mock: Any = _make_service_mock()
 
     response = await _handle_pre_create(
         payload,
@@ -195,17 +206,17 @@ async def test_handle_pre_create_returns_tus_rejection_for_missing_token(tmp_pat
 
 async def test_handle_pre_create_rejects_existing_filename(tmp_path: Path) -> None:
     resource_id = "model-123"
-    existing_file = tmp_path / "models" / resource_id / "files" / "model.bin"
+    existing_file = tmp_path / resource_id / VERSION / "model.bin"
     existing_file.parent.mkdir(parents=True)
     existing_file.write_bytes(b"already here")
 
     claims = UploadTokenClaims(
         user_id="user-1",
         max_bytes=10_000,
-        allowed_path=f"models/{resource_id}/files",
+        allowed_path=f"{resource_id}/{VERSION}",
     )
     upload_session_store_mock = _make_upload_session_store_mock(claims=claims)
-    service_mock: Any = create_autospec(RegistryService, instance=True, spec_set=True)
+    service_mock: Any = _make_service_mock()
 
     response = await _handle_pre_create(
         _pre_create_payload(resource_id=resource_id, filename="model.bin"),
@@ -235,13 +246,13 @@ async def test_handle_pre_create_rejects_when_filename_lock_is_held(tmp_path: Pa
     claims = UploadTokenClaims(
         user_id="user-1",
         max_bytes=10_000,
-        allowed_path=f"models/{resource_id}/files",
+        allowed_path=f"{resource_id}/{VERSION}",
     )
     upload_session_store_mock = _make_upload_session_store_mock(
         claims=claims,
         lock_acquired=False,
     )
-    service_mock: Any = create_autospec(RegistryService, instance=True, spec_set=True)
+    service_mock: Any = _make_service_mock()
 
     response = await _handle_pre_create(
         _pre_create_payload(resource_id=resource_id, filename="model.bin"),
@@ -275,10 +286,10 @@ async def test_handle_pre_create_allows_concurrent_uploads_of_different_filename
     claims = UploadTokenClaims(
         user_id="user-1",
         max_bytes=10_000,
-        allowed_path=f"models/{resource_id}/files",
+        allowed_path=f"{resource_id}/{VERSION}",
     )
     upload_session_store_mock = _make_upload_session_store_mock(claims=claims)
-    service_mock: Any = create_autospec(RegistryService, instance=True, spec_set=True)
+    service_mock: Any = _make_service_mock()
 
     response = await _handle_pre_create(
         _pre_create_payload(resource_id=resource_id, filename="weights.bin"),
@@ -306,7 +317,7 @@ async def test_handle_pre_create_returns_tus_rejection_for_invalid_token(tmp_pat
             detail="Upload token is invalid or has expired",
         )
     )
-    service_mock: Any = create_autospec(RegistryService, instance=True, spec_set=True)
+    service_mock: Any = _make_service_mock()
 
     response = await _handle_pre_create(
         _pre_create_payload(resource_id=resource_id),
@@ -333,10 +344,10 @@ async def test_handle_pre_create_rejects_upload_exceeding_max_bytes(tmp_path: Pa
     claims = UploadTokenClaims(
         user_id="user-1",
         max_bytes=1024,
-        allowed_path=f"models/{resource_id}/files",
+        allowed_path=f"{resource_id}/{VERSION}",
     )
     upload_session_store_mock = _make_upload_session_store_mock(claims=claims)
-    service_mock: Any = create_autospec(RegistryService, instance=True, spec_set=True)
+    service_mock: Any = _make_service_mock()
 
     payload = _pre_create_payload(resource_id=resource_id)
     # Declared upload size deliberately just over claims.max_bytes.
@@ -368,10 +379,10 @@ async def test_handle_pre_create_rejects_upload_with_unknown_size(tmp_path: Path
     claims = UploadTokenClaims(
         user_id="user-1",
         max_bytes=1024,
-        allowed_path=f"models/{resource_id}/files",
+        allowed_path=f"{resource_id}/{VERSION}",
     )
     upload_session_store_mock = _make_upload_session_store_mock(claims=claims)
-    service_mock: Any = create_autospec(RegistryService, instance=True, spec_set=True)
+    service_mock: Any = _make_service_mock()
 
     payload = _pre_create_payload(resource_id=resource_id)
     payload.event.upload.size = None
@@ -396,10 +407,10 @@ async def test_handle_pre_create_sanitizes_filename(tmp_path: Path) -> None:
     claims = UploadTokenClaims(
         user_id="user-1",
         max_bytes=10_000,
-        allowed_path=f"models/{resource_id}/files",
+        allowed_path=f"{resource_id}/{VERSION}",
     )
     upload_session_store_mock = _make_upload_session_store_mock(claims=claims)
-    service_mock: Any = create_autospec(RegistryService, instance=True, spec_set=True)
+    service_mock: Any = _make_service_mock()
 
     response = await _handle_pre_create(
         _pre_create_payload(resource_id=resource_id, filename="nested/model.bin"),
@@ -410,9 +421,9 @@ async def test_handle_pre_create_sanitizes_filename(tmp_path: Path) -> None:
 
     assert response.change_file_info is not None
     assert response.change_file_info.id is not None
-    assert response.change_file_info.id.startswith(f"models/{resource_id}/files/.uploads/")
+    assert response.change_file_info.id.startswith(f"{resource_id}/{VERSION}/.uploads/")
     assert response.change_file_info.storage is not None
-    assert response.change_file_info.storage.path == f"models/{resource_id}/files/nested_model.bin"
+    assert response.change_file_info.storage.path == f"{resource_id}/{VERSION}/nested_model.bin"
 
 
 async def test_handle_post_finish_rechecks_stored_upload_owner_before_marking_complete() -> None:
@@ -423,7 +434,7 @@ async def test_handle_post_finish_rechecks_stored_upload_owner_before_marking_co
             user_id="user-1", resource_id=resource_id, filename="model.bin"
         ),
     )
-    service_mock: Any = create_autospec(RegistryService, instance=True, spec_set=True)
+    service_mock: Any = _make_service_mock()
 
     response = await _handle_post_finish(
         _post_finish_payload(resource_id=resource_id, upload_id=upload_id),
@@ -450,7 +461,7 @@ async def test_handle_post_finish_rejects_unknown_upload_id() -> None:
     resource_id = "model-123"
     upload_id = f"models/{resource_id}/files/.uploads/missing"
     upload_session_store_mock = _make_upload_session_store_mock(upload_record=None)
-    service_mock: Any = create_autospec(RegistryService, instance=True, spec_set=True)
+    service_mock: Any = _make_service_mock()
 
     with pytest.raises(APIError) as exc_info:
         await _handle_post_finish(
@@ -472,7 +483,7 @@ async def test_handle_post_finish_rejects_resource_id_mismatch_for_upload_id() -
             user_id="user-1", resource_id="model-123", filename="model.bin"
         ),
     )
-    service_mock: Any = create_autospec(RegistryService, instance=True, spec_set=True)
+    service_mock: Any = _make_service_mock()
 
     with pytest.raises(APIError) as exc_info:
         await _handle_post_finish(
@@ -489,7 +500,7 @@ async def test_handle_post_finish_rejects_resource_id_mismatch_for_upload_id() -
 
 async def test_handle_post_finish_rejects_missing_upload_id() -> None:
     upload_session_store_mock = _make_upload_session_store_mock()
-    service_mock: Any = create_autospec(RegistryService, instance=True, spec_set=True)
+    service_mock: Any = _make_service_mock()
 
     with pytest.raises(APIError) as exc_info:
         await _handle_post_finish(

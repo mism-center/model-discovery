@@ -57,9 +57,15 @@ services:
     environment:
       DATABASE_URL: "postgresql+psycopg://postgres:postgres@db:5432/mism_test"
       REDIS_URL: "redis://redis:6379/0"
-      TUSD_BASE_URL: "http://localhost:8080"
+      # Browser-reachable tusd URL returned by POST /api/v1/models/{id}/upload.
+      TUSD_BASE_URL: "http://localhost:1080/files/"
       DISABLE_AUTH: "true"
       STUB_UPSTREAM_SERVICES: "true"
+      # Same volume tusd writes to; pre-create hook checks existence here.
+      IRODS_MOUNT_PATH: "/data/uploads"
+      PRODUCTION_MODE: "false"
+      # Required for the CORSMiddleware in mismapi.main:create_app to be wired.
+      DEPLOY_TYPE: "local"
     volumes:
       - ./data/uploads:/data/uploads
     ports:
@@ -75,3 +81,24 @@ services:
       interval: 3s
       timeout: 5s
       retries: 10
+
+  tusd:
+    image: tusproject/tusd:v2.5
+    depends_on:
+      api:
+        condition: service_healthy
+    command:
+      - "-host=0.0.0.0"
+      - "-port=1080"
+      - "-base-path=/files/"
+      - "-upload-dir=/data/uploads"
+      - "-hooks-http=http://api:8000/api/internal/tusd/hooks"
+      - "-hooks-enabled-events=pre-create,post-finish"
+      - "-behind-proxy=true"
+      # CORS so the UI dev server (localhost:3000) can talk directly to tusd.
+      - "-cors-allow-origin=.*"
+      - "-cors-allow-credentials=true"
+    volumes:
+      - ./data/uploads:/data/uploads
+    ports:
+      - "1080:1080"
