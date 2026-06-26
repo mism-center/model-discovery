@@ -65,20 +65,14 @@ gateway:
     EXECUTION_TIMEOUT_SECONDS: "120"
     # Note: DATABASE_URL and REDIS_URL are built in deployment templates and do not need to be set here
 
-irods:
-  # PersistentVolumeClaim
-  pvc:
-    create: true
-    name: "irods-pvc"
-    storage: "5Gi"
-    accessMode: "ReadWriteMany"
-    # Note: This value MUST match the IRODS_MOUNT_PATH env var in the API container
-    mountPath: "/irods"
-    subPath: ""
+storage:
+  irodsPvcName: irods-pvc
+  mountIrodsPvc: true
+  irodsMountPath: /irods
+  readOnly: false
 
-  # StorageClass
-  storageClass:
-    name: "" # irods-sc
+securityContext:
+  runAsUser: 995
 
 # ────────────────────────────────────────────────────────────
 # Search Service
