@@ -84,6 +84,11 @@ services:
 
   tusd:
     image: tusproject/tusd:v2.5
+    # Run as root: on a fresh checkout Docker creates the ./data/uploads bind
+    # mount owned by root, and the default tusd uid (1000) then can't mkdir the
+    # per-resource dirs under it. ponytail: test stack only; the chart sets its
+    # own securityContext/PVC perms.
+    user: "0:0"
     depends_on:
       api:
         condition: service_healthy
