@@ -11,7 +11,7 @@ read from the container; nothing else should.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -26,10 +26,12 @@ from mismapi.auth.oauth_registry import build_oauth_registry, get_oidc_client
 from mismapi.auth.oidc_service import OIDCService
 from mismapi.auth.session import RedisSessionStore, SessionStore
 from mismapi.auth.session_refresh import SessionRefresher
+from mismapi.clients.execution_client import ExecutionClient
+from mismapi.clients.local_upload_client import LocalFileUploadClient
 from mismapi.clients.upload_client import UploadServiceClient
 from mismapi.core.config_validation import ensure_startup_config
-from mismapi.core.errors import APIError
 from mismapi.core.settings import Settings
+from mismapi.services.upload_session_store_service import UploadSessionStoreService
 
 if TYPE_CHECKING:
     from authlib.integrations.starlette_client import StarletteOAuth2App
@@ -47,7 +49,12 @@ class AppContainer:
     settings: Settings
     redis: Redis
     session_store: SessionStore
-    upload_client: UploadServiceClient
+    upload_session_store_service: UploadSessionStoreService
+    # Either a real HTTP client (UploadServiceClient) or the local-disk
+    # stand-in (LocalFileUploadClient) — selected via settings.upload_backend.
+    # Both implement the same async protocol consumed by the upload route.
+    upload_client: UploadServiceClient | LocalFileUploadClient
+    execution_client: ExecutionClient
     auth_validator: AuthValidator
     oidc_client: StarletteOAuth2App
     oidc_service: OIDCService
@@ -56,7 +63,7 @@ class AppContainer:
     _session_factory: sessionmaker[Session]
 
     @contextmanager
-    def open_session(self) -> Iterator[Session]:
+    def open_session(self) -> Generator[Session]:
         """
         Open a SQLAlchemy session and yield it.
         """
@@ -82,19 +89,41 @@ class AppContainer:
             future=True,
         )
 
-        upload_client = UploadServiceClient(
-            base_url=settings.upload_service_url,
-            timeout_seconds=settings.upload_timeout_seconds,
+        # Upload backend: filesystem PVC (default while no upload service
+        # exists) or remote HTTP upload service. Both expose the same async
+        # protocol so the upload endpoint is backend-agnostic.
+        upload_client: UploadServiceClient | LocalFileUploadClient
+        if settings.upload_backend == "local":
+            upload_client = LocalFileUploadClient(
+                mount_path=settings.irods_mount_path,
+                stub_upstream=settings.stub_upstream_services,
+            )
+        else:
+            upload_client = UploadServiceClient(
+                base_url=settings.upload_service_url,
+                timeout_seconds=settings.upload_timeout_seconds,
+                stub_upstream=settings.stub_upstream_services,
+            )
+
+        execution_client = ExecutionClient(
+            base_url=settings.execution_api_url,
+            timeout_seconds=settings.execution_timeout_seconds,
             stub_upstream=settings.stub_upstream_services,
         )
 
-        redis_client: Redis = Redis.from_url(  # type: ignore[type-arg]
+        redis_client: Redis = Redis.from_url(  # pyright: ignore[reportUnknownMemberType]
             settings.redis_url,
             decode_responses=False,
         )
-        session_store: SessionStore = RedisSessionStore(
+        redis_session_store = RedisSessionStore(
             redis=redis_client,
             session_ttl_seconds=settings.session_ttl_seconds,
+        )
+        session_store: SessionStore = redis_session_store
+        upload_session_store_service = UploadSessionStoreService(
+            redis=redis_client,
+            upload_token_ttl_seconds=settings.upload_token_ttl_seconds,
+            tus_upload_ttl_seconds=settings.tus_upload_ttl_seconds,
         )
 
         oidc_client = get_oidc_client(build_oauth_registry(settings))
@@ -113,7 +142,9 @@ class AppContainer:
             settings=settings,
             redis=redis_client,
             session_store=session_store,
+            upload_session_store_service=upload_session_store_service,
             upload_client=upload_client,
+            execution_client=execution_client,
             auth_validator=auth_validator,
             oidc_client=oidc_client,
             oidc_service=oidc_service,
@@ -131,15 +162,14 @@ class AppContainer:
             if self.settings.disable_auth:
                 return
             await self.oidc_service.prime_metadata()
-        except APIError as exc:
-            logger.warning("oidc_discovery_prime_failed error=%s", exc)
-        except Exception:
-            logger.exception("oidc_discovery_prime_failed_unexpected")
+        except Exception as exc:
+            logger.exception("oidc_discovery_prime_failed error=%s", exc)
 
     async def aclose(self) -> None:
         """Tear down every collaborator, best-effort. Errors are logged, never raised."""
         for name, close in (
             ("upload_client", self.upload_client.close),
+            ("execution_client", self.execution_client.close),
             ("redis", self.redis.aclose),
         ):
             try:

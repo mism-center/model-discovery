@@ -7,23 +7,28 @@ and surfacing the misconfiguration as confusing request-time 5xxes (an empty
 `OIDC_ISSUER_URL` becomes `/.well-known/openid-configuration` at first
 discovery fetch, etc.).
 
-Validations are additive: every missing field is collected and reported in a
-single `OIDCConfigurationError` so operators get the full picture on first
-boot instead of playing whack-a-mole one `raise` at a time.
+Validations are additive: missing fields for each integration are collected
+and reported together so operators get the full picture on first boot instead
+of playing whack-a-mole one `raise` at a time.
 """
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 from mismapi.core.settings import Settings
 
 
-class OIDCConfigurationError(ValueError):
-    """
-    Raised at startup when OIDC mode is selected but required settings are missing.
+class StartupConfigurationError(ValueError):
+    """Raised at startup when required configuration is missing or unsafe."""
 
-    Subclasses `ValueError` because the root cause is always an invalid
-    configuration *value* (empty string where a real value is required).
-    """
+
+class OIDCConfigurationError(StartupConfigurationError):
+    """Raised when OIDC mode is selected but required settings are missing."""
+
+
+class UploadConfigurationError(StartupConfigurationError):
+    """Raised when production upload settings are missing or unsafe."""
 
 
 _REQUIRED_OIDC_FIELDS: tuple[tuple[str, str], ...] = (
@@ -39,11 +44,14 @@ def ensure_startup_config(settings: Settings) -> None:
     """
     Validate cross-field settings constraints before app wiring.
 
-    Currently only validates OIDC-mode configuration. If in the future we add another auth mode,
-    we will need to add different validation here.
+    Validates OIDC-mode configuration and production-only upload safety
+    settings. If in the future we add another auth mode or another mandatory
+    integration, we will need to add different validation here.
     """
     if not settings.disable_auth:
         _ensure_oidc_config(settings)
+    if settings.production_mode:
+        _ensure_production_upload_config(settings)
 
 
 def _ensure_oidc_config(settings: Settings) -> None:
@@ -65,3 +73,26 @@ def _ensure_oidc_config(settings: Settings) -> None:
         "OIDC authentication is enabled but required OIDC configuration is missing or empty: "
         f"{joined}. Set these environment variables before starting the API."
     )
+
+
+def _ensure_production_upload_config(settings: Settings) -> None:
+    missing_or_unsafe: list[str] = []
+
+    if _is_local_url(settings.tusd_base_url):
+        missing_or_unsafe.append("TUSD_BASE_URL")
+
+    if not missing_or_unsafe:
+        return
+
+    joined = ", ".join(missing_or_unsafe)
+    raise UploadConfigurationError(
+        "Production mode is enabled but required upload configuration is missing or unsafe: "
+        f"{joined}. Set these environment variables before starting the API."
+    )
+
+
+def _is_local_url(value: str) -> bool:
+    if not value:
+        return True
+    hostname = urlparse(value).hostname
+    return hostname in {"localhost", "127.0.0.1", "::1"}

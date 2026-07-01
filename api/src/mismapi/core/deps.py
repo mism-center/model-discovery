@@ -28,7 +28,10 @@ if TYPE_CHECKING:
     from mismapi.auth.session import SessionStore
     from mismapi.auth.session_refresh import SessionRefresher
     from mismapi.auth.validator import AuthValidator
+    from mismapi.clients.execution_client import ExecutionClient
+    from mismapi.clients.local_upload_client import LocalFileUploadClient
     from mismapi.clients.upload_client import UploadServiceClient
+    from mismapi.services.upload_session_store_service import UploadSessionStoreService
 
 
 def _get_container(request: Request) -> AppContainer:
@@ -47,6 +50,10 @@ def _get_session_store(container: ContainerDep) -> SessionStore:
     return container.session_store
 
 
+def _get_upload_session_store_service(container: ContainerDep) -> UploadSessionStoreService:
+    return container.upload_session_store_service
+
+
 def _get_auth_validator(container: ContainerDep) -> AuthValidator:
     return container.auth_validator
 
@@ -59,8 +66,14 @@ def _get_session_refresher(container: ContainerDep) -> SessionRefresher:
     return container.session_refresher
 
 
-def _get_upload_client(container: ContainerDep) -> UploadServiceClient:
+def _get_upload_client(
+    container: ContainerDep,
+) -> UploadServiceClient | LocalFileUploadClient:
     return container.upload_client
+
+
+def _get_execution_client(container: ContainerDep) -> ExecutionClient:
+    return container.execution_client
 
 
 def _get_registry_service(
@@ -78,8 +91,14 @@ def _get_registry_service(
 
 SettingsDep = Annotated[Settings, Depends(_get_settings)]
 SessionStoreDep = Annotated["SessionStore", Depends(_get_session_store)]
+UploadSessionStoreServiceDep = Annotated[
+    "UploadSessionStoreService", Depends(_get_upload_session_store_service)
+]
 AuthValidatorDep = Annotated["AuthValidator", Depends(_get_auth_validator)]
 OIDCServiceDep = Annotated["OIDCService", Depends(_get_oidc_service)]
 SessionRefresherDep = Annotated["SessionRefresher", Depends(_get_session_refresher)]
-UploadClientDep = Annotated["UploadServiceClient", Depends(_get_upload_client)]
+UploadClientDep = Annotated[
+    "UploadServiceClient | LocalFileUploadClient", Depends(_get_upload_client)
+]
+ExecutionClientDep = Annotated["ExecutionClient", Depends(_get_execution_client)]
 RegistryServiceDep = Annotated[RegistryService, Depends(_get_registry_service)]

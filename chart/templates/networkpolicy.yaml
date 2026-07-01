@@ -3,8 +3,9 @@
   networkpolicy.yaml
   ─────────────────────────────────────────────────────────────────────────────
   Enforces the communication paths shown in the architecture diagram.
-  Default posture: deny-all ingress within the namespace, then open only the
-  exact paths each component legitimately needs.
+  Default posture: deny-all ingress for THIS release's pods only (scoped via
+  app.kubernetes.io/instance), then open only the exact paths each component
+  legitimately needs. Other workloads sharing the namespace are unaffected.
 
   Allowed call graph (→ = may initiate connection):
     Ingress controller  → Gateway
@@ -14,10 +15,17 @@
     Gateway             → Redis (when bundled subchart is enabled)
     Gateway / Migrate   → Metadata Store (PostgreSQL)
     Upload Service      → Storage Interface
+    tusd                → Gateway     (HTTP hooks via ClusterIP service;
+                                       public ingress blocks /api/internal and
+                                       the source pod selector is configured via values.)
   ─────────────────────────────────────────────────────────────────────────────
 */}}
 
-# ── 0. Default-deny all intra-namespace ingress ───────────────────────────────
+# ── 0. Default-deny ingress for this release's pods ──────────────────────────
+# Scoped to app.kubernetes.io/instance={{ .Release.Name }} so unrelated workloads
+# sharing the namespace (other Helm releases, ad-hoc pods) are not affected.
+# Subchart pods (e.g. bundled redis) carry the same instance label and are
+# therefore included; they get explicit allow rules below.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -25,7 +33,9 @@ metadata:
   labels:
     {{- include "model-discovery.labels" . | nindent 4 }}
 spec:
-  podSelector: {}
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
   policyTypes:
     - Ingress
 
@@ -42,6 +52,7 @@ spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/component: gateway
+      app.kubernetes.io/instance: {{ .Release.Name }}
   policyTypes:
     - Ingress
   ingress:
@@ -85,9 +96,48 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/component: gateway
+              app.kubernetes.io/instance: {{ .Release.Name }}
       ports:
         - protocol: TCP
           port: 6379
+{{- end }}
+
+---
+# ── 1c. Discovery Gateway – also accepts tusd hook callbacks ──────────────────
+# tusd posts every enabled hook event (pre-create, post-finish, ...) to
+# POST /api/internal/tusd/hooks on the Gateway's ClusterIP service. Public
+# ingress blocks /api/internal; this NetworkPolicy allows only matching tusd
+# pods to reach the Gateway directly inside the cluster.
+#
+# tusd is NOT deployed by this chart (the legacy `uploadService` component
+# is unrelated and disabled in our deployments). It ships as a separate
+# Helm chart that we deploy into the SAME namespace as this release; the
+# source pod selector is supplied via `.Values.networkPolicy.tusd`. See
+# `values.yaml` for the contract. Cross-namespace tusd is unsupported
+# here on purpose — add a namespaceSelector option back if that ever
+# becomes a real deployment shape.
+{{- if and .Values.gateway.enabled .Values.networkPolicy.tusd .Values.networkPolicy.tusd.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-tusd-to-gateway-hooks
+  labels:
+    {{- include "model-discovery.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: gateway
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.tusd.podSelectorLabels | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.gateway.service.port }}
 {{- end }}
 
 ---
@@ -103,6 +153,7 @@ spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/component: search-service
+      app.kubernetes.io/instance: {{ .Release.Name }}
   policyTypes:
     - Ingress
   ingress:
@@ -110,6 +161,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/component: gateway
+              app.kubernetes.io/instance: {{ .Release.Name }}
       ports:
         - protocol: TCP
           port: {{ .Values.searchService.service.port }}
@@ -128,6 +180,7 @@ spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/component: upload-service
+      app.kubernetes.io/instance: {{ .Release.Name }}
   policyTypes:
     - Ingress
   ingress:
@@ -135,6 +188,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/component: gateway
+              app.kubernetes.io/instance: {{ .Release.Name }}
       ports:
         - protocol: TCP
           port: {{ .Values.uploadService.service.port }}
@@ -153,6 +207,7 @@ spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/component: storage-interface
+      app.kubernetes.io/instance: {{ .Release.Name }}
   policyTypes:
     - Ingress
   ingress:
@@ -160,6 +215,7 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/component: upload-service
+              app.kubernetes.io/instance: {{ .Release.Name }}
       ports:
         - protocol: TCP
           port: {{ .Values.storageInterface.service.port }}
@@ -178,6 +234,7 @@ spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/component: metadata-store
+      app.kubernetes.io/instance: {{ .Release.Name }}
   policyTypes:
     - Ingress
   ingress:
@@ -186,10 +243,12 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/component: gateway
+              app.kubernetes.io/instance: {{ .Release.Name }}
         # Migration Job pods
         - podSelector:
             matchLabels:
               app.kubernetes.io/component: migrate
+              app.kubernetes.io/instance: {{ .Release.Name }}
       ports:
         - protocol: TCP
           port: {{ .Values.metadataStore.service.port }}
@@ -198,6 +257,8 @@ spec:
 {{- if .Values.networkPolicy.restrictEgress }}
 ---
 # ── 6. Restrict egress – allow only DNS + known intra-namespace targets ──────
+# Scoped to this release's pods (app.kubernetes.io/instance) for the same
+# reason as policy #0; we don't want to clamp unrelated workloads.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -205,7 +266,9 @@ metadata:
   labels:
     {{- include "model-discovery.labels" . | nindent 4 }}
 spec:
-  podSelector: {}
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
   policyTypes:
     - Egress
   egress:

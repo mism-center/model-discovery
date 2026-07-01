@@ -13,14 +13,6 @@ from mismapi.core.settings import Settings, get_settings
 from mismapi.core.uvicorn_access_log import install_uvicorn_access_formatter
 from mismapi.middleware.request_context import RequestContextMiddleware
 
-OAUTH_STATE_COOKIE_PATH = "/api/auth"
-"""
-Scope the OAuth-state cookie to the auth router. The blob is only ever read
-by `/api/auth/callback` (and written by `/api/auth/login`), so there is no
-reason to ship it on every authenticated API request. Must stay aligned with
-the auth router prefix in `mismapi.api.router`.
-"""
-
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     """
@@ -47,21 +39,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     configure_root_logger(log_level=resolved_settings.log_level)
     install_uvicorn_access_formatter(resolved_settings)
 
+    # All API + auto-docs are mounted under this prefix so a UI can own "/".
+    api_prefix = resolved_settings.api_prefix.rstrip("/")
+    # Scope the OAuth-state cookie to the auth router. Tracks api_prefix so
+    # the cookie path stays aligned with the auth router prefix in
+    # `mismapi.api.router`. Cookie is only ever read by /{prefix}/auth/callback
+    # (and written by /{prefix}/auth/login), no reason to ship it on every
+    # authenticated API request.
+    oauth_state_cookie_path = f"{api_prefix}/auth"
+
     app = FastAPI(
         title="MISM Gateway API",
         version="0.1.0",
         description="Gateway API for searching, uploading, and managing model assets.",
         lifespan=_lifespan,
+        docs_url=f"{api_prefix}/docs",
+        redoc_url=f"{api_prefix}/redoc",
+        openapi_url=f"{api_prefix}/openapi.json",
     )
 
     app.state.settings = resolved_settings
+
     if not resolved_settings.disable_auth:
         app.add_middleware(
             SessionMiddleware,
             secret_key=resolved_settings.oidc_cookie_signing_secret,
             session_cookie=resolved_settings.oauth_state_cookie_name,
             max_age=resolved_settings.oauth_state_cookie_max_age_seconds,
-            path=OAUTH_STATE_COOKIE_PATH,
+            path=oauth_state_cookie_path,
             same_site="lax",
             https_only=resolved_settings.production_mode,
         )
@@ -74,6 +79,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_headers=["*"],
         )
     app.add_middleware(RequestContextMiddleware)
+    if resolved_settings.deploy_type == "local":
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
     app.include_router(build_api_router())
     register_exception_handlers(app)
 

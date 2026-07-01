@@ -32,6 +32,22 @@ gateway:
     AUTH_MODE: "oidc"
     DISABLE_AUTH: "false"
     STUB_UPSTREAM_SERVICES: "false"
+    PRODUCTION_MODE: "false"
+    # Browser-reachable tusd base URL returned by POST /api/v1/models/{id}/upload.
+    # Override per environment, e.g. https://uploads.example.com.
+    TUSD_BASE_URL: "changeme"
+    UPLOAD_MAX_BYTES: "524288000"
+    # Subpath that hosts the API + Swagger/ReDoc/openapi.json.
+    # Docs land at {API_PATH_PREFIX}/docs. Set to "" to mount at root.
+    API_PATH_PREFIX: "/api"
+    # On-pod path where the iRODS PVC is mounted. Resource location_uris of
+    # the form "irods:///foo" or "/irods/foo" resolve under this directory.
+    # Must match irods.pvc.mountPath below.
+    IRODS_MOUNT_PATH: "/irods"
+    # "local" → write straight to the iRODS PVC (LocalFileUploadClient).
+    # "http"  → forward to a real upload service (UploadServiceClient).
+    UPLOAD_BACKEND: "local"
+    # Upload service (only consulted when UPLOAD_BACKEND=http).
     UPLOAD_SERVICE_URL: "http://upload-service:8001"
     UPLOAD_TIMEOUT_SECONDS: "60.0"
     UPLOAD_CHUNK_SIZE_BYTES: "5242880"
@@ -44,27 +60,26 @@ gateway:
     OIDC_AUDIENCE: ""
     OIDC_REQUIRED_SCOPES: ""
     OIDC_JWKS_TTL_SECONDS: "300"
+    # Execution API
+    EXECUTION_API_URL: ""
+    EXECUTION_TIMEOUT_SECONDS: "120"
+    # Note: DATABASE_URL and REDIS_URL are built in deployment templates and do not need to be set here
 
-irods:
-  # PersistentVolumeClaim
-  pvc:
-    create: true
-    name: "irods-pvc"
-    storage: "5Gi"
-    accessMode: "ReadWriteMany"
-    mountPath: "/irods"
-    subPath: "/"
+storage:
+  irodsPvcName: irods-pvc
+  mountIrodsPvc: true
+  irodsMountPath: /irods
+  readOnly: false
 
-  # StorageClass
-  storageClass:
-    name: "" # irods-sc
+securityContext:
+  runAsUser: 995
 
 # ────────────────────────────────────────────────────────────
 # Search Service
 # ────────────────────────────────────────────────────────────
 searchService:
   enabled: true
-  replicaCount: 2
+  replicaCount: 0
   image:
     repository: mism/search-service
     tag: "1.0.0"
@@ -87,7 +102,7 @@ searchService:
 # ────────────────────────────────────────────────────────────
 uploadService:
   enabled: true
-  replicaCount: 2
+  replicaCount: 0
   image:
     repository: mism/upload-service
     tag: "1.0.0"
@@ -111,7 +126,7 @@ uploadService:
 # ────────────────────────────────────────────────────────────
 storageInterface:
   enabled: true
-  replicaCount: 1
+  replicaCount: 0
   image:
     repository: mism/storage-interface
     tag: "1.0.0"
@@ -139,6 +154,8 @@ storageInterface:
 # ────────────────────────────────────────────────────────────
 metadataStore:
   enabled: true
+  # azure has lost+found dir that causes init to fall .
+  pgData: /var/lib/postgresql/data/pgdata
   image:
     repository: postgres
     tag: "17-alpine"
@@ -200,6 +217,9 @@ ingress:
   enabled: true
   className: "nginx"
   annotations: {}
+  # Keep /api/internal off the public ingress. tusd should call the gateway's
+  # ClusterIP service directly inside the cluster for /api/internal/tusd/hooks.
+  blockInternalApi: true
   host: "model-discovery.example.com"
   tls:
     enabled: false
@@ -229,8 +249,33 @@ externalSecrets:
 # ────────────────────────────────────────────────────────────
 networkPolicy:
   enabled: true
-  ingressControllerNamespace: "ingress-nginx"
+  ingressControllerNamespace: infra
   restrictEgress: false
+  # Allow in-cluster ingress from a separately deployed tusd to the Gateway's
+  # /api/internal/tusd/hooks endpoint. tusd ships in a separate Helm chart,
+  # so adjust `podSelectorLabels` to match the labels the tusd chart applies
+  # to its pod template. The `app.kubernetes.io/name: tusd` default below is
+  # just a convention and MUST match whatever the tusd chart actually emits.
+  #
+  # tusd is assumed to be deployed in the same namespace as this release and
+  # should use the ClusterIP URL:
+  # http://discovery-gateway:8000
+  #
+  # The tusd chart MUST enable at minimum these hook events via
+  # `--hooks-enabled-events` so this Gateway can enforce upload authorization
+  # and the (resource_id, filename) lock that prevents two concurrent uploads
+  # from overwriting each other:
+  #   - pre-create   (required: ownership/size/path checks + lock acquire)
+  #   - post-finish  (required: marks upload complete + releases lock)
+  #   - pre-terminate (recommended: releases lock immediately when the client
+  #                    cancels an in-flight upload; without it, an abandoned
+  #                    upload blocks re-uploads of the same filename for the
+  #                    full TUS_UPLOAD_TTL_SECONDS window — 1h by default)
+  tusd:
+    # Note: This MUST be set to true for the expected NetworkPolicy to be applied.
+    enabled: true
+    podSelectorLabels:
+      app.kubernetes.io/name: tusd
 
 # ────────────────────────────────────────────────────────────
 # HorizontalPodAutoscalers

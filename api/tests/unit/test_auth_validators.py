@@ -8,10 +8,11 @@ from jwt.algorithms import RSAAlgorithm
 
 from mismapi.auth.validator import OIDCAuthValidator
 from mismapi.core.settings import Settings
+from tests.conftest import make_settings
 
 
 def _settings(**overrides: Any) -> Settings:
-    return Settings(_env_file=None, **overrides)  # type: ignore[call-arg]
+    return make_settings(**overrides)
 
 
 def _seeded_jwk_client(

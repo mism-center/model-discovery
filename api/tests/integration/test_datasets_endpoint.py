@@ -23,7 +23,7 @@ def _make_dataset(
         id=id,
         name=name,
         resource_type=ResourceType.DATASET,
-        location_uri="s3://bucket/data.csv",
+        location_uri="irods:///datasets/d-1",
         description=description,
         version="1.0",
         status=ResourceStatus.ACTIVE,
@@ -61,7 +61,7 @@ def test_create_dataset_success() -> None:
         "/api/v1/datasets",
         json={
             "name": "Example Dataset",
-            "location_uri": "s3://bucket/data.csv",
+            "location_uri": "irods:///datasets/d-1",
             "format_tags": ["csv"],
         },
     )
@@ -85,23 +85,23 @@ def test_create_dataset_minimal() -> None:
         "/api/v1/datasets",
         json={
             "name": "Minimal",
-            "location_uri": "s3://bucket/file",
+            "location_uri": "irods:///datasets/d-1",
         },
     )
 
     assert response.status_code == 201
 
 
-def test_create_dataset_missing_name_returns_422() -> None:
+def test_create_dataset_missing_name_returns_400() -> None:
     service = MagicMock(spec=RegistryService)
     client = _make_app_with_service(service)
 
     response = client.post(
         "/api/v1/datasets",
-        json={"location_uri": "s3://bucket/file"},
+        json={"location_uri": "irods:///datasets/d-1"},
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 400
 
 
 # ── PUT /datasets/{id} ──────────────────────────────────────────
@@ -235,9 +235,192 @@ def test_list_datasets_response_shape() -> None:
     assert item["id"] == "d-1"
     assert item["name"] == "Example Dataset"
     assert item["resource_type"] == ResourceType.DATASET.value
-    assert item["location_uri"] == "s3://bucket/data.csv"
+    assert item["location_uri"] == "irods:///datasets/d-1"
     assert item["version"] == "1.0"
     assert item["status"] == ResourceStatus.ACTIVE.value
     assert item["owner"] == "user-1"
     assert item["description"] == "A test dataset"
     assert "created_at" in item
+
+
+# ── New Resource fields ───────────────────────────────────────────
+
+
+def test_create_dataset_forwards_attribution_fields() -> None:
+    """POST /datasets passes authors, org, publications, funding to service."""
+    service = MagicMock(spec=RegistryService)
+    service.create_dataset.return_value = _make_dataset()
+
+    client = _make_app_with_service(service)
+    response = client.post(
+        "/api/v1/datasets",
+        json={
+            "name": "Attr Dataset",
+            "location_uri": "irods:///datasets/attr",
+            "authors": [{"name": "Bob", "orcid": "", "affiliation": "UNC", "role": "curator"}],
+            "organization": "UNC",
+            "contact_email": "bob@unc.edu",
+            "publications": [{"title": "Data Paper", "doi": "10.2/x", "url": "", "citation": ""}],
+            "funding": ["NIH P41"],
+        },
+    )
+
+    assert response.status_code == 201
+    kwargs = service.create_dataset.call_args.kwargs
+    assert kwargs["organization"] == "UNC"
+    assert kwargs["contact_email"] == "bob@unc.edu"
+    assert kwargs["funding"] == ["NIH P41"]
+    assert kwargs["authors"][0].name == "Bob"
+    assert kwargs["publications"][0].title == "Data Paper"
+
+
+def test_create_dataset_forwards_scientific_fields() -> None:
+    """POST /datasets passes modeling_scales, organisms, domains, date_published to service."""
+    service = MagicMock(spec=RegistryService)
+    service.create_dataset.return_value = _make_dataset()
+
+    client = _make_app_with_service(service)
+    response = client.post(
+        "/api/v1/datasets",
+        json={
+            "name": "Sci Dataset",
+            "location_uri": "irods:///datasets/sci",
+            "modeling_scales": ["population"],
+            "organisms": ["rat"],
+            "domains": ["neuroscience"],
+            "date_published": "2023-05-10",
+        },
+    )
+
+    assert response.status_code == 201
+    kwargs = service.create_dataset.call_args.kwargs
+    assert kwargs["modeling_scales"] == ["population"]
+    assert kwargs["organisms"] == ["rat"]
+    assert kwargs["domains"] == ["neuroscience"]
+    assert str(kwargs["date_published"]) == "2023-05-10"
+
+
+def test_create_dataset_forwards_integrity_fields() -> None:
+    """POST /datasets passes digest_sha256, size_bytes, external_ids, license to service."""
+    service = MagicMock(spec=RegistryService)
+    service.create_dataset.return_value = _make_dataset()
+
+    client = _make_app_with_service(service)
+    response = client.post(
+        "/api/v1/datasets",
+        json={
+            "name": "Integrity Dataset",
+            "location_uri": "irods:///datasets/ig",
+            "digest_sha256": "xyz789",
+            "size_bytes": 2048,
+            "external_ids": {"zenodo": "654321"},
+            "license": "CC-BY-4.0",
+        },
+    )
+
+    assert response.status_code == 201
+    kwargs = service.create_dataset.call_args.kwargs
+    assert kwargs["digest_sha256"] == "xyz789"
+    assert kwargs["size_bytes"] == 2048
+    assert kwargs["external_ids"] == {"zenodo": "654321"}
+    assert kwargs["license"] == "CC-BY-4.0"
+
+
+def test_create_dataset_response_includes_new_fields() -> None:
+    """POST /datasets response contains updated_at, metadata, and all new fields."""
+    service = MagicMock(spec=RegistryService)
+    service.create_dataset.return_value = _make_dataset()
+
+    client = _make_app_with_service(service)
+    response = client.post(
+        "/api/v1/datasets",
+        json={"name": "New Fields Dataset", "location_uri": "irods:///datasets/nf"},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert "updated_at" in payload
+    assert "metadata" in payload
+    assert "authors" in payload
+    assert "organization" in payload
+    assert "contact_email" in payload
+    assert "publications" in payload
+    assert "funding" in payload
+    assert "modeling_scales" in payload
+    assert "organisms" in payload
+    assert "domains" in payload
+    assert "date_published" in payload
+    assert "digest_sha256" in payload
+    assert "size_bytes" in payload
+    assert "external_ids" in payload
+    assert "license" in payload
+
+
+def test_update_dataset_forwards_new_fields() -> None:
+    """PUT /datasets/{id} passes all new fields to service when present."""
+    service = MagicMock(spec=RegistryService)
+    service.update_dataset.return_value = _make_dataset()
+
+    client = _make_app_with_service(service)
+    response = client.put(
+        "/api/v1/datasets/d-1",
+        json={
+            "organization": "New Org",
+            "contact_email": "new@org.com",
+            "organisms": ["mouse"],
+            "license": "GPL-3.0",
+            "size_bytes": 1024,
+            "funding": ["NSF"],
+        },
+    )
+
+    assert response.status_code == 200
+    kwargs = service.update_dataset.call_args.kwargs
+    assert kwargs["organization"] == "New Org"
+    assert kwargs["contact_email"] == "new@org.com"
+    assert kwargs["organisms"] == ["mouse"]
+    assert kwargs["license"] == "GPL-3.0"
+    assert kwargs["size_bytes"] == 1024
+    assert kwargs["funding"] == ["NSF"]
+
+
+def test_update_dataset_omitted_new_fields_are_none() -> None:
+    """PUT /datasets/{id} omitting new fields passes None (no-op sentinel) to service."""
+    service = MagicMock(spec=RegistryService)
+    service.update_dataset.return_value = _make_dataset()
+
+    client = _make_app_with_service(service)
+    response = client.put("/api/v1/datasets/d-1", json={"description": "only this"})
+
+    assert response.status_code == 200
+    kwargs = service.update_dataset.call_args.kwargs
+    assert kwargs["organization"] is None
+    assert kwargs["organisms"] is None
+    assert kwargs["license"] is None
+    assert kwargs["authors"] is None
+
+
+def test_list_datasets_response_includes_new_fields() -> None:
+    """GET /datasets results include updated_at and all new Resource fields."""
+    service = MagicMock(spec=RegistryService)
+    service.list_datasets.return_value = [_make_dataset()]
+
+    client = _make_app_with_service(service)
+    response = client.get("/api/v1/datasets")
+
+    item = response.json()["results"][0]
+    assert "updated_at" in item
+    assert "authors" in item
+    assert "organization" in item
+    assert "contact_email" in item
+    assert "publications" in item
+    assert "funding" in item
+    assert "modeling_scales" in item
+    assert "organisms" in item
+    assert "domains" in item
+    assert "date_published" in item
+    assert "digest_sha256" in item
+    assert "size_bytes" in item
+    assert "external_ids" in item
+    assert "license" in item
+    assert "metadata" in item

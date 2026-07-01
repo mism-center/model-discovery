@@ -36,8 +36,9 @@ spec:
                 secretKeyRef:
                   name: model-discovery-secrets
                   key: databasePassword
+            # PVC root contains lost+found on ext4; point PGDATA at a configurable subdir so initdb sees an empty target.
             - name: PGDATA
-              value: {{ .Values.metadataStore.pgData }}
+              value: {{ .Values.metadataStore.pgData | quote }}
           livenessProbe:
             exec:
               command:

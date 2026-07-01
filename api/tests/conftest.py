@@ -1,13 +1,19 @@
 """
 Shared test fixtures and helpers.
 
-Tests inject a `Settings` instance into `create_app` instead of mutating
-`os.environ`. `make_settings` builds a `Settings` with `.env` loading
-disabled so results depend only on the explicit kwargs the test passes.
+Tests inject a `Settings` instance into `create_app`. `make_settings` builds
+one with `.env` loading disabled and a common set of test-safe defaults, so
+individual tests only provide the values relevant to their assertions.
+
+`mismapi.main` creates a module-level ASGI app at import time. Because some
+production settings are intentionally required, this file also seeds matching
+environment defaults before importing `create_app`; that keeps test collection
+from depending on a developer's shell environment.
 """
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any
@@ -15,28 +21,44 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from mismapi.auth.base import AuthenticatedPrincipal, require_principal
-from mismapi.core.container import AppContainer
-from mismapi.core.settings import Settings
-from mismapi.main import create_app
+TEST_SETTINGS_DEFAULTS: dict[str, Any] = {
+    "DATABASE_URL": "postgresql+psycopg://postgres:postgres@localhost/mism_test",
+    "REDIS_URL": "redis://localhost:6379/15",
+    "TUSD_BASE_URL": "http://tusd.test",
+    "AUTH_MODE": "oidc",
+    "OIDC_ISSUER_URL": "https://issuer.example.com",
+    "OIDC_AUDIENCE": "discovery-api",
+    "OIDC_CLIENT_ID": "discovery-api",
+    "OIDC_CLIENT_SECRET": "x",
+    "OIDC_REDIRECT_URI": "https://gateway.example.com/api/auth/callback",
+    "OIDC_COOKIE_SIGNING_SECRET": "test-cookie-signing-secret-please-change",
+}
+
+for _key, _value in TEST_SETTINGS_DEFAULTS.items():
+    os.environ.setdefault(_key, str(_value))
+
+from mismapi.auth.base import AuthenticatedPrincipal, require_principal  # noqa: E402
+from mismapi.core.container import AppContainer  # noqa: E402
+from mismapi.core.settings import Settings  # noqa: E402
+from mismapi.main import create_app  # noqa: E402
+
+
+class TestSettings(Settings):
+    """Settings variant for tests that never read the project's `.env` file."""
+
+    model_config = Settings.model_config | {"env_file": None}
 
 
 def make_settings(**overrides: Any) -> Settings:
-    """Construct a `Settings` for tests, skipping `.env` file loading."""
-    return Settings(_env_file=None, **overrides)  # type: ignore[call-arg]
+    """Construct test settings with sensible defaults and no `.env` loading."""
+    values = dict(TEST_SETTINGS_DEFAULTS)
+    values.update(overrides)
+    return TestSettings(**values)
 
 
 def minimal_oidc_settings(**overrides: Any) -> Settings:
     """Return a `Settings` that satisfies `ensure_startup_config` for OIDC mode."""
-    base: dict[str, Any] = {
-        "AUTH_MODE": "oidc",
-        "OIDC_ISSUER_URL": "https://issuer.example.com",
-        "OIDC_AUDIENCE": "discovery-api",
-        "OIDC_CLIENT_ID": "discovery-api",
-        "OIDC_CLIENT_SECRET": "x",
-        "OIDC_REDIRECT_URI": "https://gateway.example.com/api/auth/callback",
-        "OIDC_COOKIE_SIGNING_SECRET": "test-cookie-signing-secret-please-change",
-    }
+    base: dict[str, Any] = {}
     base.update(overrides)
     return make_settings(**base)
 

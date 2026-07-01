@@ -21,7 +21,7 @@ class SessionStore(Protocol):
     async def delete(self, session_id: str) -> None: ...
 
 
-SESSION_KEY_PREFIX = "session:"
+SESSION_KEY_PREFIX: str = "session:"
 
 
 @dataclass(slots=True)

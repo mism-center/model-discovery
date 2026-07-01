@@ -2,12 +2,17 @@ from typing import Any
 
 import pytest
 
-from mismapi.core.config_validation import OIDCConfigurationError, ensure_startup_config
+from mismapi.core.config_validation import (
+    OIDCConfigurationError,
+    UploadConfigurationError,
+    ensure_startup_config,
+)
 from mismapi.core.settings import Settings
+from tests.conftest import make_settings
 
 
 def _settings(**overrides: Any) -> Settings:
-    return Settings(_env_file=None, **overrides)  # type: ignore[call-arg]
+    return make_settings(**overrides)
 
 
 def test_oidc_mode_reports_all_missing_fields_at_once() -> None:
@@ -21,6 +26,7 @@ def test_oidc_mode_reports_all_missing_fields_at_once() -> None:
                 OIDC_CLIENT_SECRET="",
                 OIDC_AUDIENCE="",
                 OIDC_REDIRECT_URI="",
+                OIDC_COOKIE_SIGNING_SECRET="",
             )
         )
 
@@ -51,6 +57,11 @@ def test_oidc_mode_accepts_discovery_url_in_lieu_of_issuer_url() -> None:
     )
 
 
+def test_disable_auth_skips_oidc_validation() -> None:
+    """`DISABLE_AUTH` skips OIDC validation entirely (no other required fields)."""
+    ensure_startup_config(_settings(DISABLE_AUTH="true"))
+
+
 def test_oidc_mode_rejects_whitespace_only_values() -> None:
     with pytest.raises(OIDCConfigurationError) as excinfo:
         ensure_startup_config(
@@ -66,3 +77,26 @@ def test_oidc_mode_rejects_whitespace_only_values() -> None:
         )
 
     assert "OIDC_CLIENT_ID" in str(excinfo.value)
+
+
+def test_production_mode_rejects_local_tusd_url() -> None:
+    with pytest.raises(UploadConfigurationError) as excinfo:
+        ensure_startup_config(
+            _settings(
+                DISABLE_AUTH="true",
+                PRODUCTION_MODE="true",
+                TUSD_BASE_URL="http://localhost:8080",
+            )
+        )
+
+    assert "TUSD_BASE_URL" in str(excinfo.value)
+
+
+def test_production_mode_accepts_external_tusd_url() -> None:
+    ensure_startup_config(
+        _settings(
+            DISABLE_AUTH="true",
+            PRODUCTION_MODE="true",
+            TUSD_BASE_URL="https://uploads.example.com",
+        )
+    )

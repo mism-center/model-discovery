@@ -71,14 +71,19 @@ deployment references stay the same regardless of mode.
 ### Network Policies (`templates/networkpolicy.yaml`)
 
 A `default-deny-ingress` policy covers every pod in the namespace. Individual
-allow policies then open only the exact paths:
+allow policies then open only the required in-cluster communication paths:
 
 ```
 Ingress controller  →  Gateway
 Gateway             →  Search Service, Upload Service
-Gateway / Migrate   →  Metadata Store (PostgreSQL 5432)
+Gateway             →  Metadata Store (PostgreSQL 5432)
 Upload Service      →  Storage Interface
+tusd                →  Gateway (/api/internal/tusd/hooks via ClusterIP)
 ```
+
+Public ingress blocks `/api/internal` by default (`ingress.blockInternalApi: true`),
+so tusd should call the gateway service directly inside the cluster, for example
+`http://discovery-gateway:8000/api/internal/tusd/hooks`.
 
 An optional `networkPolicy.restrictEgress: true` flag adds a matching egress
 lockdown (DNS + intra-namespace + kube-apiserver only).

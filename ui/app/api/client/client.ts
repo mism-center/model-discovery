@@ -1,6 +1,7 @@
 import createClient, { type Middleware } from 'openapi-fetch';
 
 import type { paths } from '~/api/generated/schema';
+import { resolveApiBaseUrl } from '~/utils/env';
 import { ApiError } from './errors';
 
 const BROWSER_BASE_URL = '';

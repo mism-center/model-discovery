@@ -1,7 +1,9 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+from mismapi.schemas.registry import AuthorDTO, IOSpecDTO, PublicationDTO
 
 # ── Existing list schemas (backward compat) ──────────────────────────
 
@@ -11,12 +13,35 @@ class ModelListItem(BaseModel):
     name: str
     resource_type: str
     location_uri: str
-    execution_type: str | None = None
+    description: str = ""
     version: str = ""
     status: str
     owner: str = ""
-    description: str = ""
+    execution_type: str | None = None
+    format_tags: list[str] = Field(default_factory=list)
+    # Authorship & attribution
+    authors: list[AuthorDTO] = Field(default_factory=list)
+    organization: str = ""
+    contact_email: str = ""
+    publications: list[PublicationDTO] = Field(default_factory=list)
+    funding: list[str] = Field(default_factory=list)
+    # Scientific context
+    modeling_scales: list[str] = Field(default_factory=list)
+    organisms: list[str] = Field(default_factory=list)
+    domains: list[str] = Field(default_factory=list)
+    date_published: date | None = None
+    # Integrity
+    digest_sha256: str = ""
+    size_bytes: int | None = None
+    external_ids: dict[str, str] = Field(default_factory=dict)
+    license: str = ""
+    # Execution
+    execution_ref: str = ""
+    io_spec: IOSpecDTO | None = None
+    # System
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
+    updated_at: datetime
 
 
 class ModelListResponse(BaseModel):
@@ -26,7 +51,7 @@ class ModelListResponse(BaseModel):
 
 # ── Full-text search schemas ─────────────────────────────────────────
 
-FilterOp = Literal["eq", "overlap", "contains", "gte", "lte"]
+FilterOp = Literal["eq", "in", "overlap", "contains", "gte", "lte"]
 SortField = Literal["_score", "name", "created_at", "updated_at"]
 SortOrder = Literal["asc", "desc"]
 
@@ -61,10 +86,27 @@ class SearchResultItem(BaseModel):
     status: str
     owner: str = ""
     execution_type: str | None = None
+    execution_ref: str = ""
+    io_spec: IOSpecDTO | None = None
+    format_tags: list[str] = Field(default_factory=list)
+    # Authorship & attribution
+    authors: list[AuthorDTO] = Field(default_factory=list)
+    organization: str = ""
+    contact_email: str = ""
+    publications: list[PublicationDTO] = Field(default_factory=list)
+    funding: list[str] = Field(default_factory=list)
+    # Scientific context
     organisms: list[str] = Field(default_factory=list)
     domains: list[str] = Field(default_factory=list)
     modeling_scales: list[str] = Field(default_factory=list)
-    format_tags: list[str] = Field(default_factory=list)
+    date_published: date | None = None
+    # Integrity
+    digest_sha256: str = ""
+    size_bytes: int | None = None
+    external_ids: dict[str, str] = Field(default_factory=dict)
+    license: str = ""
+    # System
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
     score: float | None = None

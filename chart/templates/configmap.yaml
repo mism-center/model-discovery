@@ -7,7 +7,6 @@ metadata:
 data:
   # ── Gateway ─────────────────────────────────
   GATEWAY_PORT: {{ .Values.gateway.service.port | quote }}
-  UPLOAD_SERVICE_URL: {{ .Values.gateway.env.UPLOAD_SERVICE_URL | quote }}
 
   # ── Database ────────────────────────────────
   DATABASE_HOST: "metadata-store"
