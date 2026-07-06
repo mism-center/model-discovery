@@ -8,7 +8,6 @@ from mismapi.api.v1.resource_files import router as resource_files_router
 from mismapi.api.v1.runs import router as runs_router
 from mismapi.api.v1.search import router as search_router
 from mismapi.api.v1.upload_files import router as upload_files_router
-from mismapi.auth.base import require_principal
 from mismapi.core.settings import get_settings
 
 

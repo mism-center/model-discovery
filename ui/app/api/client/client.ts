@@ -1,22 +1,8 @@
 import createClient, { type Middleware } from 'openapi-fetch';
 
 import type { paths } from '~/api/generated/schema';
-import { resolveApiBaseUrl } from '~/utils/env';
+import { browserApiBaseUrl } from '~/utils/env';
 import { ApiError } from './errors';
-
-const BROWSER_BASE_URL = '';
-
-export function resolveServerBaseUrl(): string {
-  const url = process.env.API_BASE_URL;
-  if (!url) {
-    throw new Error(
-      'API_BASE_URL is not set. Provide the in-cluster gateway origin for ' +
-        'SSR fetches (e.g. http://localhost:8000 locally, ' +
-        'http://discovery-gateway:8000 in cluster).'
-    );
-  }
-  return url.replace(/\/$/, '');
-}
 
 /**
  * Normalize non-2xx responses into `ApiError` so call sites don't have to
@@ -42,7 +28,7 @@ export const errorMiddleware: Middleware = {
 };
 
 export const apiClient = createClient<paths>({
-  baseUrl: BROWSER_BASE_URL,
+  baseUrl: browserApiBaseUrl(),
   // Browser sends cookies for same-origin (proxy / shared ingress) and
   // cross-origin (if CORS allow_credentials is configured).
   credentials: 'include',

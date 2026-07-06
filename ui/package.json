@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
     "format": "prettier --write .",
-    "api:types": "openapi-typescript https://mism-discovery.apps.renci.org/api/openapi.json -o app/api/generated/schema.d.ts",
+    "api:types": "openapi-typescript ${API_BASE:-http://localhost:8000}/api/openapi.json -o app/api/generated/schema.d.ts",
     "prepare": "cd .. && husky"
   },
   "dependencies": {

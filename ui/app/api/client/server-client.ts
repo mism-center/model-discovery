@@ -1,7 +1,8 @@
 import createClient from 'openapi-fetch';
 
 import type { paths } from '~/api/generated/schema';
-import { errorMiddleware, resolveServerBaseUrl } from './client';
+import { serverApiBaseUrl } from '~/utils/env';
+import { errorMiddleware } from './client';
 
 /**
  * Per-request API client for SSR loaders / actions. Forwards the inbound
@@ -14,7 +15,7 @@ import { errorMiddleware, resolveServerBaseUrl } from './client';
 export function serverApiClient(request: Request) {
   const cookie = request.headers.get('cookie') ?? '';
   const client = createClient<paths>({
-    baseUrl: resolveServerBaseUrl(),
+    baseUrl: serverApiBaseUrl(),
     headers: cookie ? { cookie } : {},
   });
   client.use(errorMiddleware);

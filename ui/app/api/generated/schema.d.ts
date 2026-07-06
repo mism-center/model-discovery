@@ -38,6 +38,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/auth/me': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Me
+     * @description Return the current authenticated user.
+     */
+    get: operations['me_api_auth_me_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/auth/logout': {
     parameters: {
       query?: never;
@@ -47,7 +67,14 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Logout */
+    /**
+     * Logout
+     * @description Clear the local session and surface the IdP end-session URL if any.
+     *
+     *     Always returns JSON so the UI can decide whether to navigate top-level
+     *     to the IdP. Avoids cross-origin redirect responses that `fetch` can't
+     *     read.
+     */
     post: operations['logout_api_auth_logout_post'];
     delete?: never;
     options?: never;
@@ -84,6 +111,23 @@ export interface paths {
     /** Update Model */
     put: operations['update_model_api_v1_models__model_id__put'];
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/models/{model_id}/upload': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Initiate Model File Upload */
+    post: operations['initiate_model_file_upload_api_v1_models__model_id__upload_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -319,6 +363,24 @@ export interface components {
       file: string;
     };
     /**
+     * CurrentUser
+     * @description Authenticated user view returned by ``GET /api/auth/me``.
+     */
+    CurrentUser: {
+      /** Sub */
+      sub: string;
+      /** Iss */
+      iss: string;
+      /** Scopes */
+      scopes: string[];
+      /** Email */
+      email?: string | null;
+      /** Name */
+      name?: string | null;
+      /** Preferred Username */
+      preferred_username?: string | null;
+    };
+    /**
      * ExecuteRunRequest
      * @description Create a run AND trigger execution on the Execution API.
      */
@@ -422,6 +484,20 @@ export interface components {
       parameters_schema?: {
         [key: string]: unknown;
       } | null;
+    };
+    /**
+     * LogoutResponse
+     * @description Result of ``POST /api/auth/logout``.
+     *
+     *     ``end_session_url`` is the IdP's RP-initiated-logout URL when the
+     *     configured OIDC provider exposes one. The UI is expected to navigate
+     *     top-level to this URL so the IdP can clear its own session; when ``None``
+     *     the local session has already been cleared and no further action is
+     *     required.
+     */
+    LogoutResponse: {
+      /** End Session Url */
+      end_session_url?: string | null;
     };
     /** ModelListItem */
     ModelListItem: {
@@ -1373,6 +1449,15 @@ export interface components {
       /** Parts Uploaded */
       parts_uploaded: number;
     };
+    /** UploadInitiatedResponse */
+    UploadInitiatedResponse: {
+      /** Upload Server Base Url */
+      upload_server_base_url: string;
+      /** Resource Id */
+      resource_id: string;
+      /** Token */
+      token: string;
+    };
     /** ValidationError */
     ValidationError: {
       /** Location */
@@ -1397,7 +1482,10 @@ export type $defs = Record<string, never>;
 export interface operations {
   login_api_auth_login_get: {
     parameters: {
-      query?: never;
+      query?: {
+        return_to_key?: string;
+        return_to_query?: string;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -1411,6 +1499,15 @@ export interface operations {
         };
         content: {
           'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
@@ -1447,6 +1544,26 @@ export interface operations {
       };
     };
   };
+  me_api_auth_me_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CurrentUser'];
+        };
+      };
+    };
+  };
   logout_api_auth_logout_post: {
     parameters: {
       query?: never;
@@ -1462,7 +1579,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': unknown;
+          'application/json': components['schemas']['LogoutResponse'];
         };
       };
     };
@@ -1564,6 +1681,37 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['RegisterModelResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  initiate_model_file_upload_api_v1_models__model_id__upload_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        model_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UploadInitiatedResponse'];
         };
       };
       /** @description Validation Error */
