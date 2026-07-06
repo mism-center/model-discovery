@@ -207,8 +207,8 @@ ui:
       cpu: 500m
       memory: 512Mi
   env:
-    # API base URL for backend communication
-    VITE_API_BASE_URL: "http://discovery-gateway:8000"
+    # Used by SSR where relative URL isn't available
+    API_BASE_URL: "http://discovery-gateway:8000"
 
 # ────────────────────────────────────────────────────────────
 # Ingress

@@ -7,12 +7,21 @@ import {
   ScrollRestoration,
   useHref,
   useNavigate,
+  useRouteLoaderData,
 } from 'react-router';
 import { HeroUIProvider } from '@heroui/react';
-import { QueryClientProvider } from '@tanstack/react-query';
+import {
+  HydrationBoundary,
+  QueryClientProvider,
+  dehydrate,
+  type DehydratedState,
+} from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import type { Route } from './+types/root';
 import { Header } from './components/layout/header';
+import { AuthErrorBanner } from './components/layout/auth-error-banner';
+import { prefetchUser } from './api/auth/user';
+import { serverApiClient } from './api/client/server-client';
 import { getQueryClient } from './api/query/query-client';
 import './styles/index.css';
 
@@ -37,25 +46,44 @@ export function links() {
   ];
 }
 
+/**
+ * Prefetch the current user on the server so the first paint matches the
+ * client-side hydration. Forwards the inbound cookie to the API via
+ * `serverApiClient` — without that, `apiClient`'s `credentials: 'include'`
+ * has no cookie jar to draw from in Node.
+ */
+export async function loader({ request }: Route.LoaderArgs) {
+  const queryClient = getQueryClient();
+  await prefetchUser(queryClient, serverApiClient(request));
+  return { dehydratedState: dehydrate(queryClient) };
+}
+
 function Providers({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const queryClient = getQueryClient();
+  // Hydrate at the layout level so global chrome (Header, AuthErrorBanner)
+  // sees the SSR-prefetched user cache instead of cold-fetching after mount.
+  const rootData = useRouteLoaderData('root') as
+    | { dehydratedState?: DehydratedState }
+    | undefined;
   return (
     <QueryClientProvider client={queryClient}>
-      <HeroUIProvider
-        // HeroUI's provider creates a div container
-        className="min-h-dvh"
-        navigate={navigate}
-        useHref={useHref}
-      >
-        {children}
-      </HeroUIProvider>
-      {import.meta.env.DEV && (
-        <ReactQueryDevtools
-          initialIsOpen={false}
-          buttonPosition="bottom-left"
-        />
-      )}
+      <HydrationBoundary state={rootData?.dehydratedState}>
+        <HeroUIProvider
+          // HeroUI's provider creates a div container
+          className="min-h-dvh"
+          navigate={navigate}
+          useHref={useHref}
+        >
+          {children}
+        </HeroUIProvider>
+        {import.meta.env.DEV && (
+          <ReactQueryDevtools
+            initialIsOpen={false}
+            buttonPosition="bottom-left"
+          />
+        )}
+      </HydrationBoundary>
     </QueryClientProvider>
   );
 }
@@ -73,6 +101,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Providers>
           <div className="min-h-dvh flex flex-col grow">
             <Header />
+            <AuthErrorBanner />
             {children}
           </div>
           {/* <Footer /> */}

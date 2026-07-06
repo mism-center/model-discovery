@@ -12,7 +12,7 @@ import Tus from '@uppy/tus';
 import { useEffect, useRef, useState } from 'react';
 
 import type { components } from '~/api/generated/schema';
-import { resolveApiBaseUrl, resolveTusdPlaceholderUrl } from '~/utils/env';
+import { browserApiBaseUrl, resolveTusdPlaceholderUrl } from '~/utils/env';
 import '@uppy/core/css/style.min.css';
 import '@uppy/dashboard/css/style.min.css';
 
@@ -30,7 +30,7 @@ type ModelListResponse = components['schemas']['ModelListResponse'];
 type ModelResponse = Pick<ModelListItem, 'id' | 'name'>;
 
 function apiOrigin(): string {
-  return resolveApiBaseUrl().replace(/\/+$/, '');
+  return browserApiBaseUrl().replace(/\/+$/, '');
 }
 
 function tusEndpointFromServerBase(baseUrl: string): string {

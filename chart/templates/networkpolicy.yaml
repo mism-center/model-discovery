@@ -9,6 +9,7 @@
 
   Allowed call graph (→ = may initiate connection):
     Ingress controller  → Gateway
+    UI (SSR loaders)    → Gateway
     Gateway             → Search Service
     Gateway             → Upload Service
     Gateway             → Redis (when bundled subchart is enabled)
@@ -39,7 +40,7 @@ spec:
     - Ingress
 
 ---
-# ── 1. Discovery Gateway – accepts traffic from the Ingress controller only ───
+# ── 1. Discovery Gateway – accepts traffic from the Ingress controller and UI ──
 {{- if .Values.gateway.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -62,6 +63,12 @@ spec:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: ingress-nginx
+        {{- if .Values.ui.enabled }}
+        # UI pods performing server-side (SSR loader/action) fetches to the API
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: ui
+        {{- end }}
       ports:
         - protocol: TCP
           port: {{ .Values.gateway.service.port }}

@@ -1,7 +1,7 @@
 import createClient, { type Middleware } from 'openapi-fetch';
 
 import type { paths } from '~/api/generated/schema';
-import { resolveApiBaseUrl } from '~/utils/env';
+import { browserApiBaseUrl } from '~/utils/env';
 import { ApiError } from './errors';
 
 /**
@@ -9,7 +9,7 @@ import { ApiError } from './errors';
  * branch on `{ data, error }` from openapi-fetch for error handling.
  * Successful responses pass through untouched.
  */
-const errorMiddleware: Middleware = {
+export const errorMiddleware: Middleware = {
   async onResponse({ response, request }) {
     if (response.ok) return;
 
@@ -28,9 +28,9 @@ const errorMiddleware: Middleware = {
 };
 
 export const apiClient = createClient<paths>({
-  baseUrl: resolveApiBaseUrl(),
-  // Ready for cookie-based auth the day it lands; harmless for anonymous
-  // requests to the search endpoint.
+  baseUrl: browserApiBaseUrl(),
+  // Browser sends cookies for same-origin (proxy / shared ingress) and
+  // cross-origin (if CORS allow_credentials is configured).
   credentials: 'include',
 });
 

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 
 from mismapi.api.auth import router as auth_router
 from mismapi.api.internal import router as internal_router
@@ -8,14 +8,13 @@ from mismapi.api.v1.resource_files import router as resource_files_router
 from mismapi.api.v1.runs import router as runs_router
 from mismapi.api.v1.search import router as search_router
 from mismapi.api.v1.upload_files import router as upload_files_router
-from mismapi.auth.base import require_principal
 from mismapi.core.settings import get_settings
 
 
 def build_api_router() -> APIRouter:
     # Prefix is configurable so ingress can put a UI at "/" and the API at "/api".
     api_router = APIRouter(prefix=get_settings().api_prefix)
-    v1_router = APIRouter(prefix="/v1", dependencies=[Depends(require_principal)])
+    v1_router = APIRouter(prefix="/v1")
     v1_router.include_router(models_router, tags=["Models"])
     v1_router.include_router(datasets_router, tags=["Datasets"])
     v1_router.include_router(runs_router, tags=["Runs"])

@@ -4,6 +4,7 @@ import logging
 import httpx
 from fastapi import APIRouter, File, UploadFile
 
+from mismapi.auth.base import AuthenticatedPrincipalDep
 from mismapi.clients.local_upload_client import LocalFileUploadClient
 from mismapi.clients.upload_client import UploadServiceClient
 from mismapi.core.deps import SettingsDep, UploadClientDep
@@ -18,6 +19,7 @@ upload_file_body = File(...)
 @router.post("/resources/{resource_id}/files", response_model=UploadAcceptedResponse)
 async def upload_resource_file(
     resource_id: str,
+    principal: AuthenticatedPrincipalDep,
     settings: SettingsDep,
     upload_client: UploadClientDep,
     file: UploadFile = upload_file_body,
