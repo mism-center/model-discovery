@@ -296,6 +296,9 @@ export interface paths {
     /**
      * Search Resources
      * @description Full-text search across models and datasets with filters and aggregations.
+     *
+     *     When the caller is authenticated, each executable model carries the
+     *     caller's own run history in ``owned_runs``.
      */
     post: operations['search_resources_api_v1_search_post'];
     delete?: never;
@@ -1308,6 +1311,8 @@ export interface components {
       updated_at: string;
       /** Score */
       score?: number | null;
+      /** Owned Runs */
+      owned_runs?: components['schemas']['RunDetailItem'][];
     };
     /** SearchSortDTO */
     SearchSortDTO: {

@@ -93,21 +93,18 @@ export async function cancelRun(
  * Active = non-terminal. Most-recently created wins so a freshly launched run
  * surfaces immediately even if older non-terminal runs somehow exist.
  *
- * Takes a predicate so callers can later narrow this (e.g. "active *batch*
- * run") when interactive runs become independently trackable.
+ * Operates on bare run records (e.g. a model's `owned_runs` from search),
+ * which are already scoped to the current user server-side.
  */
 export function pickActiveRun(
-  runs: ModelRunDetailItem[] | undefined,
-  predicate: (run: RunDetailItem) => boolean = () => true
-): ModelRunDetailItem | undefined {
+  runs: RunDetailItem[] | undefined
+): RunDetailItem | undefined {
   if (!runs?.length) return undefined;
-  const active = runs.filter(
-    ({ run }) => !isTerminalStatus(run.status) && predicate(run)
-  );
+  const active = runs.filter((run) => !isTerminalStatus(run.status));
   if (active.length === 0) return undefined;
   let latest = active[0];
   for (const current of active) {
-    if (current.run.created_at > latest.run.created_at) latest = current;
+    if (current.created_at > latest.created_at) latest = current;
   }
   return latest;
 }

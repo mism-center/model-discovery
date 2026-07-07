@@ -7,14 +7,36 @@ import {
   isTerminalStatus,
   listModelRuns,
   type ModelRunDetailsResponse,
+  type RunDetailItem,
   type RunDetailResponse,
 } from '~/api/endpoints/runs';
 
 export const runKeys = {
   all: ['runs'] as const,
   byModel: (modelId: string) => [...runKeys.all, 'by-model', modelId] as const,
+  ownedByModel: (modelId: string) =>
+    [...runKeys.all, 'owned-by-model', modelId] as const,
   detail: (runId: string) => [...runKeys.all, 'detail', runId] as const,
 };
+
+/**
+ * The current user's runs for a model, as bare run records.
+ *
+ * This mirrors the `owned_runs` embedded in each search result: the search
+ * endpoint returns the caller's runs per executable model so the card can
+ * render its run controls without a request. Cards seed this query with
+ * `initialData: model.owned_runs`, so there's no fetch on first render — a
+ * launch invalidates `runKeys.ownedByModel(modelId)` to pull the fresh run in.
+ */
+export function ownedModelRunsQueryOptions(modelId: string) {
+  return queryOptions<RunDetailItem[]>({
+    queryKey: runKeys.ownedByModel(modelId),
+    queryFn: ({ signal }) =>
+      listModelRuns(modelId, { signal }).then((res) =>
+        (res.runs ?? []).map((item) => item.run)
+      ),
+  });
+}
 
 /**
  * All runs for a given model. Used to discover whether an active (non-terminal)

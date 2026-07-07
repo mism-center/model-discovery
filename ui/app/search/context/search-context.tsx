@@ -83,7 +83,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
   const update = useCallback(
     (
       producer: (current: URLSearchParams) => URLSearchParams,
-      options: { keepOffset?: boolean } = {}
+      options: { keepOffset?: boolean; resetScroll?: boolean } = {}
     ) => {
       setSearchParams(
         (prev) => {
@@ -91,7 +91,10 @@ export function SearchProvider({ children }: { children: ReactNode }) {
           if (!options.keepOffset) next.delete('offset');
           return next;
         },
-        { preventScrollReset: true }
+        // Preserve scroll by default so tweaking a sidebar facet doesn't jump
+        // the page; pagination opts into a reset so the next page starts at
+        // the top of the results.
+        { preventScrollReset: !options.resetScroll }
       );
     },
     [setSearchParams]
@@ -142,7 +145,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
           else next.delete('offset');
           return next;
         },
-        { keepOffset: true }
+        { keepOffset: true, resetScroll: true }
       );
     },
     [update]

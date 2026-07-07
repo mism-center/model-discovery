@@ -56,9 +56,11 @@ export function RunModelModal({
   const mutation = useMutation<ExecuteRunResponse, Error, ExecuteRunRequest>({
     mutationFn: (body) => executeModelRun(model.id, body),
     onSuccess: () => {
-      // Invalidate so the card immediately reflects the new active run.
+      // Invalidate so the card immediately reflects the new active run. This
+      // refetches the model's owned runs (a single request, only on launch),
+      // replacing the search-embedded seed value.
       void queryClient.invalidateQueries({
-        queryKey: runKeys.byModel(model.id),
+        queryKey: runKeys.ownedByModel(model.id),
       });
       mutation.reset();
       setResourceIds(buildInitialResourceIds());

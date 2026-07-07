@@ -1,9 +1,9 @@
 import { HydrationBoundary, dehydrate } from '@tanstack/react-query';
+import type { ShouldRevalidateFunctionArgs } from 'react-router';
 
-import { prefetchUser, userQueryKey, type CurrentUser } from '~/api/auth/user';
+import { prefetchUser } from '~/api/auth/user';
 import { serverApiClient } from '~/api/client/server-client';
 import { getQueryClient } from '~/api/query/query-client';
-import { modelRunsQueryOptions } from '~/api/query/runs';
 import SearchSection from '~/components/sections/search/search';
 import { searchQueryOptions } from '~/api/query/search';
 import { searchStateFromParams } from '~/search/state/url-codec';
@@ -23,15 +23,12 @@ export function meta() {
 /**
  * Prefetch the search response on the server so the first paint has data.
  *
- * Once the search response is in hand, prefetch run history for every
- * executable model on the page, but only when the request carries an
- * authenticated session.
+ * The search response embeds each executable model's run history for the
+ * authenticated caller (`owned_runs`).
  *
  * Intentionally swallow prefetch errors here — if the backend is down or
  * returns 4xx we still want the route to render; the client-side useQuery
  * will retry and surface the error in the UI instead of 500'ing the page.
- * Per-model run prefetches are best-effort for the same reason: a single
- * model failing shouldn't block the page.
  */
 export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
@@ -44,23 +41,24 @@ export async function loader({ request }: Route.LoaderArgs) {
     prefetchUser(queryClient, client),
   ]);
 
-  const user = queryClient.getQueryData<CurrentUser | null>(userQueryKey);
-  if (user) {
-    const searchData = queryClient.getQueryData(
-      searchQueryOptions(state).queryKey
-    );
-    const executableModelIds = (searchData?.results ?? [])
-      .filter((result) => Boolean(result.execution_type))
-      .map((result) => result.id);
-
-    await Promise.all(
-      executableModelIds.map((modelId) =>
-        queryClient.prefetchQuery(modelRunsQueryOptions(modelId, client))
-      )
-    );
-  }
-
   return { dehydratedState: dehydrate(queryClient) };
+}
+
+/**
+ * The loader exists for server-side first paint, seeding the dehydrated
+ * React Query cache so the SSR HTML has data. Once hydrated, React Query owns
+ * refetching: changing the search state produces a new query key and refetches
+ * reactively. So skip the loader for same-route search-param navigations
+ * (pagination, facets, sort, query). Still revalidate across pathname changes
+ * and on explicit router revalidation.
+ */
+export function shouldRevalidate({
+  currentUrl,
+  nextUrl,
+  defaultShouldRevalidate,
+}: ShouldRevalidateFunctionArgs) {
+  if (currentUrl.pathname === nextUrl.pathname) return false;
+  return defaultShouldRevalidate;
 }
 
 export default function Search({ loaderData }: Route.ComponentProps) {

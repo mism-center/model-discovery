@@ -3,8 +3,15 @@ import logging
 from fastapi import APIRouter
 from mism_registry.search import FieldFilter, SearchQuery
 
+from mismapi.api.v1._run_helpers import run_detail
+from mismapi.auth.base import OptionalPrincipalDep
 from mismapi.core.deps import RegistryServiceDep
-from mismapi.schemas.registry import author_to_dto, io_spec_to_dto, pub_to_dto
+from mismapi.schemas.registry import (
+    RunDetailItem,
+    author_to_dto,
+    io_spec_to_dto,
+    pub_to_dto,
+)
 from mismapi.schemas.search import (
     AggBucketDTO,
     AggResultDTO,
@@ -22,8 +29,13 @@ router = APIRouter()
 async def search_resources(
     body: SearchRequest,
     service: RegistryServiceDep,
+    principal: OptionalPrincipalDep,
 ) -> SearchResponse:
-    """Full-text search across models and datasets with filters and aggregations."""
+    """Full-text search across models and datasets with filters and aggregations.
+
+    When the caller is authenticated, each executable model carries the
+    caller's own run history in ``owned_runs``.
+    """
 
     query = SearchQuery(
         text=body.query,
@@ -36,6 +48,18 @@ async def search_resources(
     )
 
     result = service.search(query)
+
+    # Attach the caller's run history for executable models on this page.
+    # Anonymous callers get none; non-executable resources have no runs.
+    owned_runs: dict[str, list[RunDetailItem]] = {}
+    if principal is not None:
+        for r in result.resources:
+            if r.execution_type is None:
+                continue
+            runs = service.find_model_runs(model_id=r.id, triggered_by=principal.subject)
+            if runs:
+                runs.sort(key=lambda run: run.created_at, reverse=True)
+                owned_runs[r.id] = [run_detail(run) for run in runs]
 
     items = [
         SearchResultItem(
@@ -68,6 +92,7 @@ async def search_resources(
             created_at=r.created_at,
             updated_at=r.updated_at,
             score=result.scores[i] if result.scores else None,
+            owned_runs=owned_runs.get(r.id, []),
         )
         for i, r in enumerate(result.resources)
     ]

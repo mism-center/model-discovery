@@ -3,7 +3,7 @@ import { PlayIcon } from '@heroicons/react/24/solid';
 import { useQuery } from '@tanstack/react-query';
 
 import { pickActiveRun, type SearchResultItem } from '~/api';
-import { modelRunsQueryOptions } from '~/api/query/runs';
+import { ownedModelRunsQueryOptions } from '~/api/query/runs';
 import { useUser } from '~/api/auth/user';
 import { RunModelModal } from './run-model-modal';
 import { RunStatusPopover } from './run-status-popover';
@@ -19,17 +19,12 @@ interface RunControlsProps {
  *   - executable + owned active run    → status chip with details popover
  *   - non-executable                   → render nothing
  *
- * "Owned" means launched by the current authenticated user. The server stamps
- * each run's `triggered_by` with the caller's identity (the OIDC `sub`), so we
- * filter the model's run history down to runs whose `triggered_by` matches the
- * signed-in user's `sub`.
- *
- * Each executable card fetches its own run history on mount so the chip
- * appears immediately when an active run exists. React Query dedupes and
- * caches per-model so this is cheap on rerender / repagination.
- *
- * `pickActiveRun` accepts a predicate so this can later narrow further (e.g.
- * "active *batch* run") once interactive runs become independently trackable.
+ * "Owned" means launched by the current authenticated user. The search
+ * endpoint embeds the caller's own runs per executable model as
+ * `model.owned_runs` (the server scopes them by the authenticated `sub`), so
+ * the card renders without a per-model request. We seed the owned-runs query
+ * with that embedded data; a launch invalidates the query to pull the fresh
+ * run in, so the chip stays live after the initial paint.
  */
 export function RunControls({ model }: RunControlsProps) {
   const isExecutable = Boolean(model.execution_type);
@@ -37,7 +32,9 @@ export function RunControls({ model }: RunControlsProps) {
   const { user, isLoading: isUserLoading } = useUser();
 
   const runsQuery = useQuery({
-    ...modelRunsQueryOptions(model.id),
+    ...ownedModelRunsQueryOptions(model.id),
+    // Embedded from the search response — no fetch on first render.
+    initialData: model.owned_runs,
     enabled: isExecutable && Boolean(user),
   });
 
@@ -49,31 +46,23 @@ export function RunControls({ model }: RunControlsProps) {
   // initial `/api/auth/me` fetch.
   if (isUserLoading || !user) return null;
 
-  const ownedActiveRun = pickActiveRun(
-    runsQuery.data?.runs,
-    (run) => run.triggered_by === user.sub
-  );
+  const ownedActiveRun = pickActiveRun(runsQuery.data);
 
   if (ownedActiveRun) {
-    return <RunStatusPopover initialRun={ownedActiveRun.run} model={model} />;
+    return <RunStatusPopover initialRun={ownedActiveRun} model={model} />;
   }
 
-  // While the initial fetch is in flight, render a disabled button rather
-  // than a primary "Run model" — otherwise we'd briefly show the launch
-  // affordance for a model that already has an owned active run.
-  const isInitialLoading = runsQuery.isLoading;
-
+  // No active owned run — the run history was embedded in the search response
+  // (initialData), so there's no initial fetch to wait on: show the launch
+  // affordance directly.
   return (
     <>
       <Button
         size="sm"
         color="primary"
         className="px-5 py-2.5 rounded-lg text-sm font-bold"
-        startContent={
-          isInitialLoading ? undefined : <PlayIcon className="size-4" />
-        }
+        startContent={<PlayIcon className="size-4" />}
         onPress={launchModal.onOpen}
-        isLoading={isInitialLoading}
       >
         Run model
       </Button>
