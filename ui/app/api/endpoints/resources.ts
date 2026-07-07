@@ -1,5 +1,6 @@
 import type { components } from '~/api/generated/schema';
-import { API_BASE_URL, apiClient } from '~/api/client/client';
+import { apiClient } from '~/api/client/client';
+import { browserApiBaseUrl } from '~/utils/env';
 
 export type ResourceFileItem = components['schemas']['ResourceFileItem'];
 export type ResourceFilesResponse =
@@ -27,9 +28,12 @@ export async function listResourceFiles(
  * the whole resource directory as a zip.
  */
 export function resourceDownloadUrl(resourceId: string, file?: string): string {
+  // browserApiBaseUrl() is '' for same-origin (shared ingress); fall back to
+  // the current origin so `new URL()` has an absolute base to resolve against.
+  const base = browserApiBaseUrl() || globalThis.location?.origin;
   const url = new URL(
     `/api/v1/resources/${encodeURIComponent(resourceId)}/download`,
-    API_BASE_URL
+    base
   );
   if (file) url.searchParams.set('file', file);
   return url.toString();

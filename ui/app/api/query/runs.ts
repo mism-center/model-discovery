@@ -1,5 +1,7 @@
 import { queryOptions } from '@tanstack/react-query';
+import type { Client } from 'openapi-fetch';
 
+import type { paths } from '~/api/generated/schema';
 import {
   getRun,
   isTerminalStatus,
@@ -18,11 +20,14 @@ export const runKeys = {
  * All runs for a given model. Used to discover whether an active (non-terminal)
  * run exists on the search-result card. Disabled by default — cards opt in
  * lazily when the user opens the run controls.
+ *
+ * `client` lets SSR loaders pass a cookie-forwarding `serverApiClient` so run
+ * history is fetched as the authenticated user; client-side callers omit it.
  */
-export function modelRunsQueryOptions(modelId: string) {
+export function modelRunsQueryOptions(modelId: string, client?: Client<paths>) {
   return queryOptions<ModelRunDetailsResponse>({
     queryKey: runKeys.byModel(modelId),
-    queryFn: ({ signal }) => listModelRuns(modelId, { signal }),
+    queryFn: ({ signal }) => listModelRuns(modelId, { signal, client }),
   });
 }
 

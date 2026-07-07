@@ -1,10 +1,10 @@
 import { HydrationBoundary, dehydrate } from '@tanstack/react-query';
-import { data } from 'react-router';
 
+import { prefetchUser, userQueryKey, type CurrentUser } from '~/api/auth/user';
+import { serverApiClient } from '~/api/client/server-client';
 import { getQueryClient } from '~/api/query/query-client';
 import { modelRunsQueryOptions } from '~/api/query/runs';
 import SearchSection from '~/components/sections/search/search';
-import { ClientIdProvider, resolveClientIdFromRequest } from '~/lib/client-id';
 import { searchQueryOptions } from '~/api/query/search';
 import { searchStateFromParams } from '~/search/state/url-codec';
 import type { Route } from './+types/search';
@@ -23,8 +23,9 @@ export function meta() {
 /**
  * Prefetch the search response on the server so the first paint has data.
  *
- * Once the search response is in hand also prefetch the run history
- * for every executable model on the page.
+ * Once the search response is in hand, prefetch run history for every
+ * executable model on the page, but only when the request carries an
+ * authenticated session.
  *
  * Intentionally swallow prefetch errors here — if the backend is down or
  * returns 4xx we still want the route to render; the client-side useQuery
@@ -35,35 +36,37 @@ export function meta() {
 export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const state = searchStateFromParams(url.searchParams);
-  const { clientId, setCookie } = resolveClientIdFromRequest(request);
+  const client = serverApiClient(request);
 
   const queryClient = getQueryClient();
-  await queryClient.prefetchQuery(searchQueryOptions(state));
+  await Promise.all([
+    queryClient.prefetchQuery(searchQueryOptions(state, client)),
+    prefetchUser(queryClient, client),
+  ]);
 
-  const searchData = queryClient.getQueryData(
-    searchQueryOptions(state).queryKey
-  );
-  const executableModelIds = (searchData?.results ?? [])
-    .filter((result) => Boolean(result.execution_type))
-    .map((result) => result.id);
+  const user = queryClient.getQueryData<CurrentUser | null>(userQueryKey);
+  if (user) {
+    const searchData = queryClient.getQueryData(
+      searchQueryOptions(state).queryKey
+    );
+    const executableModelIds = (searchData?.results ?? [])
+      .filter((result) => Boolean(result.execution_type))
+      .map((result) => result.id);
 
-  await Promise.all(
-    executableModelIds.map((modelId) =>
-      queryClient.prefetchQuery(modelRunsQueryOptions(modelId))
-    )
-  );
+    await Promise.all(
+      executableModelIds.map((modelId) =>
+        queryClient.prefetchQuery(modelRunsQueryOptions(modelId, client))
+      )
+    );
+  }
 
-  const payload = { dehydratedState: dehydrate(queryClient), clientId };
-  if (!setCookie) return payload;
-  return data(payload, { headers: { 'Set-Cookie': setCookie } });
+  return { dehydratedState: dehydrate(queryClient) };
 }
 
 export default function Search({ loaderData }: Route.ComponentProps) {
   return (
-    <ClientIdProvider value={loaderData.clientId}>
-      <HydrationBoundary state={loaderData.dehydratedState}>
-        <SearchSection />
-      </HydrationBoundary>
-    </ClientIdProvider>
+    <HydrationBoundary state={loaderData.dehydratedState}>
+      <SearchSection />
+    </HydrationBoundary>
   );
 }

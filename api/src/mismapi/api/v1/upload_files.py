@@ -2,12 +2,13 @@ import asyncio
 import logging
 
 import httpx
-from fastapi import APIRouter, File, Request, UploadFile
+from fastapi import APIRouter, File, UploadFile
 
+from mismapi.auth.base import AuthenticatedPrincipalDep
+from mismapi.clients.local_upload_client import LocalFileUploadClient
 from mismapi.clients.upload_client import UploadServiceClient
+from mismapi.core.deps import SettingsDep, UploadClientDep
 from mismapi.core.errors import APIError
-from mismapi.core.settings import Settings
-from mismapi.schemas.common import ModelId
 from mismapi.schemas.upload import UploadAcceptedResponse
 
 logger = logging.getLogger(__name__)
@@ -15,17 +16,23 @@ router = APIRouter()
 upload_file_body = File(...)
 
 
-@router.post("/models/{model_id}/files", response_model=UploadAcceptedResponse)
-async def upload_model_file(
-    request: Request,
-    model_id: ModelId,
+@router.post("/resources/{resource_id}/files", response_model=UploadAcceptedResponse)
+async def upload_resource_file(
+    resource_id: str,
+    principal: AuthenticatedPrincipalDep,
+    settings: SettingsDep,
+    upload_client: UploadClientDep,
     file: UploadFile = upload_file_body,
 ) -> UploadAcceptedResponse:
-    settings: Settings = request.app.state.settings
-    upload_client: UploadServiceClient = request.app.state.upload_client
+    """Upload a file artifact for any resource (model, dataset, tool, …).
 
+    The path is scoped by ``resource_id`` so the same flow handles every
+    registry resource type. The configured upload backend (`UPLOAD_BACKEND=local`
+    writes to the iRODS PVC; `UPLOAD_BACKEND=http` forwards to the upload
+    service) is selected at app startup; the route is backend-agnostic.
+    """
     session = await upload_client.init_upload(
-        model_id=model_id,
+        resource_id=resource_id,
         filename=file.filename or "upload.bin",
         content_type=file.content_type,
     )
@@ -55,14 +62,16 @@ async def upload_model_file(
     )
 
     logger.info(
-        "upload_accepted upload_id=%s tracking_id=%s bytes_received=%s parts_uploaded=%s",
+        "upload_accepted resource_id=%s upload_id=%s tracking_id=%s "
+        "bytes_received=%s parts_uploaded=%s",
+        resource_id,
         session.upload_id,
         session.tracking_id,
         total_bytes,
         part_number,
     )
     return UploadAcceptedResponse(
-        model_id=model_id,
+        resource_id=resource_id,
         upload_id=session.upload_id,
         tracking_id=session.tracking_id,
         filename=file.filename or "upload.bin",
@@ -73,7 +82,7 @@ async def upload_model_file(
 
 
 async def _upload_part_with_retry(
-    client: UploadServiceClient,
+    client: UploadServiceClient | LocalFileUploadClient,
     upload_id: str,
     part_number: int,
     chunk: bytes,

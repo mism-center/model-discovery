@@ -17,8 +17,6 @@ interface RunStatusPopoverProps {
   initialRun: RunDetailItem;
   /** Needed so a terminal run's "Rerun" can open the launch modal. */
   model: SearchResultItem;
-  /** Forwarded to the launch modal for the rerun request. */
-  triggeredBy: string;
 }
 
 const STATUS_COLOR: Record<
@@ -39,11 +37,7 @@ const formatTimestamp = (iso: string | null | undefined): string => {
   return new Date(ms).toLocaleString();
 };
 
-export function RunStatusPopover({
-  initialRun,
-  model,
-  triggeredBy,
-}: RunStatusPopoverProps) {
+export function RunStatusPopover({ initialRun, model }: RunStatusPopoverProps) {
   const { data } = useQuery({
     ...runDetailQueryOptions(initialRun.id),
     initialData: { run: initialRun },
@@ -146,7 +140,6 @@ export function RunStatusPopover({
       </Tooltip>
       <RunModelModal
         model={model}
-        triggeredBy={triggeredBy}
         isOpen={rerunModal.isOpen}
         onClose={rerunModal.onClose}
         initialInputResourceIds={run.input_resource_ids}

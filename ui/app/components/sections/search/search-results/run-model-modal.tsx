@@ -21,13 +21,6 @@ import { ApiErrorDisplay } from '~/components/common/api-error-display';
 
 interface RunModelModalProps {
   model: SearchResultItem;
-  /**
-   * Sent as `triggered_by` on the launch request so the card can later
-   * filter the model's run history down to "runs this user kicked off".
-   * Until auth lands this is a stable client-id from a cookie; afterwards
-   * it'll be the authenticated user id.
-   */
-  triggeredBy: string;
   isOpen: boolean;
   onClose: () => void;
   /**
@@ -45,7 +38,6 @@ interface RunModelModalProps {
 
 export function RunModelModal({
   model,
-  triggeredBy,
   isOpen,
   onClose,
   mode = 'batch',
@@ -86,7 +78,6 @@ export function RunModelModal({
     mutation.mutate({
       input_resource_ids: trimmedIds,
       parameters: {},
-      triggered_by: triggeredBy,
       notes: '',
       mode,
     });

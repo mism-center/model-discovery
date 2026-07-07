@@ -13,6 +13,14 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
   migrate:
     build:
       context: api
@@ -23,7 +31,16 @@ services:
         condition: service_healthy
     environment:
       MISM_DAL_DATABASE_URL: "postgresql+psycopg://postgres:postgres@db:5432/mism_test"
-    entrypoint: ["python", "-c", "from alembic.config import Config; from alembic import command; import mism_registry.backends.migrations as m; import os; cfg = Config(); cfg.set_main_option('script_location', os.path.dirname(m.__file__)); cfg.set_main_option('sqlalchemy.url', os.environ['MISM_DAL_DATABASE_URL']); command.upgrade(cfg, 'head'); print('Migrations complete')"]
+    entrypoint: [
+        "python",
+        "-c",
+        "from alembic.config import Config; from alembic import command;
+        import mism_registry.backends.migrations as m; import os; cfg =
+        Config(); cfg.set_main_option('script_location',
+        os.path.dirname(m.__file__)); cfg.set_main_option('sqlalchemy.url',
+        os.environ['MISM_DAL_DATABASE_URL']); command.upgrade(cfg, 'head');
+        print('Migrations complete')",
+      ]
 
   api:
     build:
@@ -33,18 +50,60 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
     environment:
       DATABASE_URL: "postgresql+psycopg://postgres:postgres@db:5432/mism_test"
+      REDIS_URL: "redis://redis:6379/0"
+      # Browser-reachable tusd URL returned by POST /api/v1/models/{id}/upload.
+      TUSD_BASE_URL: "http://localhost:1080/files/"
       DISABLE_AUTH: "true"
       STUB_UPSTREAM_SERVICES: "true"
+      # Same volume tusd writes to; pre-create hook checks existence here.
+      IRODS_MOUNT_PATH: "/data/uploads"
+      PRODUCTION_MODE: "false"
+      # Required for the CORSMiddleware in mismapi.main:create_app to be wired.
+      DEPLOY_TYPE: "local"
     volumes:
       - ./data/uploads:/data/uploads
     ports:
       - "8000:8000"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      test: [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request;
+          urllib.request.urlopen('http://localhost:8000/healthz')",
+        ]
       interval: 3s
       timeout: 5s
       retries: 10
+
+  tusd:
+    image: tusproject/tusd:v2.5
+    # Run as root: on a fresh checkout Docker creates the ./data/uploads bind
+    # mount owned by root, and the default tusd uid (1000) then can't mkdir the
+    # per-resource dirs under it. ponytail: test stack only; the chart sets its
+    # own securityContext/PVC perms.
+    user: "0:0"
+    depends_on:
+      api:
+        condition: service_healthy
+    command:
+      - "-host=0.0.0.0"
+      - "-port=1080"
+      - "-base-path=/files/"
+      - "-upload-dir=/data/uploads"
+      - "-hooks-http=http://api:8000/api/internal/tusd/hooks"
+      - "-hooks-enabled-events=pre-create,post-finish"
+      - "-behind-proxy=true"
+      # CORS so the UI dev server (localhost:3000) can talk directly to tusd.
+      - "-cors-allow-origin=.*"
+      - "-cors-allow-credentials=true"
+    volumes:
+      - ./data/uploads:/data/uploads
+    ports:
+      - "1080:1080"

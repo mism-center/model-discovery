@@ -6,7 +6,7 @@ RUN npm ci
 FROM node:22-alpine AS production-deps
 COPY package.json package-lock.json /app/
 WORKDIR /app
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev --ignore-scripts
 
 FROM node:22-alpine AS build
 COPY . /app/

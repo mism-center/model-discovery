@@ -4,6 +4,84 @@
  */
 
 export interface paths {
+  '/api/auth/login': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Login */
+    get: operations['login_api_auth_login_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/auth/callback': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Callback */
+    get: operations['callback_api_auth_callback_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/auth/me': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Me
+     * @description Return the current authenticated user.
+     */
+    get: operations['me_api_auth_me_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/auth/logout': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Logout
+     * @description Clear the local session and surface the IdP end-session URL if any.
+     *
+     *     Always returns JSON so the UI can decide whether to navigate top-level
+     *     to the IdP. Avoids cross-origin redirect responses that `fetch` can't
+     *     read.
+     */
+    post: operations['logout_api_auth_logout_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/models': {
     parameters: {
       query?: never;
@@ -33,6 +111,23 @@ export interface paths {
     /** Update Model */
     put: operations['update_model_api_v1_models__model_id__put'];
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/models/{model_id}/upload': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Initiate Model File Upload */
+    post: operations['initiate_model_file_upload_api_v1_models__model_id__upload_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -153,7 +248,16 @@ export interface paths {
      */
     get: operations['list_resource_files_api_v1_resources__resource_id__files_get'];
     put?: never;
-    post?: never;
+    /**
+     * Upload Resource File
+     * @description Upload a file artifact for any resource (model, dataset, tool, …).
+     *
+     *     The path is scoped by ``resource_id`` so the same flow handles every
+     *     registry resource type. The configured upload backend (`UPLOAD_BACKEND=local`
+     *     writes to the iRODS PVC; `UPLOAD_BACKEND=http` forwards to the upload
+     *     service) is selected at app startup; the route is backend-agnostic.
+     */
+    post: operations['upload_resource_file_api_v1_resources__resource_id__files_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -194,23 +298,6 @@ export interface paths {
      * @description Full-text search across models and datasets with filters and aggregations.
      */
     post: operations['search_resources_api_v1_search_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/models/{model_id}/files': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Upload Model File */
-    post: operations['upload_model_file_api_v1_models__model_id__files_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -270,10 +357,28 @@ export interface components {
        */
       role: string;
     };
-    /** Body_upload_model_file_api_v1_models__model_id__files_post */
-    Body_upload_model_file_api_v1_models__model_id__files_post: {
+    /** Body_upload_resource_file_api_v1_resources__resource_id__files_post */
+    Body_upload_resource_file_api_v1_resources__resource_id__files_post: {
       /** File */
       file: string;
+    };
+    /**
+     * CurrentUser
+     * @description Authenticated user view returned by ``GET /api/auth/me``.
+     */
+    CurrentUser: {
+      /** Sub */
+      sub: string;
+      /** Iss */
+      iss: string;
+      /** Scopes */
+      scopes: string[];
+      /** Email */
+      email?: string | null;
+      /** Name */
+      name?: string | null;
+      /** Preferred Username */
+      preferred_username?: string | null;
     };
     /**
      * ExecuteRunRequest
@@ -286,11 +391,6 @@ export interface components {
       parameters?: {
         [key: string]: unknown;
       };
-      /**
-       * Triggered By
-       * @default
-       */
-      triggered_by: string;
       /**
        * Notes
        * @default
@@ -380,7 +480,20 @@ export interface components {
         [key: string]: unknown;
       } | null;
     };
-    ModelId: string;
+    /**
+     * LogoutResponse
+     * @description Result of ``POST /api/auth/logout``.
+     *
+     *     ``end_session_url`` is the IdP's RP-initiated-logout URL when the
+     *     configured OIDC provider exposes one. The UI is expected to navigate
+     *     top-level to this URL so the IdP can clear its own session; when ``None``
+     *     the local session has already been cleared and no further action is
+     *     required.
+     */
+    LogoutResponse: {
+      /** End Session Url */
+      end_session_url?: string | null;
+    };
     /** ModelListItem */
     ModelListItem: {
       /** Id */
@@ -1316,7 +1429,8 @@ export interface components {
        * @default accepted
        */
       status: string;
-      model_id: components['schemas']['ModelId'];
+      /** Resource Id */
+      resource_id: string;
       /** Upload Id */
       upload_id: string;
       /** Tracking Id */
@@ -1329,6 +1443,15 @@ export interface components {
       bytes_received: number;
       /** Parts Uploaded */
       parts_uploaded: number;
+    };
+    /** UploadInitiatedResponse */
+    UploadInitiatedResponse: {
+      /** Upload Server Base Url */
+      upload_server_base_url: string;
+      /** Resource Id */
+      resource_id: string;
+      /** Token */
+      token: string;
     };
     /** ValidationError */
     ValidationError: {
@@ -1352,6 +1475,110 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  login_api_auth_login_get: {
+    parameters: {
+      query?: {
+        return_to_key?: string;
+        return_to_query?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  callback_api_auth_callback_get: {
+    parameters: {
+      query?: {
+        code?: string;
+        state?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  me_api_auth_me_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CurrentUser'];
+        };
+      };
+    };
+  };
+  logout_api_auth_logout_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['LogoutResponse'];
+        };
+      };
+    };
+  };
   list_models_api_v1_models_get: {
     parameters: {
       query?: {
@@ -1449,6 +1676,37 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['RegisterModelResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  initiate_model_file_upload_api_v1_models__model_id__upload_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        model_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UploadInitiatedResponse'];
         };
       };
       /** @description Validation Error */
@@ -1737,6 +1995,41 @@ export interface operations {
       };
     };
   };
+  upload_resource_file_api_v1_resources__resource_id__files_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        resource_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'multipart/form-data': components['schemas']['Body_upload_resource_file_api_v1_resources__resource_id__files_post'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UploadAcceptedResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   download_resource_api_v1_resources__resource_id__download_get: {
     parameters: {
       query?: {
@@ -1791,41 +2084,6 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['SearchResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  upload_model_file_api_v1_models__model_id__files_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        model_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'multipart/form-data': components['schemas']['Body_upload_model_file_api_v1_models__model_id__files_post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['UploadAcceptedResponse'];
         };
       };
       /** @description Validation Error */

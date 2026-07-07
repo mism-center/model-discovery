@@ -152,14 +152,20 @@ class UploadServiceClient:
 
     async def init_upload(
         self,
-        model_id: str,
+        resource_id: str,
         filename: str,
         content_type: str | None,
     ) -> UploadSession:
+        """Initialize an upload session for any resource (model, dataset, …).
+
+        Note: the upstream upload service still exposes its endpoint under
+        ``/models/{id}/files/init`` — we treat ``resource_id`` as the opaque
+        path key. When the upload service generalizes, swap this URL too.
+        """
         if self._stub_upstream:
             logger.info(
-                "Called upload service (stub) action=init_upload model_id=%s filename=%s",
-                model_id,
+                "Called upload service (stub) action=init_upload resource_id=%s filename=%s",
+                resource_id,
                 filename,
             )
             return UploadSession(
@@ -169,7 +175,7 @@ class UploadServiceClient:
 
         payload = {"filename": filename, "content_type": content_type}
         try:
-            response = await self._client.post(f"/models/{model_id}/files/init", json=payload)
+            response = await self._client.post(f"/models/{resource_id}/files/init", json=payload)
             response.raise_for_status()
         except httpx.TimeoutException as exc:
             raise APIError(

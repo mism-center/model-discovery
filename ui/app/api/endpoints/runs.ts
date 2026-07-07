@@ -1,5 +1,9 @@
-import type { components } from '~/api/generated/schema';
+import type { Client } from 'openapi-fetch';
+
+import type { components, paths } from '~/api/generated/schema';
 import { apiClient } from '~/api/client/client';
+
+type ApiClientType = Client<paths>;
 
 export type ExecuteRunRequest = components['schemas']['ExecuteRunRequest'];
 export type ExecuteRunResponse = components['schemas']['ExecuteRunResponse'];
@@ -36,15 +40,22 @@ export async function executeModelRun(
 
 export async function listModelRuns(
   modelId: string,
-  options: { status?: RunStatus; signal?: AbortSignal } = {}
+  options: {
+    status?: RunStatus;
+    signal?: AbortSignal;
+    client?: ApiClientType;
+  } = {}
 ): Promise<ModelRunDetailsResponse> {
-  const { data } = await apiClient.GET('/api/v1/models/{model_id}/runs', {
-    params: {
-      path: { model_id: modelId },
-      query: options.status ? { status: options.status } : {},
-    },
-    signal: options.signal,
-  });
+  const { data } = await (options.client ?? apiClient).GET(
+    '/api/v1/models/{model_id}/runs',
+    {
+      params: {
+        path: { model_id: modelId },
+        query: options.status ? { status: options.status } : {},
+      },
+      signal: options.signal,
+    }
+  );
   return data as ModelRunDetailsResponse;
 }
 

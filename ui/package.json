@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
     "format": "prettier --write .",
-    "api:types": "openapi-typescript ${API_URL:-http://localhost:8000}/api/openapi.json -o app/api/generated/schema.d.ts",
+    "api:types": "openapi-typescript ${API_BASE:-http://localhost:8000}/api/openapi.json -o app/api/generated/schema.d.ts",
     "prepare": "cd .. && husky"
   },
   "dependencies": {
@@ -20,6 +20,10 @@
     "@react-router/node": "7.12.0",
     "@react-router/serve": "7.12.0",
     "@sidekickicons/react": "^0.15.0",
+    "@uppy/core": "^5.2.0",
+    "@uppy/dashboard": "^5.1.1",
+    "@uppy/react": "^5.2.0",
+    "@uppy/tus": "^5.1.1",
     "@tanstack/react-query": "^5.99.2",
     "@tanstack/react-query-devtools": "^5.99.2",
     "classnames": "^2.5.1",

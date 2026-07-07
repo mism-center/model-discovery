@@ -1,13 +1,19 @@
-import { QueryClient } from '@tanstack/react-query';
+import { QueryCache, QueryClient } from '@tanstack/react-query';
+
+import { ApiError } from '~/api/client/errors';
 
 /**
  * - `staleTime: 30s` — search results and facet counts don't need to
  *    refetch on every component mount.
  * - `retry: 1` — be forgiving of transient network hiccups but don't
  *    silently spam the API on real failures.
+ * - On any auth failure (401/403) from a non-auth query, drop the cached
+ *    user to `null` so the UI flips to a signed-out state. The auth query
+ *    itself already resolves to `null` on 401 in `fetchUser`, so the
+ *    `query.queryKey[0] !== 'auth'` guard avoids a no-op self-loop.
  */
 export function createQueryClient(): QueryClient {
-  return new QueryClient({
+  const client = new QueryClient({
     defaultOptions: {
       queries: {
         staleTime: 30_000,
@@ -16,7 +22,20 @@ export function createQueryClient(): QueryClient {
         retry: 1,
       },
     },
+    queryCache: new QueryCache({
+      onError: (error, query) => {
+        if (
+          error instanceof ApiError &&
+          error.isAuthError &&
+          query.queryKey[0] !== 'auth'
+        ) {
+          // Inlined to avoid circular import with ~/api/auth/user.
+          client.setQueryData(['auth', 'me'], null);
+        }
+      },
+    }),
   });
+  return client;
 }
 
 /**

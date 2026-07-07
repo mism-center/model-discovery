@@ -1,3 +1,6 @@
+{{- $apiPathPrefix := trimSuffix "/" (.Values.gateway.env.API_PATH_PREFIX | default "") -}}
+{{- $publicApiPath := .Values.gateway.env.API_PATH_PREFIX | default "/" -}}
+{{- $internalApiPath := printf "%s/internal" $apiPathPrefix -}}
 {{- if .Values.ingress.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -23,12 +26,33 @@ spec:
     - host: {{ .Values.ingress.host }}
       http:
         paths:
-          # Discovery Gateway REST API – main entry point
-          - path: /
+          {{ if .Values.ingress.blockInternalApi }}
+          # Block internal infrastructure endpoints from public ingress. tusd
+          # should call discovery-gateway directly via ClusterIP instead.
+          # This longer prefix must be listed before the broader API prefix.
+          - path: {{ $internalApiPath | quote }}
+            pathType: Prefix
+            backend:
+              service:
+                name: discovery-internal-api-blocker
+                port:
+                  name: http
+          {{ end }}
+          # API + auto-docs live at {{ $publicApiPath }} so the UI can own "/".
+          # Longer prefix listed before "/$publicApiPath" so ingress matches it first.
+          - path: {{ $publicApiPath | quote }}
             pathType: Prefix
             backend:
               service:
                 name: discovery-gateway
+                port:
+                  name: http
+          # UI frontend – serves all other requests
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ui
                 port:
                   name: http
 {{- end }}

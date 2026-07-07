@@ -21,6 +21,10 @@ spec:
         - name: discovery-gateway
           image: "{{ .Values.global.imageRegistry }}{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag }}"
           imagePullPolicy: {{ .Values.gateway.image.pullPolicy }}
+          securityContext:
+            runAsUser: {{ .Values.securityContext.runAsUser }}
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
           ports:
             - name: http
               containerPort: {{ .Values.gateway.service.port }}
@@ -39,6 +43,10 @@ spec:
             - name: {{ $key }}
               value: {{ $val | quote }}
             {{- end }}
+            {{- if and .Values.redis .Values.redis.enabled }}
+            - name: REDIS_URL
+              value: {{ printf "redis://%s:6379/0" (include "model-discovery.redis.masterHostname" .) | quote }}
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -53,12 +61,17 @@ spec:
             periodSeconds: 10
           resources:
             {{- toYaml .Values.gateway.resources | nindent 12 }}
+          {{- if .Values.storage.mountIrodsPvc }}
           volumeMounts:
             - name: irods-data
-              mountPath: {{ .Values.irods.pvc.mountPath }}
-              subPath: {{ .Values.irods.pvc.subPath }}
+              mountPath: {{ .Values.storage.irodsMountPath }}
+              readOnly: {{ .Values.storage.readOnly }}
+          {{- end }}
+      {{- if .Values.storage.mountIrodsPvc }}
       volumes:
         - name: irods-data
           persistentVolumeClaim:
-            claimName: {{ .Values.irods.pvc.name }}
+            claimName: {{ .Values.storage.irodsPvcName }}
+            readOnly: {{ .Values.storage.readOnly }}
+      {{- end }}
 {{- end }}
