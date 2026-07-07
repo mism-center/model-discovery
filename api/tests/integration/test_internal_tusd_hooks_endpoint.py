@@ -84,7 +84,7 @@ def test_tusd_hooks_endpoint_processes_pre_create_without_bearer_token() -> None
     claims = UploadTokenClaims(
         user_id="user-1",
         max_bytes=10_000,
-        allowed_path=f"models/{resource_id}/files",
+        allowed_path=f"{resource_id}/v1",
     )
     upload_session_store_mock: Any = create_autospec(
         UploadSessionStoreService, instance=True, spec_set=True
@@ -95,6 +95,8 @@ def test_tusd_hooks_endpoint_processes_pre_create_without_bearer_token() -> None
     upload_session_store_mock.release_filename_lock = AsyncMock()
 
     registry_service_mock = MagicMock(spec=RegistryService)
+    # pre-create reads resource.version to build the <resource_id>/<version> path.
+    registry_service_mock.get_resource_and_assert_ownership.return_value.version = "v1"
 
     client = _build_client(
         upload_session_store=upload_session_store_mock,
@@ -111,7 +113,7 @@ def test_tusd_hooks_endpoint_processes_pre_create_without_bearer_token() -> None
     body = response.json()
     # Successful pre-create returns a ChangeFileInfo block, not a RejectUpload.
     assert "RejectUpload" not in body or body["RejectUpload"] is False
-    assert body["ChangeFileInfo"]["Storage"]["Path"] == (f"models/{resource_id}/files/model.bin")
+    assert body["ChangeFileInfo"]["Storage"]["Path"] == (f"{resource_id}/v1/model.bin")
     # Authorization travelled through the upload-token path, not the auth chain.
     upload_session_store_mock.consume_upload_token.assert_awaited_once_with("token-1")
     registry_service_mock.get_resource_and_assert_ownership.assert_called_once()

@@ -30,7 +30,7 @@ from mismapi.schemas.registry import (
 )
 from mismapi.schemas.search import ModelListItem, ModelListResponse
 from mismapi.schemas.upload import UploadInitiatedResponse
-from mismapi.utils import UPLOAD_ALLOWED_PATH_TEMPLATE
+from mismapi.utils import upload_dir
 
 logger = logging.getLogger(__name__)
 
@@ -218,8 +218,8 @@ async def initiate_model_file_upload(
     principal: AuthenticatedPrincipalDep,
 ) -> UploadInitiatedResponse:
 
-    service.get_resource_and_assert_ownership(principal, resource_id=model_id)
-    allowed_path = UPLOAD_ALLOWED_PATH_TEMPLATE.format(resource_id=model_id)
+    resource = service.get_resource_and_assert_ownership(principal, resource_id=model_id)
+    allowed_path = upload_dir(model_id, resource.version)
     token = await upload_session_store.mint_upload_token(
         principal.subject,
         settings.upload_max_bytes,

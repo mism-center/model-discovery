@@ -35,7 +35,7 @@ from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.core.errors import APIError
 from mismapi.core.file_storage import resolve_location_uri, safe_join
 from mismapi.core.settings import get_settings
-from mismapi.utils import UPLOAD_ALLOWED_PATH_TEMPLATE
+from mismapi.utils import upload_dir
 
 logger = logging.getLogger(__name__)
 
@@ -598,7 +598,7 @@ class RegistryService:
 
         Why reconcile `location_uri` here? At create time the user supplies an
         arbitrary (iRODS or path) `location_uri`, but tus always writes to a
-        deterministic path under `UPLOAD_ALLOWED_PATH_TEMPLATE`. If the two
+        deterministic path (`<resource_id>/<version>`, see `upload_dir`). If the two
         disagree, the download endpoint (which reads `location_uri`) cannot
         find the just-uploaded files. Stamping the canonical iRODS URI here —
         in the same atomic update as `upload_status` — keeps the two in sync
@@ -615,10 +615,11 @@ class RegistryService:
         resource.metadata = new_metadata
 
         # Reconcile location_uri with the actual storage path tusd wrote to.
-        # `UPLOAD_ALLOWED_PATH_TEMPLATE` is the single source of truth for the
-        # upload destination and is also used by the tus pre-create hook.
-        upload_path = UPLOAD_ALLOWED_PATH_TEMPLATE.format(resource_id=resource_id)
-        resource.location_uri = f"irods:///{upload_path}"
+        # `upload_dir` is the single source of truth for the upload destination
+        # (<resource_id>/<version>) and is also used by the tus pre-create hook.
+        # Stored as a bare mount-relative path; resolve_location_uri joins it
+        # onto IRODS_MOUNT_PATH (it strips any irods:// scheme anyway).
+        resource.location_uri = upload_dir(resource_id, resource.version)
 
         try:
             updated = self._registry.update_resource(resource)
