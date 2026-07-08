@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
-from mism_registry.enums import ExecutionType, ResourceStatus, ResourceType
+from mism_registry.enums import ExecutionType, ResourceType, ResourceVersionStatus
 from mism_registry.resource import Resource
 
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
@@ -32,7 +32,7 @@ def _make_model(
         execution_ref=execution_ref,
         description=description,
         version=version,
-        status=ResourceStatus.ACTIVE,
+        version_status=ResourceVersionStatus.ACTIVE,
         owner=owner,
         created_at=datetime(2025, 1, 1, tzinfo=UTC),
     )

@@ -1,4 +1,6 @@
+import dataclasses
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Query
 from mism_registry.enums import RunStatus
@@ -45,7 +47,7 @@ def _model_list_item(r: Resource) -> ModelListItem:
         location_uri=r.location_uri,
         description=r.description,
         version=r.version,
-        status=r.status.value,
+        status=r.version_status.value,
         owner=r.owner,
         execution_type=r.execution_type.value if r.execution_type else None,
         execution_ref=r.execution_ref,
@@ -56,7 +58,7 @@ def _model_list_item(r: Resource) -> ModelListItem:
         contact_email=r.contact_email,
         publications=[pub_to_dto(p) for p in r.publications],
         funding=list(r.funding),
-        modeling_scales=list(r.modeling_scales),
+        modeling_scales=list(r.model_scales),
         organisms=list(r.organisms),
         domains=list(r.domains),
         date_published=r.date_published,
@@ -78,7 +80,7 @@ def _model_response(r: Resource) -> RegisterModelResponse:
         location_uri=r.location_uri,
         description=r.description,
         version=r.version,
-        status=r.status.value,
+        status=r.version_status.value,
         owner=r.owner,
         execution_type=r.execution_type.value if r.execution_type else None,
         execution_ref=r.execution_ref,
@@ -89,7 +91,7 @@ def _model_response(r: Resource) -> RegisterModelResponse:
         contact_email=r.contact_email,
         publications=[pub_to_dto(p) for p in r.publications],
         funding=list(r.funding),
-        modeling_scales=list(r.modeling_scales),
+        modeling_scales=list(r.model_scales),
         organisms=list(r.organisms),
         domains=list(r.domains),
         date_published=r.date_published,
@@ -231,6 +233,23 @@ async def initiate_model_file_upload(
         resource_id=model_id,
         token=token,
     )
+
+
+@router.get("/models/{model_id}/metadata-package", response_model=None)
+async def get_model_metadata_package(
+    model_id: str,
+    service: RegistryServiceDep,
+) -> dict[str, Any]:
+    """Parse the model's annotation ``metadata-package`` into a Resource preview.
+
+    Looks for ``<model_id>/<version>/metadata-package/`` on the storage mount and
+    maps its ``metadata.yaml`` + ``execution.yaml`` onto a Resource (values only,
+    not persisted). 404 if the package is absent, 400 if it can't be parsed.
+    """
+    resource = service.parse_metadata_package(model_id)
+    # asdict gives full nested detail (io, dependencies, ...); FastAPI's encoder
+    # turns the enums into their string values and datetimes into ISO strings.
+    return dataclasses.asdict(resource)
 
 
 @router.post(

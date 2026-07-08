@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
-from mism_registry.enums import ResourceStatus, ResourceType
+from mism_registry.enums import ResourceType, ResourceVersionStatus
 from mism_registry.resource import Resource
 
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
@@ -26,7 +26,7 @@ def _make_dataset(
         location_uri="irods:///datasets/d-1",
         description=description,
         version="1.0",
-        status=ResourceStatus.ACTIVE,
+        version_status=ResourceVersionStatus.ACTIVE,
         owner=owner,
         format_tags=format_tags or ["csv"],
         created_at=datetime(2025, 1, 1, tzinfo=UTC),
@@ -237,7 +237,7 @@ def test_list_datasets_response_shape() -> None:
     assert item["resource_type"] == ResourceType.DATASET.value
     assert item["location_uri"] == "irods:///datasets/d-1"
     assert item["version"] == "1.0"
-    assert item["status"] == ResourceStatus.ACTIVE.value
+    assert item["status"] == ResourceVersionStatus.ACTIVE.value
     assert item["owner"] == "user-1"
     assert item["description"] == "A test dataset"
     assert "created_at" in item

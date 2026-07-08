@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -619,6 +619,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pyjwt", extra = ["crypto"] },
     { name = "python-multipart" },
+    { name = "pyyaml" },
     { name = "redis", extra = ["hiredis"] },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -631,6 +632,7 @@ dev = [
     { name = "respx" },
     { name = "ruff" },
     { name = "types-authlib" },
+    { name = "types-pyyaml" },
 ]
 
 [package.metadata]
@@ -639,11 +641,12 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.116.1" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "itsdangerous", specifier = ">=2.2.0" },
-    { name = "mism-registry", extras = ["postgres"], git = "https://github.com/mism-center/metadata-schema.git?rev=develop" },
+    { name = "mism-registry", extras = ["postgres"], git = "https://github.com/mism-center/metadata-schema.git?rev=MISM-null%2Fschema-update" },
     { name = "pathvalidate", specifier = ">=3.3.1" },
     { name = "pydantic-settings", specifier = ">=2.10.1" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10.1" },
     { name = "python-multipart", specifier = ">=0.0.20" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "redis", extras = ["hiredis"], specifier = ">=5.0.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.35.0" },
 ]
@@ -656,12 +659,13 @@ dev = [
     { name = "respx", specifier = ">=0.21" },
     { name = "ruff", specifier = ">=0.12.11" },
     { name = "types-authlib", specifier = ">=1.6.11.20260418" },
+    { name = "types-pyyaml", specifier = ">=6.0" },
 ]
 
 [[package]]
 name = "mism-registry"
 version = "0.1.0"
-source = { git = "https://github.com/mism-center/metadata-schema.git?rev=develop#6b7ecf11d4bbbcb21770c7c6f5568aefa956edc8" }
+source = { git = "https://github.com/mism-center/metadata-schema.git?rev=MISM-null%2Fschema-update#66550ddff4a920bec878572d1cda480594e29172" }
 
 [package.optional-dependencies]
 postgres = [
@@ -1166,6 +1170,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/57/1f/1916a7cfc5482e2e29da1752c55b7d93ba58fc39972368d0f1fcd26a943b/types_authlib-1.6.11.20260418.tar.gz", hash = "sha256:591f11924f63ae85665ebd7f0524e8a2a4d141adeaf5204828e62bf08f4a956f", size = 46861, upload-time = "2026-04-18T04:21:49.139Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b0/97/0ab68862ba1a939bdaefbbf53f2e9ececb0fd9941570dc24b861ec0670fb/types_authlib-1.6.11.20260418-py3-none-any.whl", hash = "sha256:44534bf7d85b9a27579c26e044b7ef96a13b8d179f8492f0531a4649ab250814", size = 103942, upload-time = "2026-04-18T04:21:47.838Z" },
+]
+
+[[package]]
+name = "types-pyyaml"
+version = "6.0.12.20260518"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b8/83/4a1afc3fbfcf5b8d46fc390cd95ed6b0dc9010a265f4e9f46314efffa37a/types_pyyaml-6.0.12.20260518.tar.gz", hash = "sha256:d917f83fb38462550338c1297faedd860b3ec83912b96b1e3d73255f7473e466", size = 17850, upload-time = "2026-05-18T06:01:58.675Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/06/a2/c01db32be2ae7d6a1689972f3c492b149ee4e164b12fdfd9f64b50888215/types_pyyaml-6.0.12.20260518-py3-none-any.whl", hash = "sha256:d2150f75a231c9fe9c7463bd29487d93e60bac90400287351384bc2284eba7cd", size = 20312, upload-time = "2026-05-18T06:01:57.368Z" },
 ]
 
 [[package]]

@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
-from mism_registry.enums import ResourceStatus, ResourceType, RunStatus
+from mism_registry.enums import ResourceType, ResourceVersionStatus, RunStatus
 from mism_registry.resource import Resource
 from mism_registry.run import Run
 
@@ -23,7 +23,7 @@ def _make_dataset(id: str = "d-1", name: str = "Dataset") -> Resource:
         location_uri="s3://bucket/data.csv",
         description="Test dataset",
         version="1.0",
-        status=ResourceStatus.ACTIVE,
+        version_status=ResourceVersionStatus.ACTIVE,
         owner="user-1",
         format_tags=["csv"],
         created_at=datetime(2025, 1, 1, tzinfo=UTC),

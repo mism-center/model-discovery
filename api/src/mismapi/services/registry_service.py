@@ -3,6 +3,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+import yaml
 from mism_registry import (
     ResourceNotFoundError,
     ResourceType,
@@ -35,6 +36,10 @@ from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.core.errors import APIError
 from mismapi.core.file_storage import resolve_location_uri, safe_join
 from mismapi.core.settings import get_settings
+from mismapi.services.metadata_package import (
+    METADATA_FILE,
+    build_resource_from_package,
+)
 from mismapi.utils import upload_dir
 
 logger = logging.getLogger(__name__)
@@ -99,7 +104,7 @@ class RegistryService:
                 contact_email=contact_email,
                 publications=publications or [],
                 funding=funding or [],
-                modeling_scales=modeling_scales or [],
+                model_scales=modeling_scales or [],
                 organisms=organisms or [],
                 domains=domains or [],
                 date_published=date_published,
@@ -190,7 +195,7 @@ class RegistryService:
         if funding is not None:
             resource.funding = funding
         if modeling_scales is not None:
-            resource.modeling_scales = modeling_scales
+            resource.model_scales = modeling_scales
         if organisms is not None:
             resource.organisms = organisms
         if domains is not None:
@@ -299,6 +304,43 @@ class RegistryService:
                 ),
             )
         return resource, directory
+
+    def parse_metadata_package(self, model_id: str) -> Resource:
+        """Parse the metadata-package for a model into a (transient) Resource.
+
+        Looks for ``<model_id>/<version>/metadata-package/`` on the iRODS mount
+        (the version comes from the registered model, mirroring ``upload_dir``),
+        reads its ``metadata.yaml`` + ``execution.yaml``, and maps them onto a
+        Resource. The result is *not* persisted — it's a preview of what the
+        annotation package contains.
+
+        Raises 404 (model missing, package dir missing, or metadata.yaml
+        missing) and 400 (malformed / incomplete YAML).
+        """
+        try:
+            model = self._registry.get_resource(model_id)
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+        mount = get_settings().irods_mount_path
+        rel = f"{upload_dir(model_id, model.version)}/metadata-package"
+        # resolve_location_uri enforces the traversal check and that the dir exists.
+        pkg_dir = resolve_location_uri(rel, mount)
+        if not (pkg_dir / METADATA_FILE).is_file():
+            raise APIError(
+                status_code=404,
+                code="metadata_package_not_found",
+                detail=f"No metadata-package with {METADATA_FILE} found for model {model_id}.",
+            )
+
+        try:
+            return build_resource_from_package(pkg_dir)
+        except (KeyError, ValueError, yaml.YAMLError) as exc:
+            raise APIError(
+                status_code=400,
+                code="invalid_metadata_package",
+                detail=f"Could not parse metadata-package for model {model_id}: {exc}",
+            ) from exc
 
     def resolve_resource_file(self, resource_id: str, rel_path: str) -> tuple[Resource, Path]:
         """Resolve a single file inside a resource's directory.
@@ -438,7 +480,7 @@ class RegistryService:
                 contact_email=contact_email,
                 publications=publications or [],
                 funding=funding or [],
-                modeling_scales=modeling_scales or [],
+                model_scales=modeling_scales or [],
                 organisms=organisms or [],
                 domains=domains or [],
                 date_published=date_published,
@@ -522,7 +564,7 @@ class RegistryService:
         if funding is not None:
             resource.funding = funding
         if modeling_scales is not None:
-            resource.modeling_scales = modeling_scales
+            resource.model_scales = modeling_scales
         if organisms is not None:
             resource.organisms = organisms
         if domains is not None:
@@ -605,7 +647,7 @@ class RegistryService:
         without forcing the user to compute the path correctly at create time.
 
         Idempotent. `upload_status` is kept in `metadata` because
-        `mism_registry.ResourceStatus` models publication lifecycle
+        `mism_registry.ResourceVersionStatus` models publication lifecycle
         (active/superseded/archived), not content lifecycle.
         """
         resource = self.get_resource_and_assert_ownership(principal, resource_id=resource_id)

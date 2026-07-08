@@ -17,8 +17,9 @@ dependencies = [
     "uvicorn[standard]>=0.35.0",
     "authlib>=1.3.0",
     "itsdangerous>=2.2.0",
-    "mism-registry[postgres] @ git+https://github.com/mism-center/metadata-schema.git@develop",
+    "mism-registry[postgres] @ git+https://github.com/mism-center/metadata-schema.git@MISM-null/schema-update",
     "pathvalidate>=3.3.1",
+    "pyyaml>=6.0",
 ]
 
 [dependency-groups]
@@ -29,6 +30,7 @@ dev = [
     "respx>=0.21",
     "ruff>=0.12.11",
     "types-authlib>=1.6.11.20260418",
+    "types-PyYAML>=6.0",
 ]
 
 [build-system]
