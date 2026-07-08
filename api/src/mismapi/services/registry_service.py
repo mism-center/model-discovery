@@ -37,6 +37,7 @@ from mismapi.core.errors import APIError
 from mismapi.core.file_storage import resolve_location_uri, safe_join
 from mismapi.core.settings import get_settings
 from mismapi.services.metadata_package import (
+    EXECUTION_FILE,
     METADATA_FILE,
     build_resource_from_package,
 )
@@ -314,8 +315,9 @@ class RegistryService:
         Resource. The result is *not* persisted — it's a preview of what the
         annotation package contains.
 
-        Raises 404 (model missing, package dir missing, or metadata.yaml
-        missing) and 400 (malformed / incomplete YAML).
+        Raises 404 (model missing, package dir missing, or either
+        metadata.yaml / execution.yaml missing) and 400 (malformed /
+        incomplete YAML).
         """
         try:
             model = self._registry.get_resource(model_id)
@@ -326,16 +328,17 @@ class RegistryService:
         rel = f"{upload_dir(model_id, model.version)}/metadata-package"
         # resolve_location_uri enforces the traversal check and that the dir exists.
         pkg_dir = resolve_location_uri(rel, mount)
-        if not (pkg_dir / METADATA_FILE).is_file():
+        missing = [f for f in (METADATA_FILE, EXECUTION_FILE) if not (pkg_dir / f).is_file()]
+        if missing:
             raise APIError(
                 status_code=404,
                 code="metadata_package_not_found",
-                detail=f"No metadata-package with {METADATA_FILE} found for model {model_id}.",
+                detail=f"metadata-package for model {model_id} is missing {', '.join(missing)}.",
             )
 
         try:
             return build_resource_from_package(pkg_dir)
-        except (KeyError, ValueError, yaml.YAMLError) as exc:
+        except (KeyError, ValueError, FileNotFoundError, yaml.YAMLError) as exc:
             raise APIError(
                 status_code=400,
                 code="invalid_metadata_package",
