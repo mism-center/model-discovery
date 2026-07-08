@@ -45,6 +45,9 @@ from mismapi.utils import upload_dir
 
 logger = logging.getLogger(__name__)
 
+# The metadata-package YAML files, in review/display order.
+_PACKAGE_FILES = (METADATA_FILE, EXECUTION_FILE)
+
 
 class RegistryService:
     """Orchestrates registry operations, session management, and (future) authz."""
@@ -306,18 +309,12 @@ class RegistryService:
             )
         return resource, directory
 
-    def parse_metadata_package(self, model_id: str) -> Resource:
-        """Parse the metadata-package for a model into a (transient) Resource.
+    def _metadata_package_dir(self, model_id: str) -> Path:
+        """Resolve ``<model_id>/<version>/metadata-package/`` on the mount.
 
-        Looks for ``<model_id>/<version>/metadata-package/`` on the iRODS mount
-        (the version comes from the registered model, mirroring ``upload_dir``),
-        reads its ``metadata.yaml`` + ``execution.yaml``, and maps them onto a
-        Resource. The result is *not* persisted — it's a preview of what the
-        annotation package contains.
-
-        Raises 404 (model missing, package dir missing, or either
-        metadata.yaml / execution.yaml missing) and 400 (malformed /
-        incomplete YAML).
+        The version comes from the registered model, mirroring ``upload_dir``.
+        Raises 404 if the model, the package dir, or either required YAML file
+        is missing; 400 for unsupported schemes / path traversal.
         """
         try:
             model = self._registry.get_resource(model_id)
@@ -335,7 +332,18 @@ class RegistryService:
                 code="metadata_package_not_found",
                 detail=f"metadata-package for model {model_id} is missing {', '.join(missing)}.",
             )
+        return pkg_dir
 
+    def parse_metadata_package(self, model_id: str) -> Resource:
+        """Parse the metadata-package for a model into a (transient) Resource.
+
+        Reads ``metadata.yaml`` + ``execution.yaml`` and maps them onto a
+        Resource. The result is *not* persisted — it's a preview of what the
+        annotation package contains.
+
+        Raises 404 (model / package / file missing) and 400 (malformed YAML).
+        """
+        pkg_dir = self._metadata_package_dir(model_id)
         try:
             return build_resource_from_package(pkg_dir)
         except (KeyError, ValueError, FileNotFoundError, yaml.YAMLError) as exc:
@@ -344,6 +352,56 @@ class RegistryService:
                 code="invalid_metadata_package",
                 detail=f"Could not parse metadata-package for model {model_id}: {exc}",
             ) from exc
+
+    def read_metadata_package_raw(self, model_id: str) -> list[tuple[str, str]]:
+        """Return the raw text of each metadata-package YAML file, in order.
+
+        ``[(metadata.yaml, text), (execution.yaml, text)]`` — for the review view.
+        Raises 404 if the model / package / files are missing.
+        """
+        pkg_dir = self._metadata_package_dir(model_id)
+        return [(name, (pkg_dir / name).read_text(encoding="utf-8")) for name in _PACKAGE_FILES]
+
+    def write_metadata_package_raw(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        model_id: str,
+        files: list[tuple[str, str]],
+    ) -> list[tuple[str, str]]:
+        """Write edited raw YAML back to the metadata-package, then re-read it.
+
+        Only the two known filenames are accepted (blocks path traversal), and
+        each file must parse as YAML before anything is written (all-or-nothing).
+        Returns the re-read raw files. Raises 403 (not owner), 404 (missing),
+        400 (unknown filename or malformed YAML).
+        """
+        self.get_resource_and_assert_ownership(principal, resource_id=model_id)
+        pkg_dir = self._metadata_package_dir(model_id)
+
+        # Validate everything up front so a bad file never partially overwrites.
+        for name, content in files:
+            if name not in _PACKAGE_FILES:
+                raise APIError(
+                    status_code=400,
+                    code="invalid_metadata_package",
+                    detail=f"Unknown metadata-package file '{name}'. "
+                    f"Allowed: {', '.join(_PACKAGE_FILES)}.",
+                )
+            try:
+                yaml.safe_load(content)
+            except yaml.YAMLError as exc:
+                raise APIError(
+                    status_code=400,
+                    code="invalid_metadata_package",
+                    detail=f"'{name}' is not valid YAML: {exc}",
+                ) from exc
+
+        for name, content in files:
+            (pkg_dir / name).write_text(content, encoding="utf-8")
+        logger.info("Updated metadata-package for model %s by %s", model_id, principal.subject)
+
+        return [(name, (pkg_dir / name).read_text(encoding="utf-8")) for name in _PACKAGE_FILES]
 
     def resolve_resource_file(self, resource_id: str, rel_path: str) -> tuple[Resource, Path]:
         """Resolve a single file inside a resource's directory.

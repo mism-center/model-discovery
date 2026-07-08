@@ -446,3 +446,26 @@ class ResourceFilesResponse(BaseModel):
     location_uri: str
     files: list[ResourceFileItem] = Field(default_factory=list)
     total: int
+
+
+# ── Metadata-package raw review ──────────────────────────────────────
+
+
+class MetadataPackageFile(BaseModel):
+    """One raw YAML file of a metadata-package, as a review section."""
+
+    filename: str = Field(description="metadata.yaml or execution.yaml")
+    content: str = Field(description="Raw file text.")
+
+
+class MetadataPackageRawResponse(BaseModel):
+    """The metadata-package's raw YAML files, one section per file."""
+
+    model_id: str
+    files: list[MetadataPackageFile] = Field(default_factory=list)
+
+
+class MetadataPackageUpdateRequest(BaseModel):
+    """Edited raw YAML files to write back to the metadata-package."""
+
+    files: list[MetadataPackageFile] = Field(min_length=1)

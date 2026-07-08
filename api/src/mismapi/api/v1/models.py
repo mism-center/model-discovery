@@ -18,6 +18,9 @@ from mismapi.core.deps import (
 from mismapi.schemas.registry import (
     ExecuteRunRequest,
     ExecuteRunResponse,
+    MetadataPackageFile,
+    MetadataPackageRawResponse,
+    MetadataPackageUpdateRequest,
     ModelRunDetailItem,
     ModelRunDetailsResponse,
     RegisterModelRequest,
@@ -250,6 +253,38 @@ async def get_model_metadata_package(
     # asdict gives full nested detail (io, dependencies, ...); FastAPI's encoder
     # turns the enums into their string values and datetimes into ISO strings.
     return dataclasses.asdict(resource)
+
+
+def _raw_response(model_id: str, files: list[tuple[str, str]]) -> MetadataPackageRawResponse:
+    return MetadataPackageRawResponse(
+        model_id=model_id,
+        files=[MetadataPackageFile(filename=name, content=content) for name, content in files],
+    )
+
+
+@router.get("/models/{model_id}/metadata-package/raw", response_model=MetadataPackageRawResponse)
+async def get_model_metadata_package_raw(
+    model_id: str,
+    service: RegistryServiceDep,
+) -> MetadataPackageRawResponse:
+    """Return the model's raw metadata-package YAML files as review sections."""
+    return _raw_response(model_id, service.read_metadata_package_raw(model_id))
+
+
+@router.put("/models/{model_id}/metadata-package/raw", response_model=MetadataPackageRawResponse)
+async def update_model_metadata_package_raw(
+    model_id: str,
+    payload: MetadataPackageUpdateRequest,
+    service: RegistryServiceDep,
+    principal: AuthenticatedPrincipalDep,
+) -> MetadataPackageRawResponse:
+    """Write edited raw YAML back to the metadata-package and return the result."""
+    files = service.write_metadata_package_raw(
+        principal,
+        model_id=model_id,
+        files=[(f.filename, f.content) for f in payload.files],
+    )
+    return _raw_response(model_id, files)
 
 
 @router.post(

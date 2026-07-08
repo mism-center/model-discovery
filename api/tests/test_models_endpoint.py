@@ -512,6 +512,57 @@ def test_update_model_omitted_new_fields_are_none() -> None:
     assert kwargs["io_spec"] is None
 
 
+# ── metadata-package raw review ─────────────────────────────────
+
+
+def test_get_metadata_package_raw_returns_sections() -> None:
+    service = MagicMock(spec=RegistryService)
+    service.read_metadata_package_raw.return_value = [
+        ("metadata.yaml", "model:\n  name: x\n"),
+        ("execution.yaml", "execution:\n  status: ok\n"),
+    ]
+
+    client = _make_app_with_service(service)
+    response = client.get("/api/v1/models/m-1/metadata-package/raw")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["model_id"] == "m-1"
+    assert [f["filename"] for f in payload["files"]] == ["metadata.yaml", "execution.yaml"]
+    assert payload["files"][0]["content"] == "model:\n  name: x\n"
+    service.read_metadata_package_raw.assert_called_once_with("m-1")
+
+
+def test_update_metadata_package_raw_forwards_files() -> None:
+    service = MagicMock(spec=RegistryService)
+    service.write_metadata_package_raw.return_value = [
+        ("metadata.yaml", "model:\n  name: edited\n"),
+        ("execution.yaml", "execution:\n  status: ok\n"),
+    ]
+
+    client = _make_app_with_service(service)
+    response = client.put(
+        "/api/v1/models/m-1/metadata-package/raw",
+        json={"files": [{"filename": "metadata.yaml", "content": "model:\n  name: edited\n"}]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["files"][0]["content"] == "model:\n  name: edited\n"
+    kwargs = service.write_metadata_package_raw.call_args.kwargs
+    assert kwargs["model_id"] == "m-1"
+    assert kwargs["files"] == [("metadata.yaml", "model:\n  name: edited\n")]
+
+
+def test_update_metadata_package_raw_requires_files() -> None:
+    service = MagicMock(spec=RegistryService)
+    client = _make_app_with_service(service)
+
+    response = client.put("/api/v1/models/m-1/metadata-package/raw", json={"files": []})
+
+    assert response.status_code == 400  # app maps request validation errors to 400
+    service.write_metadata_package_raw.assert_not_called()
+
+
 # ── location_uri validation ────────────────────────────────────
 # The download endpoint can only resolve iRODS URIs and plain paths.
 # Create/update must reject everything else up front so the failure mode is
