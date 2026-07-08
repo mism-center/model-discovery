@@ -195,6 +195,31 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/me/runs': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List My Runs
+     * @description List every run the calling user has triggered, across all models.
+     *
+     *     Returns runs newest-first (by created_at), each hydrated with its model
+     *     summary and input/output resources. Requires authentication (401 for
+     *     anonymous callers). No Execution-service refresh is performed here — the UI
+     *     refreshes active runs when a row is expanded.
+     */
+    get: operations['list_my_runs_api_v1_me_runs_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/runs/{run_id}': {
     parameters: {
       query?: never;
@@ -1458,6 +1483,31 @@ export interface components {
       /** Token */
       token: string;
     };
+    /**
+     * UserRunItem
+     * @description A single run in the cross-model "My Runs" list.
+     *
+     *     Like ``ModelRunDetailItem`` but adds the run's ``model`` summary, since this
+     *     is a global list where each row can belong to a different model.
+     */
+    UserRunItem: {
+      model: components['schemas']['ResourceSummaryItem'];
+      run: components['schemas']['RunDetailItem'];
+      /** Input Resources */
+      input_resources?: components['schemas']['ResourceSummaryItem'][];
+      /** Output Resources */
+      output_resources?: components['schemas']['ResourceSummaryItem'][];
+    };
+    /**
+     * UserRunsResponse
+     * @description All runs triggered by the calling user, newest-first, hydrated.
+     */
+    UserRunsResponse: {
+      /** Runs */
+      runs?: components['schemas']['UserRunItem'][];
+      /** Total */
+      total: number;
+    };
     /** ValidationError */
     ValidationError: {
       /** Location */
@@ -1470,6 +1520,13 @@ export interface components {
       input?: unknown;
       /** Context */
       ctx?: Record<string, never>;
+    };
+    /** ErrorResponse */
+    ErrorResponse: {
+      error: {
+        code: string;
+        detail: string;
+      };
     };
   };
   responses: never;
@@ -1562,6 +1619,15 @@ export interface operations {
           'application/json': components['schemas']['CurrentUser'];
         };
       };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
     };
   };
   logout_api_auth_logout_post: {
@@ -1648,6 +1714,15 @@ export interface operations {
           'application/json': components['schemas']['RegisterModelResponse'];
         };
       };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
       /** @description Validation Error */
       422: {
         headers: {
@@ -1683,6 +1758,15 @@ export interface operations {
           'application/json': components['schemas']['RegisterModelResponse'];
         };
       };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
       /** @description Validation Error */
       422: {
         headers: {
@@ -1712,6 +1796,15 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['UploadInitiatedResponse'];
+        };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
         };
       };
       /** @description Validation Error */
@@ -1781,6 +1874,15 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ExecuteRunResponse'];
+        };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
         };
       };
       /** @description Validation Error */
@@ -1858,6 +1960,15 @@ export interface operations {
           'application/json': components['schemas']['RegisterDatasetResponse'];
         };
       };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
       /** @description Validation Error */
       422: {
         headers: {
@@ -1891,6 +2002,56 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['RegisterDatasetResponse'];
+        };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_my_runs_api_v1_me_runs_get: {
+    parameters: {
+      query?: {
+        /** @description Optional filter — only include runs with this status. */
+        status?: components['schemas']['RunStatus'] | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UserRunsResponse'];
+        };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
         };
       };
       /** @description Validation Error */
@@ -2022,6 +2183,15 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['UploadAcceptedResponse'];
+        };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
         };
       };
       /** @description Validation Error */

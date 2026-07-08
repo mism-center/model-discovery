@@ -8,6 +8,10 @@ import {
   type SearchResultItem,
 } from '~/api';
 import { runDetailQueryOptions } from '~/api/query/runs';
+import {
+  formatTimestamp,
+  STATUS_COLOR,
+} from '~/components/sections/runs/run-format';
 import { RunModelModal } from './run-model-modal';
 import { RunOutputFiles } from './run-output-files';
 import { TerminateRunModal } from './terminate-run-modal';
@@ -18,24 +22,6 @@ interface RunStatusPopoverProps {
   /** Needed so a terminal run's "Rerun" can open the launch modal. */
   model: SearchResultItem;
 }
-
-const STATUS_COLOR: Record<
-  string,
-  'default' | 'primary' | 'success' | 'danger' | 'warning' | 'secondary'
-> = {
-  registered: 'warning',
-  running: 'secondary',
-  completed: 'success',
-  failed: 'danger',
-  cancelled: 'default',
-};
-
-const formatTimestamp = (iso: string | null | undefined): string => {
-  if (!iso) return '—';
-  const ms = Date.parse(iso);
-  if (!Number.isFinite(ms)) return iso;
-  return new Date(ms).toLocaleString();
-};
 
 export function RunStatusPopover({ initialRun, model }: RunStatusPopoverProps) {
   const { data } = useQuery({

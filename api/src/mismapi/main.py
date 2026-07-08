@@ -7,7 +7,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from mismapi.api.router import build_api_router
 from mismapi.core.container import AppContainer
-from mismapi.core.errors import register_exception_handlers
+from mismapi.core.errors import install_openapi_customizations, register_exception_handlers
 from mismapi.core.logging import configure_root_logger
 from mismapi.core.settings import Settings, get_settings
 from mismapi.core.uvicorn_access_log import install_uvicorn_access_formatter
@@ -94,6 +94,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
     app.include_router(build_api_router())
     register_exception_handlers(app)
+    install_openapi_customizations(app)
 
     @app.get("/healthz", tags=["System"])
     async def healthcheck() -> dict[str, str]:

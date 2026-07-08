@@ -6,9 +6,12 @@ import {
   getRun,
   isTerminalStatus,
   listModelRuns,
+  listUserRuns,
   type ModelRunDetailsResponse,
   type RunDetailItem,
   type RunDetailResponse,
+  type RunStatus,
+  type UserRunsResponse,
 } from '~/api/endpoints/runs';
 
 export const runKeys = {
@@ -17,6 +20,7 @@ export const runKeys = {
   ownedByModel: (modelId: string) =>
     [...runKeys.all, 'owned-by-model', modelId] as const,
   detail: (runId: string) => [...runKeys.all, 'detail', runId] as const,
+  user: (status?: string) => [...runKeys.all, 'user', status ?? 'all'] as const,
 };
 
 /**
@@ -50,6 +54,26 @@ export function modelRunsQueryOptions(modelId: string, client?: Client<paths>) {
   return queryOptions<ModelRunDetailsResponse>({
     queryKey: runKeys.byModel(modelId),
     queryFn: ({ signal }) => listModelRuns(modelId, { signal, client }),
+  });
+}
+
+/**
+ * The current user's runs across all models. Requires authentication — the
+ * endpoint 401s for anonymous callers, so gate prefetch on an authed user and
+ * only enable the client-side query once `useUser()` resolves a user.
+ *
+ * `client` lets SSR loaders pass a cookie-forwarding `serverApiClient` so runs
+ * are fetched as the authenticated user; client-side callers omit it.
+ *
+ * Optional `status` filters by a single RunStatus value server-side.
+ */
+export function userRunsQueryOptions(
+  status?: RunStatus,
+  client?: Client<paths>
+) {
+  return queryOptions<UserRunsResponse>({
+    queryKey: runKeys.user(status),
+    queryFn: ({ signal }) => listUserRuns({ status, signal, client }),
   });
 }
 

@@ -342,6 +342,64 @@ class RegistryService:
             runs = [run for run in runs if run.triggered_by == triggered_by]
         return runs
 
+    def find_user_runs(
+        self,
+        *,
+        triggered_by: str,
+        status: RunStatus | None = None,
+    ) -> list[Run]:
+        """All runs triggered by a user, across every model, optionally by status."""
+        runs = self._registry.find_runs(status=status)
+        return [run for run in runs if run.triggered_by == triggered_by]
+
+    def find_user_run_details(
+        self,
+        *,
+        triggered_by: str,
+        status: RunStatus | None = None,
+    ) -> list[tuple[Resource, Run, list[Resource], list[Resource]]]:
+        """User's runs across every model, each hydrated with its model + I/O.
+
+        Returns tuples of ``(model, run, input_resources, output_resources)``
+        sorted newest-first by ``run.created_at``. This is a cross-model list,
+        so every row carries its own model summary.
+
+        Resource lookups (models and I/O) are cached by id within the call to
+        avoid redundant ``get_resource`` round-trips when runs share inputs or
+        target the same model. Missing resources are skipped gracefully rather
+        than failing the whole list — a run may reference a resource (or model)
+        that has since been deleted. No Execution-service refresh happens here;
+        the UI refreshes active runs when a row is expanded.
+        """
+        runs = self.find_user_runs(triggered_by=triggered_by, status=status)
+        runs.sort(key=lambda run: run.created_at, reverse=True)
+
+        cache: dict[str, Resource] = {}
+
+        def _resolve(rid: str) -> Resource | None:
+            if rid in cache:
+                return cache[rid]
+            try:
+                resource = self._registry.get_resource(rid)
+            except ResourceNotFoundError:
+                logger.warning("Run references missing resource %s", rid)
+                return None
+            cache[rid] = resource
+            return resource
+
+        details: list[tuple[Resource, Run, list[Resource], list[Resource]]] = []
+        for run in runs:
+            model = _resolve(run.model_id)
+            if model is None:
+                # A run whose model no longer exists can't be rendered as a row.
+                logger.warning("Run %s references missing model %s", run.id, run.model_id)
+                continue
+            inputs = [r for rid in run.input_resource_ids if (r := _resolve(rid)) is not None]
+            outputs = [r for rid in run.output_resource_ids if (r := _resolve(rid)) is not None]
+            details.append((model, run, inputs, outputs))
+
+        return details
+
     # ── Query operations ─────────────────────────────────────────────
 
     def list_models(

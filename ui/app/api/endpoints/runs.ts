@@ -14,6 +14,8 @@ export type RunDetailResponse = components['schemas']['RunDetailResponse'];
 export type RunDetailItem = components['schemas']['RunDetailItem'];
 export type RunStatus = components['schemas']['RunStatus'];
 export type ResourceSummaryItem = components['schemas']['ResourceSummaryItem'];
+export type UserRunsResponse = components['schemas']['UserRunsResponse'];
+export type UserRunItem = components['schemas']['UserRunItem'];
 
 export const TERMINAL_RUN_STATUSES: ReadonlySet<RunStatus> = new Set([
   'completed',
@@ -57,6 +59,22 @@ export async function listModelRuns(
     }
   );
   return data as ModelRunDetailsResponse;
+}
+
+export async function listUserRuns(
+  options: {
+    status?: RunStatus;
+    signal?: AbortSignal;
+    client?: ApiClientType;
+  } = {}
+): Promise<UserRunsResponse> {
+  const { data } = await (options.client ?? apiClient).GET('/api/v1/me/runs', {
+    params: {
+      query: options.status ? { status: options.status } : {},
+    },
+    signal: options.signal,
+  });
+  return data as UserRunsResponse;
 }
 
 export async function getRun(

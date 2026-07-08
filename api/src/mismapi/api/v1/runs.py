@@ -8,14 +8,49 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Query
+from mism_registry import RunStatus
 
 from mismapi.api.v1._run_helpers import resource_summary, run_detail
+from mismapi.auth.base import AuthenticatedPrincipalDep
 from mismapi.core.deps import ExecutionClientDep, RegistryServiceDep
-from mismapi.schemas.registry import RunDetailResponse
+from mismapi.schemas.registry import RunDetailResponse, UserRunItem, UserRunsResponse
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/me/runs", response_model=UserRunsResponse)
+async def list_my_runs(
+    service: RegistryServiceDep,
+    principal: AuthenticatedPrincipalDep,
+    status: RunStatus | None = Query(
+        default=None, description="Optional filter — only include runs with this status."
+    ),
+) -> UserRunsResponse:
+    """List every run the calling user has triggered, across all models.
+
+    Returns runs newest-first (by created_at), each hydrated with its model
+    summary and input/output resources. Requires authentication (401 for
+    anonymous callers). No Execution-service refresh is performed here — the UI
+    refreshes active runs when a row is expanded.
+    """
+    details = service.find_user_run_details(
+        triggered_by=principal.subject,
+        status=status,
+    )
+
+    runs = [
+        UserRunItem(
+            model=resource_summary(model),
+            run=run_detail(run),
+            input_resources=[resource_summary(r) for r in inputs],
+            output_resources=[resource_summary(r) for r in outputs],
+        )
+        for model, run, inputs, outputs in details
+    ]
+
+    return UserRunsResponse(runs=runs, total=len(runs))
 
 
 @router.get("/runs/{run_id}", response_model=RunDetailResponse)

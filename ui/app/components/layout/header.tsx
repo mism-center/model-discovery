@@ -200,6 +200,7 @@ function HeaderAuth() {
 export function Header() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
+  const { user } = useUser();
 
   const navLinkClassnames = ({ isActive }: { isActive: boolean }) =>
     cn(
@@ -273,6 +274,13 @@ export function Header() {
             Upload
           </NavLink>
         </NavbarItem>
+        {user && (
+          <NavbarItem>
+            <NavLink to="/runs" className={navLinkClassnames}>
+              My Runs
+            </NavLink>
+          </NavbarItem>
+        )}
         <NavbarItem>
           <NavLink to="/about" className={navLinkClassnames}>
             About
