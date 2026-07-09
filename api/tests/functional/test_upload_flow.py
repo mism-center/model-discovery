@@ -15,6 +15,7 @@ Run after the stack is up:
 from __future__ import annotations
 
 import base64
+import time
 
 import httpx
 import pytest
@@ -62,6 +63,25 @@ def _tus_upload(token: str, resource_id: str, filename: str, data: bytes) -> Non
         assert patch.headers["Upload-Offset"] == str(len(data))
 
 
+def _poll_model(
+    api: httpx.Client, *, name: str, model_id: str, attempts: int = 25, delay: float = 0.2
+) -> dict:
+    """Return the model row once post-finish has stamped upload_status.
+
+    No single-model GET route exists; read back via the list filter by name.
+    Retries for ~attempts*delay seconds to let the async post-finish hook land.
+    """
+    match: dict = {"metadata": {}}
+    for _ in range(attempts):
+        r = api.get("/api/v1/models", params={"name": name})
+        assert r.status_code == 200
+        match = next((m for m in r.json()["results"] if m["id"] == model_id), match)
+        if match["metadata"].get("upload_status") == "UPLOAD_COMPLETE":
+            break
+        time.sleep(delay)
+    return match
+
+
 def test_upload_flow_marks_model_complete(api: httpx.Client) -> None:
     name = unique_name("func-upload-flow")
     version = "1.0.0"
@@ -83,11 +103,12 @@ def test_upload_flow_marks_model_complete(api: httpx.Client) -> None:
 
     _tus_upload(token, model_id, "model.bin", b"hello-mism-upload")
 
-    # No single-model GET route; read back via the list filter by name.
-    r = api.get("/api/v1/models", params={"name": name})
-    assert r.status_code == 200
-    match = next(m for m in r.json()["results"] if m["id"] == model_id)
-    assert match["metadata"].get("upload_status") == "UPLOAD_COMPLETE"
+    # tusd fires post-finish as an async server-to-server hook and does NOT
+    # block the client's final PATCH on it, so the stamp can land shortly after
+    # the upload returns. Poll the readback instead of reading once (which races
+    # the hook and flakes under load).
+    match = _poll_model(api, name=name, model_id=model_id)
+    assert match["metadata"].get("upload_status") == "UPLOAD_COMPLETE", match["metadata"]
     # post-finish reconciles location_uri to the <resource_id>/<version> dir.
     assert match["location_uri"] == f"{model_id}/{version}"
 
