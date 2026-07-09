@@ -60,9 +60,7 @@ def _make_package(mount: Path) -> Path:
     return pkg
 
 
-def test_read_returns_both_files_in_order(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_read_returns_both_files_in_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _make_package(tmp_path)
     service = _make_service(tmp_path, monkeypatch)
 

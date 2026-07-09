@@ -207,7 +207,9 @@ async def import_from_github(
     branch = ""
     files_extracted = 0
     total_bytes = 0
-    dest_dir = (Path(settings.irods_mount_path) / upload_dir(resource.id, resource.version)).resolve()
+    dest_dir = (
+        Path(settings.irods_mount_path) / upload_dir(resource.id, resource.version)
+    ).resolve()
     try:
         async with httpx.AsyncClient(
             follow_redirects=True,
