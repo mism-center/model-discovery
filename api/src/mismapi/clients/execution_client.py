@@ -50,6 +50,16 @@ class ExecutionClient:
 
         return await self._post(f"/api/v1/runs/{run_id}/interactive", expected=201)
 
+    # ── Arbitrary run action ────────────────────────────────────────
+
+    async def post_run(self, run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """POST /api/v1/runs/{run_id} with an arbitrary JSON payload."""
+        if self._stub_upstream:
+            logger.info("Execution service (stub) post_run run_id=%s payload=%s", run_id, payload)
+            return {"run_id": run_id, "status": "accepted", "stub": True}
+
+        return await self._post(f"/api/v1/runs/{run_id}", json=payload)
+
     # ── Status polling ──────────────────────────────────────────────
 
     async def get_status(self, run_id: str) -> dict[str, Any]:
