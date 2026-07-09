@@ -1,4 +1,5 @@
 import {
+  Button,
   Card,
   CardBody,
   CardHeader,
@@ -28,6 +29,26 @@ type UploadInitiatedResponse = {
 type ModelListItem = components['schemas']['ModelListItem'];
 type ModelListResponse = components['schemas']['ModelListResponse'];
 type ModelResponse = Pick<ModelListItem, 'id' | 'name'>;
+
+type GitHubImportApiResponse = {
+  model_id: string;
+  branch: string;
+  files_extracted: number;
+  size_bytes: number;
+  location_uri: string;
+};
+
+type ExecuteRunApiResponse = {
+  run_id: string;
+};
+
+type WorkflowStep =
+  | 'idle'
+  | 'registering'
+  | 'importing'
+  | 'annotating'
+  | 'complete'
+  | 'error';
 
 function apiOrigin(): string {
   return browserApiBaseUrl().replace(/\/+$/, '');
@@ -92,7 +113,10 @@ async function findModelByName(
   }
 }
 
-async function createModel(modelName: string): Promise<ModelResponse> {
+async function createModel(
+  modelName: string,
+  description: string
+): Promise<ModelResponse> {
   const url = `${apiOrigin()}/api/v1/models`;
   const res = await fetch(url, {
     method: 'POST',
@@ -100,12 +124,12 @@ async function createModel(modelName: string): Promise<ModelResponse> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name: modelName,
-      // Leave empty: the post-finish tus hook stamps `location_uri` to the
-      // actual upload directory (`irods:///models/{id}/files`). The API
-      // rejects non-iRODS/non-path schemes here at create time.
-      location_uri: '',
+      // Placeholder iRODS URI — must be non-empty to satisfy registry validation.
+      // The TUS post-finish hook (file upload) or mark_upload_complete (GitHub
+      // import) overwrites this with the real path once data lands in iRODS.
+      location_uri: 'irods:///pending',
       execution_type: 'docker',
-      description: 'Created by tus upload test page',
+      description,
     }),
   });
 
@@ -116,11 +140,14 @@ async function createModel(modelName: string): Promise<ModelResponse> {
   return res.json() as Promise<ModelResponse>;
 }
 
-async function findOrCreateModel(modelName: string): Promise<ModelResponse> {
+async function findOrCreateModel(
+  modelName: string,
+  description: string
+): Promise<ModelResponse> {
   const existingModel = await findModelByName(modelName);
   if (existingModel) return existingModel;
 
-  return createModel(modelName);
+  return createModel(modelName, description);
 }
 
 async function initiateModelUpload(
@@ -135,13 +162,42 @@ async function initiateModelUpload(
   return res.json() as Promise<UploadInitiatedResponse>;
 }
 
+async function initiateAnnotation(
+  modelId: string
+): Promise<ExecuteRunApiResponse> {
+  const res = await fetch(
+    `${apiOrigin()}/api/v1/runs/${encodeURIComponent(modelId)}`,
+    { method: 'POST', credentials: 'include' }
+  );
+  if (!res.ok)
+    throw new Error(await readApiErrorDetail(res, 'Annotation launch failed'));
+  return res.json() as Promise<ExecuteRunApiResponse>;
+}
+
+async function importFromGitHub(
+  modelId: string,
+  githubUrl: string
+): Promise<GitHubImportApiResponse> {
+  const url = `${apiOrigin()}/api/v1/models/${encodeURIComponent(modelId)}/github-import`;
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ github_url: githubUrl }),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiErrorDetail(res, 'GitHub import failed'));
+  }
+  return res.json() as Promise<GitHubImportApiResponse>;
+}
+
+
 export function meta() {
   return [
-    { title: 'Tus Upload Test | MISM' },
+    { title: 'Model Upload | MISM' },
     {
       name: 'description',
-      content:
-        'Test page for tus uploads: gateway upload init, then tusd with hook metadata',
+      content: 'Upload a model file or import a GitHub repository into MISM.',
     },
   ];
 }
@@ -187,7 +243,7 @@ function createUppy(getModelName: () => string) {
       | { setOptions: (opts: { endpoint: string }) => void }
       | undefined;
 
-    const model = await findOrCreateModel(modelName);
+    const model = await findOrCreateModel(modelName, 'Created via file upload');
 
     const sessions = await Promise.all(
       fileIDs.map(() => initiateModelUpload(model.id))
@@ -242,6 +298,43 @@ function statusColor(status: FileStatus['status']) {
   }
 }
 
+type StepDef = {
+  key: WorkflowStep;
+  label: string;
+};
+
+const GITHUB_STEPS: StepDef[] = [
+  { key: 'registering', label: 'Register model' },
+  { key: 'importing', label: 'Download & extract repository' },
+  { key: 'annotating', label: 'Initiate annotation run' },
+];
+
+const STEP_ORDER: WorkflowStep[] = [
+  'registering',
+  'importing',
+  'annotating',
+  'complete',
+];
+
+function stepChipColor(
+  stepKey: WorkflowStep,
+  currentStep: WorkflowStep,
+  failedStep: WorkflowStep
+): 'default' | 'primary' | 'success' | 'danger' {
+  if (currentStep === 'error') {
+    const failedIdx = STEP_ORDER.indexOf(failedStep);
+    const stepIdx = STEP_ORDER.indexOf(stepKey);
+    if (stepIdx < failedIdx) return 'success';
+    if (stepIdx === failedIdx) return 'danger';
+    return 'default';
+  }
+  const currentIdx = STEP_ORDER.indexOf(currentStep);
+  const stepIdx = STEP_ORDER.indexOf(stepKey);
+  if (stepIdx < currentIdx) return 'success';
+  if (stepIdx === currentIdx) return 'primary';
+  return 'default';
+}
+
 export default function TusTest() {
   const [modelName, setModelName] = useState('');
   const modelNameRef = useRef('');
@@ -249,6 +342,16 @@ export default function TusTest() {
 
   const [uppy, setUppy] = useState<Uppy | null>(null);
   const [files, setFiles] = useState<Record<string, FileStatus>>({});
+
+  // GitHub import workflow state
+  const [mode, setMode] = useState<'file' | 'github'>('github');
+  const [githubUrl, setGithubUrl] = useState('');
+  const [workflowStep, setWorkflowStep] = useState<WorkflowStep>('idle');
+  const [failedStep, setFailedStep] = useState<WorkflowStep>('idle');
+  const [registeredModelId, setRegisteredModelId] = useState('');
+  const [importedBranch, setImportedBranch] = useState('');
+  const [runId, setRunId] = useState('');
+  const [importError, setImportError] = useState('');
 
   useEffect(() => {
     const instance = createUppy(() => modelNameRef.current);
@@ -325,97 +428,266 @@ export default function TusTest() {
     };
   }, []);
 
+  async function handleGitHubImport() {
+    const name = modelName.trim();
+    const url = githubUrl.trim();
+    if (!name || !url) return;
+
+    setImportError('');
+    setRunId('');
+    setRegisteredModelId('');
+    setImportedBranch('');
+    setFailedStep('idle');
+
+    // Track current step locally so the catch block can report it accurately,
+    // independent of React's batched state updates.
+    let activeStep: WorkflowStep = 'idle';
+
+    try {
+      // Step 1: register (or reuse) the model.
+      activeStep = 'registering';
+      setWorkflowStep('registering');
+      const model = await findOrCreateModel(name, 'Created via GitHub import');
+      setRegisteredModelId(model.id);
+
+      // Step 2: download tarball and extract files into iRODS.
+      activeStep = 'importing';
+      setWorkflowStep('importing');
+      const imported = await importFromGitHub(model.id, url);
+      setImportedBranch(imported.branch);
+
+      // Step 3: launch annotation run.
+      activeStep = 'annotating';
+      setWorkflowStep('annotating');
+      const run = await initiateAnnotation(model.id);
+      setRunId(run.run_id);
+
+      setWorkflowStep('complete');
+    } catch (err: unknown) {
+      setFailedStep(activeStep);
+      setImportError(err instanceof Error ? err.message : String(err));
+      setWorkflowStep('error');
+    }
+  }
+
   const fileList = Object.values(files);
+  const isRunning =
+    workflowStep === 'registering' ||
+    workflowStep === 'importing' ||
+    workflowStep === 'annotating';
 
   return (
     <main className="container mx-auto p-6 flex flex-col gap-6 max-w-4xl">
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold">Tus Upload Test</h1>
+        <h1 className="text-2xl font-semibold">Model Upload</h1>
         <p className="text-sm text-default-500">
-          Flow: <code>GET {apiOrigin()}/api/v1/models?name=&lt;name&gt;</code>{' '}
-          (reuse exact name match if found) → otherwise{' '}
-          <code>POST {apiOrigin()}/api/v1/models</code> (create model) →{' '}
-          <code>POST {apiOrigin()}/api/v1/models/&lt;model-id&gt;/upload</code>{' '}
-          (session cookie) → tus endpoint + <code>resource_id</code> + one-time{' '}
-          <code>upload_token</code> on each tus create, matching gateway{' '}
-          <code>/api/internal/tusd/hooks</code> pre-create checks.
+          Register a model from a GitHub repository or upload a file directly
+          via TUS.
         </p>
       </header>
 
-      <Card shadow="sm">
-        <CardBody className="flex flex-col gap-3">
-          <Input
-            label="Model name"
-            placeholder="Name for the model to reuse or create"
-            value={modelName}
-            onValueChange={setModelName}
-            description="Required before upload. The page reuses an existing exact-name match when found; otherwise it creates a model before requesting upload tokens."
-          />
-        </CardBody>
-      </Card>
+      {/* Mode toggle */}
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          variant={mode === 'github' ? 'solid' : 'bordered'}
+          color={mode === 'github' ? 'primary' : 'default'}
+          onPress={() => setMode('github')}
+        >
+          Import from GitHub
+        </Button>
+        <Button
+          size="sm"
+          variant={mode === 'file' ? 'solid' : 'bordered'}
+          color={mode === 'file' ? 'primary' : 'default'}
+          onPress={() => setMode('file')}
+        >
+          Upload File
+        </Button>
+      </div>
 
-      <Card shadow="sm">
-        <CardBody>
-          {uppy ? (
-            <Dashboard
-              uppy={uppy}
-              proudlyDisplayPoweredByUppy={false}
-              note="Add files, enter a model name, then Upload. The page reuses or creates the model, then sets resource_id and upload_token from the gateway right before tus runs."
-              height={420}
-            />
-          ) : (
-            <div className="p-8 text-center text-default-500">
-              Initializing uploader…
-            </div>
+      {mode === 'github' ? (
+        <>
+          {/* GitHub import inputs */}
+          <Card shadow="sm">
+            <CardBody className="flex flex-col gap-3">
+              <Input
+                label="Model name"
+                placeholder="Name for the model to reuse or create"
+                value={modelName}
+                onValueChange={setModelName}
+                isDisabled={isRunning}
+                description="Reuses an existing exact-name match when found; otherwise creates a new model."
+              />
+              <Input
+                label="GitHub repository URL"
+                placeholder="https://github.com/owner/repo"
+                value={githubUrl}
+                onValueChange={setGithubUrl}
+                isDisabled={isRunning}
+                description="Public repository URL. Optionally include a branch: /tree/branch-name."
+              />
+              <Button
+                color="primary"
+                isDisabled={!modelName.trim() || !githubUrl.trim() || isRunning}
+                isLoading={isRunning}
+                onPress={() => void handleGitHubImport()}
+              >
+                Import &amp; Annotate
+              </Button>
+            </CardBody>
+          </Card>
+
+          {/* Step progress */}
+          {workflowStep !== 'idle' && (
+            <Card shadow="sm">
+              <CardHeader className="flex flex-col items-start gap-0">
+                <h2 className="text-lg font-medium">Workflow progress</h2>
+              </CardHeader>
+              <CardBody className="flex flex-col gap-3">
+                {GITHUB_STEPS.map((step) => {
+                  const color = stepChipColor(step.key, workflowStep, failedStep);
+                  return (
+                    <div
+                      key={step.key}
+                      className="flex items-center justify-between gap-2"
+                    >
+                      <span className="text-sm">{step.label}</span>
+                      <Chip
+                        size="sm"
+                        color={color}
+                        variant={color === 'success' ? 'solid' : 'flat'}
+                      >
+                        {color === 'success'
+                          ? 'done'
+                          : color === 'danger'
+                            ? 'failed'
+                            : workflowStep === step.key
+                              ? 'running…'
+                              : 'pending'}
+                      </Chip>
+                    </div>
+                  );
+                })}
+              </CardBody>
+            </Card>
           )}
-        </CardBody>
-      </Card>
 
-      {fileList.length > 0 && (
-        <Card shadow="sm">
-          <CardHeader className="flex flex-col items-start gap-0">
-            <h2 className="text-lg font-medium">Upload progress</h2>
-            <p className="text-xs text-default-500">
-              {fileList.length} file{fileList.length === 1 ? '' : 's'}
-            </p>
-          </CardHeader>
-          <CardBody className="flex flex-col gap-4">
-            {fileList.map((f) => (
-              <div key={f.id} className="flex flex-col gap-1">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex flex-col min-w-0">
-                    <span className="font-medium truncate">{f.name}</span>
-                    <span className="text-xs text-default-500 truncate">
-                      resource_id: <code>{f.resourceId || '—'}</code> ·{' '}
-                      {formatBytes(f.size)}
-                    </span>
-                  </div>
-                  <Chip
-                    size="sm"
-                    color={statusColor(f.status)}
-                    variant={f.status === 'complete' ? 'solid' : 'flat'}
-                  >
-                    {f.status === 'complete' ? 'uploaded' : f.status}
-                  </Chip>
-                </div>
-                <Progress
-                  aria-label={`Upload progress for ${f.name}`}
-                  value={f.progress}
-                  color={statusColor(f.status)}
-                  size="sm"
-                />
-                {f.status === 'complete' && f.uploadUrl && (
-                  <span className="text-xs text-success-600 truncate">
-                    URL: <code>{f.uploadUrl}</code>
+          {/* Success notification */}
+          {workflowStep === 'complete' && (
+            <Card shadow="sm" className="border-success-200 bg-success-50">
+              <CardBody className="flex flex-col gap-1">
+                <span className="text-sm font-medium text-success-700">
+                  Annotation launched
+                </span>
+                {registeredModelId && (
+                  <span className="text-xs text-default-500">
+                    Model ID:{' '}
+                    <code className="font-mono">{registeredModelId}</code>
                   </span>
                 )}
-                {f.status === 'error' && f.error && (
-                  <span className="text-xs text-danger-600">{f.error}</span>
+                {importedBranch && (
+                  <span className="text-xs text-default-500">
+                    Branch: <code className="font-mono">{importedBranch}</code>
+                  </span>
                 )}
-              </div>
-            ))}
-          </CardBody>
-        </Card>
+                {runId && (
+                  <span className="text-xs text-default-500">
+                    Run ID: <code className="font-mono">{runId}</code>
+                  </span>
+                )}
+              </CardBody>
+            </Card>
+          )}
+
+          {/* Error notification */}
+          {workflowStep === 'error' && (
+            <Card shadow="sm" className="border-danger-200 bg-danger-50">
+              <CardBody>
+                <span className="text-sm text-danger-700">{importError}</span>
+              </CardBody>
+            </Card>
+          )}
+        </>
+      ) : (
+        <>
+          {/* Existing TUS file upload */}
+          <Card shadow="sm">
+            <CardBody className="flex flex-col gap-3">
+              <Input
+                label="Model name"
+                placeholder="Name for the model to reuse or create"
+                value={modelName}
+                onValueChange={setModelName}
+                description="Required before upload. The page reuses an existing exact-name match when found; otherwise it creates a model before requesting upload tokens."
+              />
+            </CardBody>
+          </Card>
+
+          <Card shadow="sm">
+            <CardBody>
+              {uppy ? (
+                <Dashboard
+                  uppy={uppy}
+                  proudlyDisplayPoweredByUppy={false}
+                  note="Add files, enter a model name, then Upload. The page reuses or creates the model, then sets resource_id and upload_token from the gateway right before tus runs."
+                  height={420}
+                />
+              ) : (
+                <div className="p-8 text-center text-default-500">
+                  Initializing uploader…
+                </div>
+              )}
+            </CardBody>
+          </Card>
+
+          {fileList.length > 0 && (
+            <Card shadow="sm">
+              <CardHeader className="flex flex-col items-start gap-0">
+                <h2 className="text-lg font-medium">Upload progress</h2>
+                <p className="text-xs text-default-500">
+                  {fileList.length} file{fileList.length === 1 ? '' : 's'}
+                </p>
+              </CardHeader>
+              <CardBody className="flex flex-col gap-4">
+                {fileList.map((f) => (
+                  <div key={f.id} className="flex flex-col gap-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex flex-col min-w-0">
+                        <span className="font-medium truncate">{f.name}</span>
+                        <span className="text-xs text-default-500 truncate">
+                          resource_id: <code>{f.resourceId || '—'}</code> ·{' '}
+                          {formatBytes(f.size)}
+                        </span>
+                      </div>
+                      <Chip
+                        size="sm"
+                        color={statusColor(f.status)}
+                        variant={f.status === 'complete' ? 'solid' : 'flat'}
+                      >
+                        {f.status === 'complete' ? 'uploaded' : f.status}
+                      </Chip>
+                    </div>
+                    <Progress
+                      aria-label={`Upload progress for ${f.name}`}
+                      value={f.progress}
+                      color={statusColor(f.status)}
+                      size="sm"
+                    />
+                    {f.status === 'complete' && f.uploadUrl && (
+                      <span className="text-xs text-success-600 truncate">
+                        URL: <code>{f.uploadUrl}</code>
+                      </span>
+                    )}
+                    {f.status === 'error' && f.error && (
+                      <span className="text-xs text-danger-600">{f.error}</span>
+                    )}
+                  </div>
+                ))}
+              </CardBody>
+            </Card>
+          )}
+        </>
       )}
     </main>
   );
