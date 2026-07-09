@@ -24,6 +24,7 @@ from pydantic import BaseModel, field_validator
 from mismapi.auth.base import AuthenticatedPrincipalDep
 from mismapi.core.deps import RegistryServiceDep, SettingsDep
 from mismapi.core.errors import APIError
+from mismapi.utils import upload_dir
 
 logger = logging.getLogger(__name__)
 
@@ -194,7 +195,7 @@ async def import_from_github(
     Annotation is initiated separately via ``POST /models/{model_id}/runs``.
     """
     # 1. Ownership check — raises APIError(403) if principal is not the owner.
-    service.get_resource_and_assert_ownership(principal, resource_id=model_id)
+    resource = service.get_resource_and_assert_ownership(principal, resource_id=model_id)
 
     # 2. Parse GitHub URL.
     m = _GITHUB_URL_RE.match(body.github_url)
@@ -206,8 +207,7 @@ async def import_from_github(
     branch = ""
     files_extracted = 0
     total_bytes = 0
-    dest_dir = (Path(settings.irods_mount_path) / model_id).resolve()
-
+    dest_dir = (Path(settings.irods_mount_path) / upload_dir(resource.id, resource.version)).resolve()
     try:
         async with httpx.AsyncClient(
             follow_redirects=True,

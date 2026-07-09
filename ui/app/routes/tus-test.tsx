@@ -129,6 +129,7 @@ async function createModel(
       // import) overwrites this with the real path once data lands in iRODS.
       location_uri: 'irods:///pending',
       execution_type: 'docker',
+      version: '0.0.1',
       description,
     }),
   });
@@ -190,7 +191,6 @@ async function importFromGitHub(
   }
   return res.json() as Promise<GitHubImportApiResponse>;
 }
-
 
 export function meta() {
   return [
@@ -463,9 +463,9 @@ export default function TusTest() {
       setRunId(run.run_id);
 
       setWorkflowStep('complete');
-    } catch (err: unknown) {
+    } catch (error: unknown) {
       setFailedStep(activeStep);
-      setImportError(err instanceof Error ? err.message : String(err));
+      setImportError(error instanceof Error ? error.message : String(error));
       setWorkflowStep('error');
     }
   }
@@ -546,7 +546,22 @@ export default function TusTest() {
               </CardHeader>
               <CardBody className="flex flex-col gap-3">
                 {GITHUB_STEPS.map((step) => {
-                  const color = stepChipColor(step.key, workflowStep, failedStep);
+                  const color = stepChipColor(
+                    step.key,
+                    workflowStep,
+                    failedStep
+                  );
+
+                  let label = 'pending';
+
+                  if (color === 'success') {
+                    label = 'done';
+                  } else if (color === 'danger') {
+                    label = 'failed';
+                  } else if (workflowStep === step.key) {
+                    label = 'running…';
+                  }
+
                   return (
                     <div
                       key={step.key}
@@ -558,13 +573,7 @@ export default function TusTest() {
                         color={color}
                         variant={color === 'success' ? 'solid' : 'flat'}
                       >
-                        {color === 'success'
-                          ? 'done'
-                          : color === 'danger'
-                            ? 'failed'
-                            : workflowStep === step.key
-                              ? 'running…'
-                              : 'pending'}
+                        {label}
                       </Chip>
                     </div>
                   );
