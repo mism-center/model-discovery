@@ -84,6 +84,7 @@ def _model_response(r: Resource) -> RegisterModelResponse:
         description=r.description,
         version=r.version,
         status=r.version_status.value,
+        registration_status=r.registration_status.value,
         owner=r.owner,
         execution_type=r.execution_type.value if r.execution_type else None,
         execution_ref=r.execution_ref,
@@ -132,6 +133,22 @@ async def list_models(
     page = resources[offset : offset + limit]
 
     return ModelListResponse(total=total, results=[_model_list_item(r) for r in page])
+
+
+@router.get("/models/{model_id}", response_model=RegisterModelResponse)
+async def get_model(
+    model_id: str,
+    service: RegistryServiceDep,
+) -> RegisterModelResponse:
+    """Fetch a single model by ID.
+
+    Includes ``registration_status`` so the UI can poll annotation progress
+    (DRAFT → ANNOTATING → PENDING_REVIEW / ANNOTATION_FAILED → APPROVED).
+    The execution-platform's background poller writes these transitions directly
+    to the shared registry; this endpoint reads the current value on demand.
+    """
+    resource = service.get_model(model_id)
+    return _model_response(resource)
 
 
 @router.post("/models", response_model=RegisterModelResponse, status_code=201)

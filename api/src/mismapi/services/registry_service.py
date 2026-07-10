@@ -123,6 +123,13 @@ class RegistryService:
         logger.info("Registered model %s (%s) by %s", resource.id, resource.name, principal.subject)
         return resource
 
+    def get_model(self, model_id: str) -> Resource:
+        """Fetch a single model resource by ID, including registration_status."""
+        try:
+            return self._registry.get_resource(model_id)
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
     def update_model(
         self,
         principal: AuthenticatedPrincipal,

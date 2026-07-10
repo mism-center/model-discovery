@@ -11,7 +11,6 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from mismapi.api.v1._run_helpers import resource_summary, run_detail
-from mismapi.auth.base import AuthenticatedPrincipalDep
 from mismapi.core.deps import ExecutionClientDep, RegistryServiceDep, SettingsDep
 from mismapi.schemas.registry import RunDetailResponse
 
@@ -24,40 +23,6 @@ class AnnotateRunResponse(BaseModel):
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-def _build_annotation_payload(
-    model_id: str,
-    username: str,
-    settings: Any,
-) -> dict[str, Any]:
-    """Build the execution service job payload for a batch annotation run.
-
-    All values come from server-side settings; nothing sensitive is passed
-    from the browser.
-    """
-    return {
-        "name": f"{model_id}-job",
-        "identifier": model_id,
-        "image": settings.annotation_job_image,
-        "cpus": settings.annotation_job_cpus,
-        "memory": settings.annotation_job_memory,
-        "username": username,
-        "version": "v1",
-        "command": settings.annotation_job_command,
-        "env": {
-            "MODEL_INPUT": "/workspace/v1",
-            "PROMPT": settings.annotation_job_prompt,
-        },
-        "pvc_mounts": [
-            {
-                "pvc": "irods-pvc",
-                "mount_path": "/workspace/v1",
-                "sub_path": model_id,
-                "read_only": False,
-            }
-        ],
-    }
 
 
 @router.get("/runs/{run_id}", response_model=RunDetailResponse)
@@ -101,26 +66,25 @@ async def get_run(
     )
 
 
-@router.post("/runs/{run_id}", response_model=AnnotateRunResponse, status_code=201)
+@router.post("/runs/{run_id}", response_model=AnnotateRunResponse, status_code=200)
 async def post_run(
     run_id: str,
     execution_client: ExecutionClientDep,
     settings: SettingsDep,
-    principal: AuthenticatedPrincipalDep,
 ) -> AnnotateRunResponse:
-    """Build the annotation job payload server-side and submit it to the
-    Execution service.
+    """Submit an annotation job to the Execution service for the given resource.
 
-    ``run_id`` doubles as the model identifier — the payload is built from
-    server-side settings and the authenticated principal; nothing sensitive is
-    passed from the browser.
+    All job configuration (image, resources, prompt) comes from server-side
+    settings. The LLM API key is injected by the execution-platform from its
+    own environment — it is never passed through this request.
     """
-    # Build job payload server-side using run_id as the model identifier.
-    job_payload = _build_annotation_payload(run_id, principal.subject, settings)
-
-    # Submit to execution service.
-    execution_status = await execution_client.post_run(run_id, job_payload)
-
+    execution_status = await execution_client.annotate(
+        resource_id=run_id,
+        image=settings.annotation_job_image,
+        prompt=settings.annotation_job_prompt,
+        cpus=settings.annotation_job_cpus,
+        memory=settings.annotation_job_memory,
+    )
     return AnnotateRunResponse(run_id=run_id, execution_status=execution_status)
 
 

@@ -84,11 +84,7 @@ class Settings(BaseSettings):
         alias="ANNOTATION_JOB_IMAGE",
     )
     annotation_job_cpus: str = Field(default="1", alias="ANNOTATION_JOB_CPUS")
-    annotation_job_memory: str = Field(default="2Gi", alias="ANNOTATION_JOB_MEMORY")
-    annotation_job_command: list[str] = Field(
-        default_factory=lambda: ["/usr/local/bin/entrypoint.sh"],
-        alias="ANNOTATION_JOB_COMMAND",
-    )
+    annotation_job_memory: str = Field(default="4Gi", alias="ANNOTATION_JOB_MEMORY")
     annotation_job_prompt: str = Field(default="", alias="ANNOTATION_JOB_PROMPT")
 
     # Authentication

@@ -144,6 +144,7 @@ class RegisterModelResponse(BaseModel):
     description: str = ""
     version: str = ""
     status: str
+    registration_status: str
     owner: str = ""
     execution_type: str | None = None
     execution_ref: str = ""
