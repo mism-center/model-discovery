@@ -1,10 +1,8 @@
-import asyncio
-import contextlib
 import logging
-from collections.abc import AsyncIterator, Callable, Coroutine
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
 
+import anyio
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -20,26 +18,6 @@ from mismapi.middleware.request_context import RequestContextMiddleware
 logger = logging.getLogger(__name__)
 
 _ANNOTATION_POLL_INTERVAL_SECONDS = 15
-
-
-async def _poll_loop(
-    name: str,
-    poll_fn: Callable[[], Coroutine[Any, Any, None]],
-    interval: float,
-) -> None:
-    """Generic poller: call poll_fn every interval seconds.
-
-    Exceptions are swallowed so one bad cycle never kills the loop.
-    Cancellation (on shutdown) propagates cleanly.
-    """
-    while True:
-        try:
-            await poll_fn()
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("poll_loop_error name=%s", name)
-        await asyncio.sleep(interval)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -58,46 +36,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.container = container
         await container.prime()
 
-        async def _check_annotating_models() -> None:
-            """Log models currently in ANNOTATING state.
+        async def _annotation_poll_loop() -> None:
+            """Poll for ANNOTATING models and log them every interval seconds.
 
-            Status transitions are written by the execution-platform's own poller;
-            this task surfaces them in the gateway's pod logs so operators can
-            observe annotation progress without querying the DB directly.
+            Runs inside an anyio task group so cancellation and thread offloading
+            are handled correctly regardless of the asyncio/trio backend.
+            DB work is offloaded to a worker thread via anyio.to_thread.run_sync.
+            abandon_on_cancel=True lets shutdown proceed immediately without
+            waiting for the current sync DB call to finish.
             """
             from mism_registry.backends.postgres import PostgresRegistry
 
             from mismapi.services.registry_service import RegistryService
 
-            with container.open_session() as session:
-                registry = PostgresRegistry(session)
-                service = RegistryService(registry, session)
-                annotating = service.list_annotating_models()
-                if annotating:
-                    logger.info(
-                        "annotation_poll active_count=%d ids=%s",
-                        len(annotating),
-                        [r.id for r in annotating],
-                    )
+            def _sync_check() -> None:
+                with container.open_session() as session:
+                    registry = PostgresRegistry(session)
+                    service = RegistryService(registry, session)
+                    annotating = service.list_annotating_models()
+                    if annotating:
+                        logger.info(
+                            "annotation_poll active_count=%d ids=%s",
+                            len(annotating),
+                            [r.id for r in annotating],
+                        )
 
-        tasks: list[asyncio.Task[None]] = [
-            asyncio.create_task(
-                _poll_loop(
-                    "annotation_awareness",
-                    _check_annotating_models,
-                    _ANNOTATION_POLL_INTERVAL_SECONDS,
-                ),
-                name="annotation_awareness_poll",
-            )
-        ]
+            while True:
+                try:
+                    await anyio.to_thread.run_sync(_sync_check, abandon_on_cancel=True)
+                except Exception:
+                    logger.exception("annotation_poll_error")
+                await anyio.sleep(_ANNOTATION_POLL_INTERVAL_SECONDS)
 
         try:
-            yield
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(_annotation_poll_loop)
+                yield
+                tg.cancel_scope.cancel()
         finally:
-            for t in tasks:
-                t.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await t
             await container.aclose()
 
     resolved_settings = settings if settings is not None else get_settings()
