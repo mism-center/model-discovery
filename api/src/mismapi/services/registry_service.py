@@ -7,6 +7,7 @@ import yaml
 from mism_registry import (
     ResourceNotFoundError,
     ResourceType,
+    ResourceRegistrationStatus,
     RunStatus,
     find_resources,
     get_model_run_details,
@@ -112,6 +113,7 @@ class RegistryService:
                 organisms=organisms or [],
                 domains=domains or [],
                 date_published=date_published,
+                registration_status=ResourceRegistrationStatus.DRAFT
             )
             # FUTURE: fga.write_tuple(user=principal.subject,
             #   relation="owner", object=f"model:{resource.id}")
