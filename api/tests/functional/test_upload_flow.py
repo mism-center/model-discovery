@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import time
+from typing import Any
 
 import httpx
 import pytest
@@ -65,13 +66,13 @@ def _tus_upload(token: str, resource_id: str, filename: str, data: bytes) -> Non
 
 def _poll_model(
     api: httpx.Client, *, name: str, model_id: str, attempts: int = 25, delay: float = 0.2
-) -> dict:
+) -> dict[str, Any]:
     """Return the model row once post-finish has stamped upload_status.
 
     No single-model GET route exists; read back via the list filter by name.
     Retries for ~attempts*delay seconds to let the async post-finish hook land.
     """
-    match: dict = {"metadata": {}}
+    match: dict[str, Any] = {"metadata": {}}
     for _ in range(attempts):
         r = api.get("/api/v1/models", params={"name": name})
         assert r.status_code == 200
