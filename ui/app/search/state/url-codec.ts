@@ -22,7 +22,7 @@ import {
  *   sort            — sort field (_score | name | created_at | updated_at)
  *   order           — sort order (asc | desc)
  *   offset, limit   — pagination
- *   <facetId>       — terms facet, repeated: ?modeling_scales=A&modeling_scales=B
+ *   <facetId>       — terms facet, repeated: ?model_scales=A&model_scales=B
  *   <facetId>       — toggle facet, single: ?<facetId>=true (absent = false)
  *   <facetId>_from  — range facet lower bound
  *   <facetId>_to    — range facet upper bound

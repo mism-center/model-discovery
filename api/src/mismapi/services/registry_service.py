@@ -81,7 +81,7 @@ class RegistryService:
         contact_email: str = "",
         publications: list[Publication] | None = None,
         funding: list[str] | None = None,
-        modeling_scales: list[str] | None = None,
+        model_scales: list[str] | None = None,
         organisms: list[str] | None = None,
         domains: list[str] | None = None,
         date_published: date | None = None,
@@ -108,7 +108,7 @@ class RegistryService:
                 contact_email=contact_email,
                 publications=publications or [],
                 funding=funding or [],
-                model_scales=modeling_scales or [],
+                model_scales=model_scales or [],
                 organisms=organisms or [],
                 domains=domains or [],
                 date_published=date_published,
@@ -147,7 +147,7 @@ class RegistryService:
         contact_email: str | None = None,
         publications: list[Publication] | None = None,
         funding: list[str] | None = None,
-        modeling_scales: list[str] | None = None,
+        model_scales: list[str] | None = None,
         organisms: list[str] | None = None,
         domains: list[str] | None = None,
         date_published: date | None = None,
@@ -198,8 +198,8 @@ class RegistryService:
             resource.publications = publications
         if funding is not None:
             resource.funding = funding
-        if modeling_scales is not None:
-            resource.model_scales = modeling_scales
+        if model_scales is not None:
+            resource.model_scales = model_scales
         if organisms is not None:
             resource.organisms = organisms
         if domains is not None:
@@ -517,7 +517,7 @@ class RegistryService:
         contact_email: str = "",
         publications: list[Publication] | None = None,
         funding: list[str] | None = None,
-        modeling_scales: list[str] | None = None,
+        model_scales: list[str] | None = None,
         organisms: list[str] | None = None,
         domains: list[str] | None = None,
         date_published: date | None = None,
@@ -541,7 +541,7 @@ class RegistryService:
                 contact_email=contact_email,
                 publications=publications or [],
                 funding=funding or [],
-                model_scales=modeling_scales or [],
+                model_scales=model_scales or [],
                 organisms=organisms or [],
                 domains=domains or [],
                 date_published=date_published,
@@ -579,7 +579,7 @@ class RegistryService:
         contact_email: str | None = None,
         publications: list[Publication] | None = None,
         funding: list[str] | None = None,
-        modeling_scales: list[str] | None = None,
+        model_scales: list[str] | None = None,
         organisms: list[str] | None = None,
         domains: list[str] | None = None,
         date_published: date | None = None,
@@ -624,8 +624,8 @@ class RegistryService:
             resource.publications = publications
         if funding is not None:
             resource.funding = funding
-        if modeling_scales is not None:
-            resource.model_scales = modeling_scales
+        if model_scales is not None:
+            resource.model_scales = model_scales
         if organisms is not None:
             resource.organisms = organisms
         if domains is not None:

@@ -98,7 +98,7 @@ class _AttributionFields(BaseModel):
 class _ScientificFields(BaseModel):
     """Scientific-context fields shared across create/update requests."""
 
-    modeling_scales: list[str] = Field(default_factory=list)
+    model_scales: list[str] = Field(default_factory=list)
     organisms: list[str] = Field(default_factory=list)
     domains: list[str] = Field(default_factory=list)
     date_published: date | None = None
@@ -156,7 +156,7 @@ class RegisterModelResponse(BaseModel):
     publications: list[PublicationDTO] = Field(default_factory=list)
     funding: list[str] = Field(default_factory=list)
     # Scientific context
-    modeling_scales: list[str] = Field(default_factory=list)
+    model_scales: list[str] = Field(default_factory=list)
     organisms: list[str] = Field(default_factory=list)
     domains: list[str] = Field(default_factory=list)
     date_published: date | None = None
@@ -189,7 +189,7 @@ class UpdateModelRequest(_AttributionFields, _ScientificFields, _IntegrityFields
     publications: list[PublicationDTO] | None = None  # type: ignore[assignment]
     funding: list[str] | None = None  # type: ignore[assignment]
     # Scientific nullables
-    modeling_scales: list[str] | None = None  # type: ignore[assignment]
+    model_scales: list[str] | None = None  # type: ignore[assignment]
     organisms: list[str] | None = None  # type: ignore[assignment]
     domains: list[str] | None = None  # type: ignore[assignment]
     date_published: date | None = None
@@ -240,7 +240,7 @@ class RegisterDatasetResponse(BaseModel):
     publications: list[PublicationDTO] = Field(default_factory=list)
     funding: list[str] = Field(default_factory=list)
     # Scientific context
-    modeling_scales: list[str] = Field(default_factory=list)
+    model_scales: list[str] = Field(default_factory=list)
     organisms: list[str] = Field(default_factory=list)
     domains: list[str] = Field(default_factory=list)
     date_published: date | None = None
@@ -270,7 +270,7 @@ class UpdateDatasetRequest(_AttributionFields, _ScientificFields, _IntegrityFiel
     publications: list[PublicationDTO] | None = None  # type: ignore[assignment]
     funding: list[str] | None = None  # type: ignore[assignment]
     # Scientific nullables
-    modeling_scales: list[str] | None = None  # type: ignore[assignment]
+    model_scales: list[str] | None = None  # type: ignore[assignment]
     organisms: list[str] | None = None  # type: ignore[assignment]
     domains: list[str] | None = None  # type: ignore[assignment]
     date_published: date | None = None
@@ -351,7 +351,7 @@ class ResourceSummaryItem(BaseModel):
     publications: list[PublicationDTO] = Field(default_factory=list)
     funding: list[str] = Field(default_factory=list)
     # Scientific context
-    modeling_scales: list[str] = Field(default_factory=list)
+    model_scales: list[str] = Field(default_factory=list)
     organisms: list[str] = Field(default_factory=list)
     domains: list[str] = Field(default_factory=list)
     date_published: date | None = None

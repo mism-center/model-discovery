@@ -347,7 +347,7 @@ def test_create_model_forwards_attribution_fields() -> None:
 
 
 def test_create_model_forwards_scientific_fields() -> None:
-    """POST /models passes modeling_scales, organisms, domains, date_published to service."""
+    """POST /models passes model_scales, organisms, domains, date_published to service."""
     service = MagicMock(spec=RegistryService)
     service.create_model.return_value = _make_model()
 
@@ -358,7 +358,7 @@ def test_create_model_forwards_scientific_fields() -> None:
             "name": "Sci Model",
             "location_uri": "irods:///models/sci",
             "execution_type": "python",
-            "modeling_scales": ["cellular", "tissue"],
+            "model_scales": ["cellular", "tissue"],
             "organisms": ["human"],
             "domains": ["cardiology"],
             "date_published": "2024-06-01",
@@ -367,7 +367,7 @@ def test_create_model_forwards_scientific_fields() -> None:
 
     assert response.status_code == 201
     kwargs = service.create_model.call_args.kwargs
-    assert kwargs["modeling_scales"] == ["cellular", "tissue"]
+    assert kwargs["model_scales"] == ["cellular", "tissue"]
     assert kwargs["organisms"] == ["human"]
     assert kwargs["domains"] == ["cardiology"]
     assert str(kwargs["date_published"]) == "2024-06-01"
@@ -454,7 +454,7 @@ def test_create_model_response_includes_new_fields() -> None:
     assert "contact_email" in payload
     assert "publications" in payload
     assert "funding" in payload
-    assert "modeling_scales" in payload
+    assert "model_scales" in payload
     assert "organisms" in payload
     assert "domains" in payload
     assert "date_published" in payload

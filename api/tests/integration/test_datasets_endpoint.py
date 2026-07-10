@@ -275,7 +275,7 @@ def test_create_dataset_forwards_attribution_fields() -> None:
 
 
 def test_create_dataset_forwards_scientific_fields() -> None:
-    """POST /datasets passes modeling_scales, organisms, domains, date_published to service."""
+    """POST /datasets passes model_scales, organisms, domains, date_published to service."""
     service = MagicMock(spec=RegistryService)
     service.create_dataset.return_value = _make_dataset()
 
@@ -285,7 +285,7 @@ def test_create_dataset_forwards_scientific_fields() -> None:
         json={
             "name": "Sci Dataset",
             "location_uri": "irods:///datasets/sci",
-            "modeling_scales": ["population"],
+            "model_scales": ["population"],
             "organisms": ["rat"],
             "domains": ["neuroscience"],
             "date_published": "2023-05-10",
@@ -294,7 +294,7 @@ def test_create_dataset_forwards_scientific_fields() -> None:
 
     assert response.status_code == 201
     kwargs = service.create_dataset.call_args.kwargs
-    assert kwargs["modeling_scales"] == ["population"]
+    assert kwargs["model_scales"] == ["population"]
     assert kwargs["organisms"] == ["rat"]
     assert kwargs["domains"] == ["neuroscience"]
     assert str(kwargs["date_published"]) == "2023-05-10"
@@ -346,7 +346,7 @@ def test_create_dataset_response_includes_new_fields() -> None:
     assert "contact_email" in payload
     assert "publications" in payload
     assert "funding" in payload
-    assert "modeling_scales" in payload
+    assert "model_scales" in payload
     assert "organisms" in payload
     assert "domains" in payload
     assert "date_published" in payload
@@ -415,7 +415,7 @@ def test_list_datasets_response_includes_new_fields() -> None:
     assert "contact_email" in item
     assert "publications" in item
     assert "funding" in item
-    assert "modeling_scales" in item
+    assert "model_scales" in item
     assert "organisms" in item
     assert "domains" in item
     assert "date_published" in item

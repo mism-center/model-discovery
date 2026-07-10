@@ -28,9 +28,9 @@ export interface FacetConfig {
 
 export const FACETS: readonly FacetConfig[] = [
   {
-    id: 'modeling_scales',
-    field: 'modeling_scales',
-    label: 'Modeling Scales',
+    id: 'model_scales',
+    field: 'model_scales',
+    label: 'Model Scales',
     widget: 'terms',
     termsOp: 'overlap',
     resourceTypes: ['model', 'dataset'],

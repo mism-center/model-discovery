@@ -177,7 +177,7 @@ def test_search_result_includes_all_new_fields() -> None:
     assert "publications" in item
     assert "funding" in item
     # New scientific fields
-    assert "modeling_scales" in item
+    assert "model_scales" in item
     assert "domains" in item
     assert "date_published" in item
     # New integrity fields
@@ -209,7 +209,7 @@ def test_search_result_new_fields_default_correctly() -> None:
     assert item["funding"] == []
     assert item["organization"] == ""
     assert item["contact_email"] == ""
-    assert item["modeling_scales"] == []
+    assert item["model_scales"] == []
     assert item["domains"] == []
     assert item["date_published"] is None
     assert item["digest_sha256"] == ""
@@ -273,7 +273,7 @@ def test_search_result_with_rich_resource() -> None:
     assert item["contact_email"] == "jane@renci.org"
     assert item["publications"] == [{"title": "Paper", "doi": "10.1/x", "url": "", "citation": ""}]
     assert item["funding"] == ["NIH"]
-    assert item["modeling_scales"] == ["cellular"]
+    assert item["model_scales"] == ["cellular"]
     assert item["organisms"] == ["human"]
     assert item["domains"] == ["cardiology"]
     assert item["execution_ref"] == "docker://rich:1"
@@ -302,7 +302,7 @@ def test_list_models_response_includes_new_fields() -> None:
     assert "contact_email" in item
     assert "publications" in item
     assert "funding" in item
-    assert "modeling_scales" in item
+    assert "model_scales" in item
     assert "organisms" in item
     assert "domains" in item
     assert "date_published" in item

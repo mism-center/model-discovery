@@ -58,7 +58,7 @@ async def search_resources(
             funding=list(r.funding),
             organisms=list(r.organisms),
             domains=list(r.domains),
-            modeling_scales=list(r.model_scales),
+            model_scales=list(r.model_scales),
             date_published=r.date_published,
             digest_sha256=r.digest_sha256,
             size_bytes=r.size_bytes,

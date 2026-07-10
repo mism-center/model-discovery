@@ -546,8 +546,8 @@ export interface components {
       publications?: components['schemas']['PublicationDTO'][];
       /** Funding */
       funding?: string[];
-      /** Modeling Scales */
-      modeling_scales?: string[];
+      /** Model Scales */
+      model_scales?: string[];
       /** Organisms */
       organisms?: string[];
       /** Domains */
@@ -658,8 +658,8 @@ export interface components {
        * @default
        */
       license: string;
-      /** Modeling Scales */
-      modeling_scales?: string[];
+      /** Model Scales */
+      model_scales?: string[];
       /** Organisms */
       organisms?: string[];
       /** Domains */
@@ -753,8 +753,8 @@ export interface components {
       publications?: components['schemas']['PublicationDTO'][];
       /** Funding */
       funding?: string[];
-      /** Modeling Scales */
-      modeling_scales?: string[];
+      /** Model Scales */
+      model_scales?: string[];
       /** Organisms */
       organisms?: string[];
       /** Domains */
@@ -810,8 +810,8 @@ export interface components {
        * @default
        */
       license: string;
-      /** Modeling Scales */
-      modeling_scales?: string[];
+      /** Model Scales */
+      model_scales?: string[];
       /** Organisms */
       organisms?: string[];
       /** Domains */
@@ -917,8 +917,8 @@ export interface components {
       publications?: components['schemas']['PublicationDTO'][];
       /** Funding */
       funding?: string[];
-      /** Modeling Scales */
-      modeling_scales?: string[];
+      /** Model Scales */
+      model_scales?: string[];
       /** Organisms */
       organisms?: string[];
       /** Domains */
@@ -1043,8 +1043,8 @@ export interface components {
       publications?: components['schemas']['PublicationDTO'][];
       /** Funding */
       funding?: string[];
-      /** Modeling Scales */
-      modeling_scales?: string[];
+      /** Model Scales */
+      model_scales?: string[];
       /** Organisms */
       organisms?: string[];
       /** Domains */
@@ -1277,8 +1277,8 @@ export interface components {
       organisms?: string[];
       /** Domains */
       domains?: string[];
-      /** Modeling Scales */
-      modeling_scales?: string[];
+      /** Model Scales */
+      model_scales?: string[];
       /** Date Published */
       date_published?: string | null;
       /**
@@ -1341,8 +1341,8 @@ export interface components {
       } | null;
       /** License */
       license?: string | null;
-      /** Modeling Scales */
-      modeling_scales?: string[] | null;
+      /** Model Scales */
+      model_scales?: string[] | null;
       /** Organisms */
       organisms?: string[] | null;
       /** Domains */
@@ -1388,8 +1388,8 @@ export interface components {
       } | null;
       /** License */
       license?: string | null;
-      /** Modeling Scales */
-      modeling_scales?: string[] | null;
+      /** Model Scales */
+      model_scales?: string[] | null;
       /** Organisms */
       organisms?: string[] | null;
       /** Domains */
@@ -1595,7 +1595,7 @@ export interface operations {
         tags?: string[] | null;
         /** @description Organisms (any must match) */
         organisms?: string[] | null;
-        /** @description Modeling scales (any must match) */
+        /** @description Model scales (any must match) */
         scales?: string[] | null;
         limit?: number;
         offset?: number;
@@ -1805,7 +1805,7 @@ export interface operations {
         tags?: string[] | null;
         /** @description Organisms (any must match) */
         organisms?: string[] | null;
-        /** @description Modeling scales (any must match) */
+        /** @description Model scales (any must match) */
         scales?: string[] | null;
         limit?: number;
         offset?: number;

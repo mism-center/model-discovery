@@ -33,7 +33,7 @@ def resource_summary(r: Resource) -> ResourceSummaryItem:
         contact_email=r.contact_email,
         publications=[pub_to_dto(p) for p in r.publications],
         funding=list(r.funding),
-        modeling_scales=list(r.model_scales),
+        model_scales=list(r.model_scales),
         organisms=list(r.organisms),
         domains=list(r.domains),
         date_published=r.date_published,

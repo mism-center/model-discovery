@@ -26,7 +26,7 @@ class ModelListItem(BaseModel):
     publications: list[PublicationDTO] = Field(default_factory=list)
     funding: list[str] = Field(default_factory=list)
     # Scientific context
-    modeling_scales: list[str] = Field(default_factory=list)
+    model_scales: list[str] = Field(default_factory=list)
     organisms: list[str] = Field(default_factory=list)
     domains: list[str] = Field(default_factory=list)
     date_published: date | None = None
@@ -98,7 +98,7 @@ class SearchResultItem(BaseModel):
     # Scientific context
     organisms: list[str] = Field(default_factory=list)
     domains: list[str] = Field(default_factory=list)
-    modeling_scales: list[str] = Field(default_factory=list)
+    model_scales: list[str] = Field(default_factory=list)
     date_published: date | None = None
     # Integrity
     digest_sha256: str = ""
