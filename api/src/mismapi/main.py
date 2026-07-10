@@ -1,5 +1,9 @@
-from collections.abc import AsyncIterator
+import asyncio
+import contextlib
+import logging
+from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
@@ -12,6 +16,30 @@ from mismapi.core.logging import configure_root_logger
 from mismapi.core.settings import Settings, get_settings
 from mismapi.core.uvicorn_access_log import install_uvicorn_access_formatter
 from mismapi.middleware.request_context import RequestContextMiddleware
+
+logger = logging.getLogger(__name__)
+
+_ANNOTATION_POLL_INTERVAL_SECONDS = 15
+
+
+async def _poll_loop(
+    name: str,
+    poll_fn: Callable[[], Coroutine[Any, Any, None]],
+    interval: float,
+) -> None:
+    """Generic poller: call poll_fn every interval seconds.
+
+    Exceptions are swallowed so one bad cycle never kills the loop.
+    Cancellation (on shutdown) propagates cleanly.
+    """
+    while True:
+        try:
+            await poll_fn()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("poll_loop_error name=%s", name)
+        await asyncio.sleep(interval)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -30,9 +58,46 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.container = container
         await container.prime()
 
+        async def _check_annotating_models() -> None:
+            """Log models currently in ANNOTATING state.
+
+            Status transitions are written by the execution-platform's own poller;
+            this task surfaces them in the gateway's pod logs so operators can
+            observe annotation progress without querying the DB directly.
+            """
+            from mism_registry.backends.postgres import PostgresRegistry
+
+            from mismapi.services.registry_service import RegistryService
+
+            with container.open_session() as session:
+                registry = PostgresRegistry(session)
+                service = RegistryService(registry, session)
+                annotating = service.list_annotating_models()
+                if annotating:
+                    logger.info(
+                        "annotation_poll active_count=%d ids=%s",
+                        len(annotating),
+                        [r.id for r in annotating],
+                    )
+
+        tasks: list[asyncio.Task[None]] = [
+            asyncio.create_task(
+                _poll_loop(
+                    "annotation_awareness",
+                    _check_annotating_models,
+                    _ANNOTATION_POLL_INTERVAL_SECONDS,
+                ),
+                name="annotation_awareness_poll",
+            )
+        ]
+
         try:
             yield
         finally:
+            for t in tasks:
+                t.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await t
             await container.aclose()
 
     resolved_settings = settings if settings is not None else get_settings()

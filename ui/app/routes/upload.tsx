@@ -47,6 +47,7 @@ type WorkflowStep =
   | 'registering'
   | 'importing'
   | 'annotating'
+  | 'monitoring'
   | 'complete'
   | 'error';
 
@@ -173,6 +174,16 @@ async function initiateAnnotation(
   if (!res.ok)
     throw new Error(await readApiErrorDetail(res, 'Annotation launch failed'));
   return res.json() as Promise<ExecuteRunApiResponse>;
+}
+
+async function fetchModelStatus(modelId: string): Promise<string | null> {
+  const res = await fetch(
+    `${apiOrigin()}/api/v1/models/${encodeURIComponent(modelId)}`,
+    { credentials: 'include' }
+  );
+  if (!res.ok) return null;
+  const data = (await res.json()) as { registration_status?: string };
+  return data.registration_status ?? null;
 }
 
 async function importFromGitHub(
@@ -307,14 +318,23 @@ const GITHUB_STEPS: StepDef[] = [
   { key: 'registering', label: 'Register model' },
   { key: 'importing', label: 'Download & extract repository' },
   { key: 'annotating', label: 'Initiate annotation run' },
+  { key: 'monitoring', label: 'Monitor annotation' },
 ];
 
 const STEP_ORDER: WorkflowStep[] = [
   'registering',
   'importing',
   'annotating',
+  'monitoring',
   'complete',
 ];
+
+const TERMINAL_STATUSES = new Set([
+  'pending_review',
+  'approved',
+  'annotation_failed',
+  'rejected',
+]);
 
 function stepChipColor(
   stepKey: WorkflowStep,
@@ -352,6 +372,7 @@ export default function TusTest() {
   const [importedBranch, setImportedBranch] = useState('');
   const [runId, setRunId] = useState('');
   const [importError, setImportError] = useState('');
+  const [annotationStatus, setAnnotationStatus] = useState('');
 
   useEffect(() => {
     const instance = createUppy(() => modelNameRef.current);
@@ -428,6 +449,32 @@ export default function TusTest() {
     };
   }, []);
 
+  useEffect(() => {
+    if (workflowStep !== 'monitoring' || !registeredModelId) return;
+
+    const intervalId = setInterval(() => {
+      void (async () => {
+        const status = await fetchModelStatus(registeredModelId);
+        if (!status) return;
+        setAnnotationStatus(status);
+        if (TERMINAL_STATUSES.has(status)) {
+          clearInterval(intervalId);
+          if (status === 'annotation_failed' || status === 'rejected') {
+            setFailedStep('monitoring');
+            setImportError(
+              `Annotation ended with status: ${status}. Check execution logs.`
+            );
+            setWorkflowStep('error');
+          } else {
+            setWorkflowStep('complete');
+          }
+        }
+      })();
+    }, 10_000);
+
+    return () => clearInterval(intervalId);
+  }, [workflowStep, registeredModelId]);
+
   async function handleGitHubImport() {
     const name = modelName.trim();
     const url = githubUrl.trim();
@@ -437,6 +484,7 @@ export default function TusTest() {
     setRunId('');
     setRegisteredModelId('');
     setImportedBranch('');
+    setAnnotationStatus('');
     setFailedStep('idle');
 
     // Track current step locally so the catch block can report it accurately,
@@ -462,7 +510,8 @@ export default function TusTest() {
       const run = await initiateAnnotation(model.id);
       setRunId(run.run_id);
 
-      setWorkflowStep('complete');
+      setAnnotationStatus('annotating');
+      setWorkflowStep('monitoring');
     } catch (error: unknown) {
       setFailedStep(activeStep);
       setImportError(error instanceof Error ? error.message : String(error));
@@ -474,7 +523,8 @@ export default function TusTest() {
   const isRunning =
     workflowStep === 'registering' ||
     workflowStep === 'importing' ||
-    workflowStep === 'annotating';
+    workflowStep === 'annotating' ||
+    workflowStep === 'monitoring';
 
   return (
     <main className="container mx-auto p-6 flex flex-col gap-6 max-w-4xl">
@@ -560,6 +610,8 @@ export default function TusTest() {
                     label = 'failed';
                   } else if (workflowStep === step.key) {
                     label = 'running…';
+                  } else if (workflowStep === 'error' && color === 'default') {
+                    label = 'skipped';
                   }
 
                   return (
@@ -582,13 +634,45 @@ export default function TusTest() {
             </Card>
           )}
 
+          {/* Monitoring notification */}
+          {workflowStep === 'monitoring' && (
+            <Card shadow="sm" className="border-primary-300 bg-primary-100">
+              <CardBody className="flex flex-col gap-1">
+                <span className="text-sm font-medium text-primary-900">
+                  Annotation running…
+                </span>
+                <span className="text-xs text-primary-800">
+                  Status:{' '}
+                  <code className="font-mono">
+                    {annotationStatus || 'annotating'}
+                  </code>
+                </span>
+                {registeredModelId && (
+                  <span className="text-xs text-primary-800">
+                    Model ID:{' '}
+                    <code className="font-mono">{registeredModelId}</code>
+                  </span>
+                )}
+                <span className="text-xs text-primary-700">
+                  Polling every 10 s — will update automatically.
+                </span>
+              </CardBody>
+            </Card>
+          )}
+
           {/* Success notification */}
           {workflowStep === 'complete' && (
             <Card shadow="sm" className="border-success-200 bg-success-50">
               <CardBody className="flex flex-col gap-1">
                 <span className="text-sm font-medium text-success-700">
-                  Annotation launched
+                  Annotation complete
                 </span>
+                {annotationStatus && (
+                  <span className="text-xs text-default-500">
+                    Status:{' '}
+                    <code className="font-mono">{annotationStatus}</code>
+                  </span>
+                )}
                 {registeredModelId && (
                   <span className="text-xs text-default-500">
                     Model ID:{' '}
