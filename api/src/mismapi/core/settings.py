@@ -87,6 +87,9 @@ class Settings(BaseSettings):
     annotation_job_memory: str = Field(default="4Gi", alias="ANNOTATION_JOB_MEMORY")
     annotation_job_prompt: str = Field(default="", alias="ANNOTATION_JOB_PROMPT")
 
+    annotation_openai_base_url: str = Field(default="", alias="ANNOTATION_OPENAI_BASE_URL")
+    annotation_model: str = Field(default="gpt-5.6-luna", alias="ANNOTATION_MODEL")
+
     # Authentication
     auth_mode: Literal["oidc"] = Field(default="oidc", alias="AUTH_MODE")
     disable_auth: bool = Field(default=False, alias="DISABLE_AUTH")
