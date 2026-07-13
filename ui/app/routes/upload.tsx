@@ -11,6 +11,7 @@ import Uppy, { type Body, type Meta, type UppyFile } from '@uppy/core';
 import Dashboard from '@uppy/react/dashboard';
 import Tus from '@uppy/tus';
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router';
 
 import type { components } from '~/api/generated/schema';
 import { browserApiBaseUrl, resolveTusdPlaceholderUrl } from '~/utils/env';
@@ -49,7 +50,8 @@ type WorkflowStep =
   | 'annotating'
   | 'monitoring'
   | 'complete'
-  | 'error';
+  | 'error'
+  | 'aborted';
 
 function apiOrigin(): string {
   return browserApiBaseUrl().replace(/\/+$/, '');
@@ -184,6 +186,39 @@ async function fetchModelStatus(modelId: string): Promise<string | null> {
   if (!res.ok) return null;
   const data = (await res.json()) as { registration_status?: string };
   return data.registration_status ?? null;
+}
+
+async function fetchAnnotationMetadata(
+  resourceId: string
+): Promise<string | null> {
+  const outputDir =
+    (import.meta.env.VITE_ANNOTATION_OUTPUT_DIR as string | undefined) ?? 'out';
+  const params = new URLSearchParams({ file: `${outputDir}/metadata.yaml` });
+  const res = await fetch(
+    `${apiOrigin()}/api/v1/resources/${encodeURIComponent(resourceId)}/download?${params.toString()}`,
+    { credentials: 'include' }
+  );
+  if (!res.ok) return null;
+  return res.text();
+}
+
+type ResourceFileItem = components['schemas']['ResourceFileItem'];
+
+async function fetchAnnotationOutputFiles(
+  resourceId: string
+): Promise<ResourceFileItem[] | null> {
+  const res = await fetch(
+    `${apiOrigin()}/api/v1/resources/${encodeURIComponent(resourceId)}/files`,
+    { credentials: 'include' }
+  );
+  if (!res.ok) return null;
+  const data =
+    (await res.json()) as components['schemas']['ResourceFilesResponse'];
+  const outputDir =
+    (import.meta.env.VITE_ANNOTATION_OUTPUT_DIR as string | undefined) ?? 'out';
+  return (data.files ?? []).filter(
+    (f) => !f.is_dir && f.path.startsWith(`${outputDir}/`)
+  );
 }
 
 async function importFromGitHub(
@@ -341,6 +376,11 @@ function stepChipColor(
   currentStep: WorkflowStep,
   failedStep: WorkflowStep
 ): 'default' | 'primary' | 'success' | 'danger' {
+  if (currentStep === 'aborted') {
+    const monitoringIdx = STEP_ORDER.indexOf('monitoring');
+    const stepIdx = STEP_ORDER.indexOf(stepKey);
+    return stepIdx < monitoringIdx ? 'success' : 'default';
+  }
   if (currentStep === 'error') {
     const failedIdx = STEP_ORDER.indexOf(failedStep);
     const stepIdx = STEP_ORDER.indexOf(stepKey);
@@ -356,6 +396,7 @@ function stepChipColor(
 }
 
 export default function TusTest() {
+  const navigate = useNavigate();
   const [modelName, setModelName] = useState('');
   const modelNameRef = useRef('');
   modelNameRef.current = modelName;
@@ -373,6 +414,11 @@ export default function TusTest() {
   const [runId, setRunId] = useState('');
   const [importError, setImportError] = useState('');
   const [annotationStatus, setAnnotationStatus] = useState('');
+  const [metadataYaml, setMetadataYaml] = useState<string | null>(null);
+  const [outputFiles, setOutputFiles] = useState<ResourceFileItem[] | null>(
+    null
+  );
+  const [showOutputFiles, setShowOutputFiles] = useState(false);
 
   useEffect(() => {
     const instance = createUppy(() => modelNameRef.current);
@@ -466,6 +512,12 @@ export default function TusTest() {
             );
             setWorkflowStep('error');
           } else {
+            const [yaml, files] = await Promise.all([
+              fetchAnnotationMetadata(registeredModelId),
+              fetchAnnotationOutputFiles(registeredModelId),
+            ]);
+            setMetadataYaml(yaml);
+            setOutputFiles(files);
             setWorkflowStep('complete');
           }
         }
@@ -474,6 +526,27 @@ export default function TusTest() {
 
     return () => clearInterval(intervalId);
   }, [workflowStep, registeredModelId]);
+
+  async function handleDebugJumpToComplete() {
+    const resourceId = import.meta.env
+      .VITE_DEBUG_ANNOTATION_RESOURCE_ID as string;
+    setImportError('');
+    setRunId('');
+    setImportedBranch('');
+    setAnnotationStatus('pending_review');
+    setMetadataYaml(null);
+    setOutputFiles(null);
+    setShowOutputFiles(false);
+    setFailedStep('idle');
+    setRegisteredModelId(resourceId);
+    setWorkflowStep('complete');
+    const [yaml, files] = await Promise.all([
+      fetchAnnotationMetadata(resourceId),
+      fetchAnnotationOutputFiles(resourceId),
+    ]);
+    setMetadataYaml(yaml);
+    setOutputFiles(files);
+  }
 
   async function handleGitHubImport() {
     const name = modelName.trim();
@@ -485,6 +558,9 @@ export default function TusTest() {
     setRegisteredModelId('');
     setImportedBranch('');
     setAnnotationStatus('');
+    setMetadataYaml(null);
+    setOutputFiles(null);
+    setShowOutputFiles(false);
     setFailedStep('idle');
 
     // Track current step locally so the catch block can report it accurately,
@@ -555,6 +631,29 @@ export default function TusTest() {
           Upload File
         </Button>
       </div>
+
+      {/* Debug banner — only rendered when VITE_DEBUG_ANNOTATION_RESOURCE_ID is set */}
+      {import.meta.env.VITE_DEBUG_ANNOTATION_RESOURCE_ID && (
+        <Card shadow="none" className="border border-warning-300 bg-warning-50">
+          <CardBody className="flex flex-row items-center justify-between gap-4 py-2">
+            <span className="text-xs text-warning-700">
+              Debug · resource{' '}
+              <code className="font-mono">
+                {import.meta.env.VITE_DEBUG_ANNOTATION_RESOURCE_ID}
+              </code>
+            </span>
+            <Button
+              size="sm"
+              color="warning"
+              variant="flat"
+              isDisabled={isRunning}
+              onPress={() => void handleDebugJumpToComplete()}
+            >
+              Jump to annotation complete
+            </Button>
+          </CardBody>
+        </Card>
+      )}
 
       {mode === 'github' ? (
         <>
@@ -634,6 +733,32 @@ export default function TusTest() {
             </Card>
           )}
 
+          {/* Aborted notice */}
+          {workflowStep === 'aborted' && (
+            <Card shadow="sm" className="border-warning-300 bg-warning-50">
+              <CardBody className="flex flex-col gap-1">
+                <span className="text-sm font-medium text-foreground">
+                  Monitoring aborted
+                </span>
+                <span className="text-xs text-foreground">
+                  Polling stopped. The annotation job may still be running in
+                  the background — check back later or start a new import.
+                </span>
+                <div className="mt-2">
+                  <Button
+                    size="sm"
+                    color="warning"
+                    variant="flat"
+                    className="text-foreground"
+                    onPress={() => navigate('/search')}
+                  >
+                    Return to the Search page
+                  </Button>
+                </div>
+              </CardBody>
+            </Card>
+          )}
+
           {/* Monitoring notification */}
           {workflowStep === 'monitoring' && (
             <Card shadow="sm" className="border-primary-300 bg-primary-100">
@@ -656,6 +781,15 @@ export default function TusTest() {
                 <span className="text-xs text-primary-700">
                   Polling every 10 s — will update automatically.
                 </span>
+                <Button
+                  size="sm"
+                  color="warning"
+                  variant="flat"
+                  className="mt-1 w-fit text-foreground"
+                  onPress={() => setWorkflowStep('aborted')}
+                >
+                  Abort
+                </Button>
               </CardBody>
             </Card>
           )}
@@ -664,31 +798,89 @@ export default function TusTest() {
           {workflowStep === 'complete' && (
             <Card shadow="sm" className="border-success-200 bg-success-50">
               <CardBody className="flex flex-col gap-1">
-                <span className="text-sm font-medium text-success-700">
+                <span className="text-sm font-medium text-foreground">
                   Annotation complete
                 </span>
                 {annotationStatus && (
-                  <span className="text-xs text-default-500">
+                  <span className="text-xs text-default-800">
                     Status:{' '}
                     <code className="font-mono">{annotationStatus}</code>
                   </span>
                 )}
                 {registeredModelId && (
-                  <span className="text-xs text-default-500">
+                  <span className="text-xs text-default-800">
                     Model ID:{' '}
                     <code className="font-mono">{registeredModelId}</code>
                   </span>
                 )}
                 {importedBranch && (
-                  <span className="text-xs text-default-500">
+                  <span className="text-xs text-default-800">
                     Branch: <code className="font-mono">{importedBranch}</code>
                   </span>
                 )}
                 {runId && (
-                  <span className="text-xs text-default-500">
+                  <span className="text-xs text-default-800">
                     Run ID: <code className="font-mono">{runId}</code>
                   </span>
                 )}
+                {metadataYaml && (
+                  <div className="mt-2 flex flex-col gap-1">
+                    <span className="text-xs font-medium text-default-800">
+                      metadata.yaml
+                    </span>
+                    <pre className="text-xs bg-default-100 rounded p-3 overflow-auto max-h-64 font-mono whitespace-pre border border-default-200">
+                      {metadataYaml}
+                    </pre>
+                  </div>
+                )}
+                {outputFiles && outputFiles.length > 0 && (
+                  <div className="mt-2 flex flex-col gap-1">
+                    <Button
+                      size="sm"
+                      variant="light"
+                      className="w-fit px-0 text-xs font-medium text-foreground gap-1"
+                      onPress={() => setShowOutputFiles((v) => !v)}
+                    >
+                      {showOutputFiles ? '▾' : '▸'} Annotation outputs (
+                      {outputFiles.length})
+                    </Button>
+                    {showOutputFiles && (
+                      <ul className="flex flex-col gap-1 mt-1">
+                        {outputFiles.map((file) => (
+                          <li
+                            key={file.path}
+                            className="flex items-center justify-between gap-4"
+                          >
+                            <span className="text-xs font-mono text-default-800 truncate">
+                              {file.path}
+                            </span>
+                            <Button
+                              as="a"
+                              size="sm"
+                              variant="flat"
+                              className="text-foreground"
+                              href={`${apiOrigin()}/api/v1/resources/${encodeURIComponent(registeredModelId)}/download?${new URLSearchParams({ file: file.path }).toString()}`}
+                              download={file.name}
+                            >
+                              Download
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+                <div className="mt-3">
+                  <Button
+                    size="sm"
+                    color="success"
+                    variant="flat"
+                    className="text-foreground"
+                    onPress={() => navigate('/search')}
+                  >
+                    Return to the Search page
+                  </Button>
+                </div>
               </CardBody>
             </Card>
           )}
