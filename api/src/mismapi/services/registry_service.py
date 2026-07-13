@@ -111,7 +111,7 @@ class RegistryService:
                 model_scales=model_scales or [],
                 organisms=organisms or [],
                 domains=domains or [],
-                date_published=date_published,
+                date_published=date_published
             )
             # FUTURE: fga.write_tuple(user=principal.subject,
             #   relation="owner", object=f"model:{resource.id}")
