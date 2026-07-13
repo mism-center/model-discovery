@@ -84,8 +84,8 @@ async def post_run(
         prompt=settings.annotation_job_prompt,
         cpus=settings.annotation_job_cpus,
         memory=settings.annotation_job_memory,
-        openai_base_url=settings.,
-        model=settings.,
+        openai_base_url=settings.annotation_openai_base_url,
+        model=settings.annotation_model,
     )
     return AnnotateRunResponse(run_id=run_id, execution_status=execution_status)
 

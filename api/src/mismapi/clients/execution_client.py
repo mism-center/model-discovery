@@ -59,8 +59,8 @@ class ExecutionClient:
         prompt: str,
         cpus: str = "1",
         memory: str = "4Gi",
-        model: str="gpt-5.6-luna",
-        openai_base_url: str=""
+        model: str = "gpt-5.6-luna",
+        openai_base_url: str = "",
     ) -> dict[str, Any]:
         """POST /api/v1/annotations  →  kick off an annotation job.
 
@@ -88,10 +88,7 @@ class ExecutionClient:
                 "prompt": prompt,
                 "cpus": cpus,
                 "memory": memory,
-                "extra_env": {
-                    "AI_MODEL": model,
-                    "AZURE_OPENAI_BASE_URL": openai_base_url
-                },
+                "extra_env": {"AI_MODEL": model, "AZURE_OPENAI_BASE_URL": openai_base_url},
             },
             expected=200,
         )
