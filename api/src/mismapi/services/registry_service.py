@@ -707,7 +707,7 @@ class RegistryService:
         except ResourceNotFoundError:
             raise self._not_authorized_error() from None
 
-        if resource.owner != principal.subject:
+        if principal.issuer != "local" and resource.owner != principal.subject:
             raise self._not_authorized_error()
         return resource
 

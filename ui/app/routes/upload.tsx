@@ -189,17 +189,19 @@ async function fetchModelStatus(modelId: string): Promise<string | null> {
 }
 
 async function fetchAnnotationMetadata(
-  resourceId: string
-): Promise<string | null> {
-  const outputDir =
-    (import.meta.env.VITE_ANNOTATION_OUTPUT_DIR as string | undefined) ?? 'out';
-  const params = new URLSearchParams({ file: `${outputDir}/metadata.yaml` });
+  modelId: string
+): Promise<{ content: string; registryId: string } | null> {
   const res = await fetch(
-    `${apiOrigin()}/api/v1/resources/${encodeURIComponent(resourceId)}/download?${params.toString()}`,
+    `${apiOrigin()}/api/v1/models/${encodeURIComponent(modelId)}/metadata-package/raw`,
     { credentials: 'include' }
   );
   if (!res.ok) return null;
-  return res.text();
+  const data = (await res.json()) as {
+    files?: { filename: string; content: string }[];
+  };
+  const content =
+    data.files?.find((f) => f.filename === 'metadata.yaml')?.content ?? '';
+  return { content, registryId: modelId };
 }
 
 type ResourceFileItem = components['schemas']['ResourceFileItem'];
@@ -415,6 +417,11 @@ export default function TusTest() {
   const [importError, setImportError] = useState('');
   const [annotationStatus, setAnnotationStatus] = useState('');
   const [metadataYaml, setMetadataYaml] = useState<string | null>(null);
+  const [metadataRegistryId, setMetadataRegistryId] = useState('');
+  const [metadataSaveState, setMetadataSaveState] = useState<
+    'idle' | 'saving' | 'saved' | 'error'
+  >('idle');
+  const [metadataSaveError, setMetadataSaveError] = useState('');
   const [outputFiles, setOutputFiles] = useState<ResourceFileItem[] | null>(
     null
   );
@@ -512,11 +519,13 @@ export default function TusTest() {
             );
             setWorkflowStep('error');
           } else {
-            const [yaml, files] = await Promise.all([
+            const [metaResult, files] = await Promise.all([
               fetchAnnotationMetadata(registeredModelId),
               fetchAnnotationOutputFiles(registeredModelId),
             ]);
-            setMetadataYaml(yaml);
+            setMetadataYaml(metaResult?.content ?? null);
+            setMetadataRegistryId(metaResult?.registryId ?? '');
+            setMetadataSaveState('idle');
             setOutputFiles(files);
             setWorkflowStep('complete');
           }
@@ -535,17 +544,45 @@ export default function TusTest() {
     setImportedBranch('');
     setAnnotationStatus('pending_review');
     setMetadataYaml(null);
+    setMetadataRegistryId('');
+    setMetadataSaveState('idle');
+    setMetadataSaveError('');
     setOutputFiles(null);
     setShowOutputFiles(false);
     setFailedStep('idle');
     setRegisteredModelId(resourceId);
     setWorkflowStep('complete');
-    const [yaml, files] = await Promise.all([
+    const [metaResult, files] = await Promise.all([
       fetchAnnotationMetadata(resourceId),
       fetchAnnotationOutputFiles(resourceId),
     ]);
-    setMetadataYaml(yaml);
+    setMetadataYaml(metaResult?.content ?? null);
+    setMetadataRegistryId(metaResult?.registryId ?? '');
     setOutputFiles(files);
+  }
+
+  async function uploadAnnotationMetadata() {
+    if (!metadataYaml || !metadataRegistryId) return;
+    setMetadataSaveState('saving');
+    setMetadataSaveError('');
+    const res = await fetch(
+      `${apiOrigin()}/api/v1/models/${encodeURIComponent(metadataRegistryId)}/metadata-package/raw`,
+      {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          files: [{ filename: 'metadata.yaml', content: metadataYaml }],
+        }),
+      }
+    );
+    if (!res.ok) {
+      const detail = await readApiErrorDetail(res, 'Save failed');
+      setMetadataSaveState('error');
+      setMetadataSaveError(detail);
+      return;
+    }
+    setMetadataSaveState('saved');
   }
 
   async function handleGitHubImport() {
@@ -823,14 +860,42 @@ export default function TusTest() {
                     Run ID: <code className="font-mono">{runId}</code>
                   </span>
                 )}
-                {metadataYaml && (
+                {metadataYaml !== null && (
                   <div className="mt-2 flex flex-col gap-1">
                     <span className="text-xs font-medium text-default-800">
                       metadata.yaml
                     </span>
-                    <pre className="text-xs bg-default-100 rounded p-3 overflow-auto max-h-64 font-mono whitespace-pre border border-default-200">
-                      {metadataYaml}
-                    </pre>
+                    <textarea
+                      className="text-xs bg-default-100 rounded p-3 overflow-auto max-h-64 font-mono border border-default-200 resize-y w-full"
+                      rows={12}
+                      value={metadataYaml}
+                      onChange={(e) => {
+                        setMetadataYaml(e.target.value);
+                        setMetadataSaveState('idle');
+                        setMetadataSaveError('');
+                      }}
+                    />
+                    <div className="flex items-center gap-2 mt-1">
+                      <Button
+                        size="sm"
+                        color="success"
+                        variant="flat"
+                        className="text-foreground"
+                        isLoading={metadataSaveState === 'saving'}
+                        isDisabled={metadataSaveState === 'saving'}
+                        onPress={() => void uploadAnnotationMetadata()}
+                      >
+                        Save metadata
+                      </Button>
+                      {metadataSaveState === 'saved' && (
+                        <span className="text-xs text-success-700">Saved</span>
+                      )}
+                      {metadataSaveState === 'error' && (
+                        <span className="text-xs text-danger-600">
+                          {metadataSaveError}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )}
                 {outputFiles && outputFiles.length > 0 && (
