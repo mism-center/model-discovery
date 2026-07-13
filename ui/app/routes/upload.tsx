@@ -885,7 +885,7 @@ export default function TusTest() {
                         isDisabled={metadataSaveState === 'saving'}
                         onPress={() => void uploadAnnotationMetadata()}
                       >
-                        Save metadata
+                        Approve
                       </Button>
                       {metadataSaveState === 'saved' && (
                         <span className="text-xs text-success-700">Saved</span>
