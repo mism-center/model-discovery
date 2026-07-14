@@ -219,7 +219,8 @@ async function fetchAnnotationOutputFiles(
   const outputDir =
     (import.meta.env.VITE_ANNOTATION_OUTPUT_DIR as string | undefined) ?? 'out';
   return (data.files ?? []).filter(
-    (f) => !f.is_dir && f.path.startsWith(`${outputDir}/`)
+    (f) =>
+      !f.is_dir && f.path.startsWith(`${outputDir}/`) && !f.name.startsWith('.')
   );
 }
 
