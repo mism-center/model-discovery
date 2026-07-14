@@ -22,8 +22,9 @@ from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.core.errors import APIError
 from mismapi.services.registry_service import RegistryService
 
-_META = "model:\n  name: old\n"
-_EXEC = "execution:\n  status: ok\n"
+_META = "model:\n  name:\n    value: Old Model\n"
+_META_NEW = "model:\n  name:\n    value: New Model\n"
+_EXEC = "execution:\n  environment_kind: python\n"
 
 
 def _principal(subject: str = "user-1") -> AuthenticatedPrincipal:
@@ -75,13 +76,15 @@ def test_write_roundtrips_and_persists(tmp_path: Path, monkeypatch: pytest.Monke
     service = _make_service(tmp_path, monkeypatch)
 
     out = service.write_metadata_package_raw(
-        _principal(), model_id="m-1", files=[("metadata.yaml", "model:\n  name: new\n")]
+        _principal(), model_id="m-1", files=[("metadata.yaml", _META_NEW)]
     )
 
-    assert (pkg / "metadata.yaml").read_text(encoding="utf-8") == "model:\n  name: new\n"
-    assert dict(out)["metadata.yaml"] == "model:\n  name: new\n"
+    assert (pkg / "metadata.yaml").read_text(encoding="utf-8") == _META_NEW
+    assert dict(out)["metadata.yaml"] == _META_NEW
     # untouched file preserved
     assert dict(out)["execution.yaml"] == _EXEC
+    # DB was synced with the parsed name
+    assert service._registry.get_resource("m-1").name == "New Model"
 
 
 def test_write_rejects_unknown_filename_without_writing(
@@ -130,3 +133,25 @@ def test_write_rejects_other_owners(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         )
 
     assert exc.value.status_code == 403
+
+
+def test_write_invalid_structure_raises_400_after_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Valid YAML syntax but missing required 'model.name.value' structure → 400.
+
+    The file IS written (syntax is valid) but the DB sync fails because
+    build_resource_from_package cannot extract the required fields.
+    """
+    pkg = _make_package(tmp_path)
+    service = _make_service(tmp_path, monkeypatch)
+    bad_meta = "model:\n  name: not-a-dict\n"
+
+    with pytest.raises(APIError) as exc:
+        service.write_metadata_package_raw(
+            _principal(), model_id="m-1", files=[("metadata.yaml", bad_meta)]
+        )
+
+    assert exc.value.status_code == 400
+    # File was written (YAML syntax was valid)
+    assert (pkg / "metadata.yaml").read_text(encoding="utf-8") == bad_meta

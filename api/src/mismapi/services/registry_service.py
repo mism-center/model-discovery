@@ -423,6 +423,71 @@ class RegistryService:
             (pkg_dir / name).write_text(content, encoding="utf-8")
         logger.info("Updated metadata-package for model %s by %s", model_id, principal.subject)
 
+        # Parse the updated package and sync every YAML-derived field into the DB.
+        try:
+            parsed = build_resource_from_package(pkg_dir)
+        except (KeyError, TypeError, ValueError, FileNotFoundError, yaml.YAMLError) as exc:
+            raise APIError(
+                status_code=400,
+                code="invalid_metadata_package",
+                detail=f"Metadata-package saved but could not be parsed for model {model_id}: {exc}",  # noqa: E501
+            ) from exc
+
+        try:
+            resource = self._registry.get_resource(model_id)
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+        # Apply YAML-derived fields. Preserve system-managed fields:
+        # id, owner, registration_status, metadata dict, location_uri (iRODS path),
+        # execution_ref, format_tags, digest_sha256, size_bytes, io_spec, version_status,
+        # new_version_of, superseded_by, organization, contact_email, date_published.
+        resource.name = parsed.name
+        resource.short_description = parsed.short_description
+        resource.description = parsed.description
+        resource.version = parsed.version
+        resource.external_ids = parsed.external_ids
+        resource.license = parsed.license
+        resource.authors = parsed.authors
+        resource.contacts = parsed.contacts
+        resource.publications = parsed.publications
+        resource.related_resources = parsed.related_resources
+        resource.funding = parsed.funding
+        resource.model_scales = parsed.model_scales
+        resource.organisms = parsed.organisms
+        resource.domains = parsed.domains
+        resource.infectious_agents = parsed.infectious_agents
+        resource.health_conditions = parsed.health_conditions
+        resource.biological_processes = parsed.biological_processes
+        resource.molecular_entities = parsed.molecular_entities
+        resource.proteins_genes = parsed.proteins_genes
+        resource.model_class = parsed.model_class
+        resource.formalism = parsed.formalism
+        resource.determinism = parsed.determinism
+        resource.time_dynamics = parsed.time_dynamics
+        resource.spatial = parsed.spatial
+        resource.multiscale = parsed.multiscale
+        resource.execution_type = parsed.execution_type
+        resource.execution_status = parsed.execution_status
+        resource.language_name = parsed.language_name
+        resource.language_version = parsed.language_version
+        resource.execution_notes = parsed.execution_notes
+        resource.dependencies = parsed.dependencies
+        resource.containers = parsed.containers
+        resource.compute = parsed.compute
+        resource.entry_points = parsed.entry_points
+        resource.tests = parsed.tests
+        resource.io = parsed.io
+
+        try:
+            self._registry.update_resource(resource)
+            self._session.commit()
+        except RegistryValidationError as exc:
+            self._session.rollback()
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+
+        logger.info("Synced metadata-package to database for model %s", model_id)
+
         return [(name, (pkg_dir / name).read_text(encoding="utf-8")) for name in _PACKAGE_FILES]
 
     def resolve_resource_file(self, resource_id: str, rel_path: str) -> tuple[Resource, Path]:
