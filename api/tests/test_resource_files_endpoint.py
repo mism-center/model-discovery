@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
-from mism_registry.enums import ResourceStatus, ResourceType
+from mism_registry.enums import ResourceType, ResourceVersionStatus
 from mism_registry.resource import Resource
 
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
@@ -40,7 +40,7 @@ def _make_resource(
         location_uri=location_uri,
         description="Test dataset",
         version="1.0",
-        status=ResourceStatus.ACTIVE,
+        version_status=ResourceVersionStatus.ACTIVE,
         owner="user-1",
         format_tags=["json"],
         created_at=datetime(2025, 1, 1, tzinfo=UTC),

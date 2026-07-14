@@ -16,7 +16,7 @@ gateway:
   image:
     repository: mismplatform/model-discovery
     tag: "1.0.0"
-    pullPolicy: IfNotPresent
+    pullPolicy: "Always"
   service:
     type: ClusterIP
     port: 8000
@@ -63,6 +63,14 @@ gateway:
     # Execution API
     EXECUTION_API_URL: ""
     EXECUTION_TIMEOUT_SECONDS: "120"
+    # Annotation job configuration — forwarded to POST /api/v1/annotations on the execution-platform.
+    # The LLM API key is NOT set here; it is injected server-side by the execution-platform.
+    ANNOTATION_JOB_IMAGE: "helxplatform/bio-pi-agent-runner:latest"
+    ANNOTATION_JOB_CPUS: "1"
+    ANNOTATION_JOB_MEMORY: "4Gi"
+    ANNOTATION_JOB_PROMPT: ""
+    ANNOTATION_OPENAI_BASE_URL: ""
+    ANNOTATION_MODEL: "gpt-5.6-luna"
     # Note: DATABASE_URL and REDIS_URL are built in deployment templates and do not need to be set here
 
 storage:
@@ -195,7 +203,7 @@ ui:
   image:
     repository: mismplatform/ui
     tag: "1.0.0"
-    pullPolicy: IfNotPresent
+    pullPolicy: "Always"
   service:
     type: ClusterIP
     port: 3000

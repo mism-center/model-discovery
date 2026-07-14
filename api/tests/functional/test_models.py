@@ -34,7 +34,8 @@ def test_create_and_list_model(api: httpx.Client) -> None:
     assert model["id"] in ids
 
 
-def test_create_model_and_run(api: httpx.Client) -> None:
+def test_run_rejected_for_unapproved_model(api: httpx.Client) -> None:
+    # Models are created as DRAFT and must be approved before they can run.
     name = unique_name("int-model-run")
     r = api.post(
         "/api/v1/models",
@@ -48,10 +49,7 @@ def test_create_model_and_run(api: httpx.Client) -> None:
     model_id = r.json()["id"]
 
     r = api.post(f"/api/v1/models/{model_id}/runs", json={})
-    assert r.status_code == 201
-    run = r.json()
-    assert run["model_id"] == model_id
-    assert run["status"]
+    assert r.status_code == 400
 
 
 def test_initiate_model_upload(api: httpx.Client) -> None:

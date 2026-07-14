@@ -50,6 +50,49 @@ class ExecutionClient:
 
         return await self._post(f"/api/v1/runs/{run_id}/interactive", expected=201)
 
+    # ── Annotation ──────────────────────────────────────────────────
+
+    async def annotate(
+        self,
+        resource_id: str,
+        image: str,
+        prompt: str,
+        cpus: str = "1",
+        memory: str = "4Gi",
+        model: str = "gpt-5.6-luna",
+        openai_base_url: str = "",
+    ) -> dict[str, Any]:
+        """POST /api/v1/annotations  →  kick off an annotation job.
+
+        The LLM API key and base URL are injected server-side by the
+        execution-platform from its own environment — never forwarded here.
+        """
+        if self._stub_upstream:
+            logger.info(
+                "Execution service (stub) annotate resource_id=%s image=%s",
+                resource_id,
+                image,
+            )
+            return {
+                "resource_id": resource_id,
+                "sid": f"stub-sid-{resource_id[:8]}",
+                "registration_status": "annotating",
+                "stub": True,
+            }
+
+        return await self._post(
+            "/api/v1/annotations",
+            json={
+                "resource_id": resource_id,
+                "image": image,
+                "prompt": prompt,
+                "cpus": cpus,
+                "memory": memory,
+                "extra_env": {"AI_MODEL": model, "AZURE_OPENAI_BASE_URL": openai_base_url},
+            },
+            expected=200,
+        )
+
     # ── Status polling ──────────────────────────────────────────────
 
     async def get_status(self, run_id: str) -> dict[str, Any]:

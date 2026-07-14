@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 import pytest
-from mism_registry.enums import ExecutionType, ResourceStatus, ResourceType
+from mism_registry.enums import ExecutionType, ResourceType, ResourceVersionStatus
 from mism_registry.in_memory import InMemoryRegistry
 from mism_registry.resource import Resource
 
@@ -54,7 +54,7 @@ def _make_model(
         execution_ref="",
         description="",
         version="0.1.0",
-        status=ResourceStatus.ACTIVE,
+        version_status=ResourceVersionStatus.ACTIVE,
         owner=owner,
         created_at=datetime(2025, 1, 1, tzinfo=UTC),
     )

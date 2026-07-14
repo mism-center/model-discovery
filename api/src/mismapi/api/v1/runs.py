@@ -9,11 +9,18 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 from mism_registry import RunStatus
+from pydantic import BaseModel
 
 from mismapi.api.v1._run_helpers import resource_summary, run_detail
 from mismapi.auth.base import AuthenticatedPrincipalDep
-from mismapi.core.deps import ExecutionClientDep, RegistryServiceDep
+from mismapi.core.deps import ExecutionClientDep, RegistryServiceDep, SettingsDep
 from mismapi.schemas.registry import RunDetailResponse, UserRunItem, UserRunsResponse
+
+
+class AnnotateRunResponse(BaseModel):
+    run_id: str
+    execution_status: dict[str, Any] = {}
+
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +99,30 @@ async def get_run(
         output_resources=[resource_summary(r) for r in output_resources],
         execution_status=execution_status,
     )
+
+
+@router.post("/runs/{run_id}", response_model=AnnotateRunResponse, status_code=200)
+async def post_run(
+    run_id: str,
+    execution_client: ExecutionClientDep,
+    settings: SettingsDep,
+) -> AnnotateRunResponse:
+    """Submit an annotation job to the Execution service for the given resource.
+
+    All job configuration (image, resources, prompt) comes from server-side
+    settings. The LLM API key is injected by the execution-platform from its
+    own environment — it is never passed through this request.
+    """
+    execution_status = await execution_client.annotate(
+        resource_id=run_id,
+        image=settings.annotation_job_image,
+        prompt=settings.annotation_job_prompt,
+        cpus=settings.annotation_job_cpus,
+        memory=settings.annotation_job_memory,
+        openai_base_url=settings.annotation_openai_base_url,
+        model=settings.annotation_model,
+    )
+    return AnnotateRunResponse(run_id=run_id, execution_status=execution_status)
 
 
 @router.delete("/runs/{run_id}", response_model=RunDetailResponse)

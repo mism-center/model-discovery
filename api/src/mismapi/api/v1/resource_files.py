@@ -32,16 +32,24 @@ router = APIRouter()
 # ── Helpers ─────────────────────────────────────────────────────
 
 
+_PLACEHOLDER_NAMES: frozenset[str] = frozenset({".gitignore", ".gitkeep", ".keep"})
+
+
 def _walk_files(root: Path) -> list[ResourceFileItem]:
     """Recursively list every regular file under ``root``.
 
     Directories themselves are skipped — listings are file-centric. Symlinks
     are followed only if they point inside the root (the underlying iRODS
     mount uses POSIX semantics, so this is fine).
+
+    Git/filesystem placeholder files (``.gitignore``, ``.gitkeep``, ``.keep``)
+    are excluded so they never surface in resource or annotation output listings.
     """
     items: list[ResourceFileItem] = []
     for entry in sorted(root.rglob("*")):
         if not entry.is_file():
+            continue
+        if entry.name in _PLACEHOLDER_NAMES:
             continue
         try:
             rel = entry.relative_to(root)

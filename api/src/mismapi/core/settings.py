@@ -78,6 +78,18 @@ class Settings(BaseSettings):
     )
     execution_timeout_seconds: float = Field(default=120.0, alias="EXECUTION_TIMEOUT_SECONDS")
 
+    # Annotation job defaults — used to build the execution payload for batch runs.
+    annotation_job_image: str = Field(
+        default="helxplatform/bio-pi-agent-runner:latest",
+        alias="ANNOTATION_JOB_IMAGE",
+    )
+    annotation_job_cpus: str = Field(default="1", alias="ANNOTATION_JOB_CPUS")
+    annotation_job_memory: str = Field(default="4Gi", alias="ANNOTATION_JOB_MEMORY")
+    annotation_job_prompt: str = Field(default="", alias="ANNOTATION_JOB_PROMPT")
+
+    annotation_openai_base_url: str = Field(default="", alias="ANNOTATION_OPENAI_BASE_URL")
+    annotation_model: str = Field(default="gpt-5.6-luna", alias="ANNOTATION_MODEL")
+
     # Authentication
     auth_mode: Literal["oidc"] = Field(default="oidc", alias="AUTH_MODE")
     disable_auth: bool = Field(default=False, alias="DISABLE_AUTH")

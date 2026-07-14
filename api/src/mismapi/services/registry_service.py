@@ -1,8 +1,10 @@
+import dataclasses
 import logging
 from datetime import date
 from pathlib import Path
 from typing import Any
 
+import yaml
 from mism_registry import (
     ResourceNotFoundError,
     ResourceType,
@@ -17,7 +19,7 @@ from mism_registry import (
     ValidationError as RegistryValidationError,
 )
 from mism_registry.backends.postgres import PostgresRegistry
-from mism_registry.enums import ExecutionType
+from mism_registry.enums import ExecutionType, ResourceRegistrationStatus
 from mism_registry.protocol import Registry
 from mism_registry.resource import Resource
 from mism_registry.run import Run
@@ -25,6 +27,7 @@ from mism_registry.run_detail import ModelRunSummary
 from mism_registry.search import (
     AGGREGATABLE_FIELDS,
     FILTERABLE_FIELDS,
+    FieldFilter,
     SearchQuery,
     SearchResult,
 )
@@ -35,9 +38,17 @@ from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.core.errors import APIError
 from mismapi.core.file_storage import resolve_location_uri, safe_join
 from mismapi.core.settings import get_settings
+from mismapi.services.metadata_package import (
+    EXECUTION_FILE,
+    METADATA_FILE,
+    build_resource_from_package,
+)
 from mismapi.utils import upload_dir
 
 logger = logging.getLogger(__name__)
+
+# The metadata-package YAML files, in review/display order.
+_PACKAGE_FILES = (METADATA_FILE, EXECUTION_FILE)
 
 
 class RegistryService:
@@ -72,7 +83,7 @@ class RegistryService:
         contact_email: str = "",
         publications: list[Publication] | None = None,
         funding: list[str] | None = None,
-        modeling_scales: list[str] | None = None,
+        model_scales: list[str] | None = None,
         organisms: list[str] | None = None,
         domains: list[str] | None = None,
         date_published: date | None = None,
@@ -99,7 +110,7 @@ class RegistryService:
                 contact_email=contact_email,
                 publications=publications or [],
                 funding=funding or [],
-                modeling_scales=modeling_scales or [],
+                model_scales=model_scales or [],
                 organisms=organisms or [],
                 domains=domains or [],
                 date_published=date_published,
@@ -113,6 +124,26 @@ class RegistryService:
 
         logger.info("Registered model %s (%s) by %s", resource.id, resource.name, principal.subject)
         return resource
+
+    def get_model(self, model_id: str) -> Resource:
+        """Fetch a single model resource by ID, including registration_status."""
+        try:
+            return self._registry.get_resource(model_id)
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+    def list_annotating_models(self) -> list[Resource]:
+        """Return all MODEL resources currently in ANNOTATING state.
+
+        Used by the background poller to log status transitions.
+        The postgres backend has no registration_status filter on find_resources,
+        so we fetch all models and filter in-memory — safe because the
+        ANNOTATING set is always small (O(1-10) in practice).
+        """
+        resources = find_resources(self._registry, resource_type=ResourceType.MODEL)
+        return [
+            r for r in resources if r.registration_status == ResourceRegistrationStatus.ANNOTATING
+        ]
 
     def update_model(
         self,
@@ -138,7 +169,7 @@ class RegistryService:
         contact_email: str | None = None,
         publications: list[Publication] | None = None,
         funding: list[str] | None = None,
-        modeling_scales: list[str] | None = None,
+        model_scales: list[str] | None = None,
         organisms: list[str] | None = None,
         domains: list[str] | None = None,
         date_published: date | None = None,
@@ -189,8 +220,8 @@ class RegistryService:
             resource.publications = publications
         if funding is not None:
             resource.funding = funding
-        if modeling_scales is not None:
-            resource.modeling_scales = modeling_scales
+        if model_scales is not None:
+            resource.model_scales = model_scales
         if organisms is not None:
             resource.organisms = organisms
         if domains is not None:
@@ -299,6 +330,178 @@ class RegistryService:
                 ),
             )
         return resource, directory
+
+    def _metadata_package_dir(self, model_id: str) -> Path:
+        """Resolve ``<location_uri>/metadata-package/`` on the mount.
+
+        Derives the path from ``model.location_uri`` (the authoritative on-disk
+        path), not from ``upload_dir(model_id, model.version)``.
+        ``write_metadata_package_raw`` syncs ``model.version`` from the annotation
+        YAML, so the version field can diverge from the version segment embedded
+        in ``location_uri`` after the first save — causing ``upload_dir``-based
+        lookups to 404 while the download endpoint (which uses ``location_uri``
+        directly) continues to work.
+        Raises 404 if the model, the package dir, or either required YAML file
+        is missing; 400 for unsupported schemes / path traversal.
+        """
+        try:
+            model = self._registry.get_resource(model_id)
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+        mount = get_settings().irods_mount_path
+        # resolve_location_uri enforces the traversal check and that the dir exists.
+        model_dir = resolve_location_uri(model.location_uri, mount)
+        pkg_dir = model_dir / "metadata-package"
+        if not pkg_dir.is_dir():
+            raise APIError(
+                status_code=404,
+                code="metadata_package_not_found",
+                detail=f"No metadata-package directory found for model {model_id}.",
+            )
+        missing = [f for f in (METADATA_FILE, EXECUTION_FILE) if not (pkg_dir / f).is_file()]
+        if missing:
+            raise APIError(
+                status_code=404,
+                code="metadata_package_not_found",
+                detail=f"metadata-package for model {model_id} is missing {', '.join(missing)}.",
+            )
+        return pkg_dir
+
+    def parse_metadata_package(self, model_id: str) -> Resource:
+        """Parse the metadata-package for a model into a (transient) Resource.
+
+        Reads ``metadata.yaml`` + ``execution.yaml`` and maps them onto a
+        Resource. The result is *not* persisted — it's a preview of what the
+        annotation package contains.
+
+        Raises 404 (model / package / file missing) and 400 (malformed YAML).
+        """
+        pkg_dir = self._metadata_package_dir(model_id)
+        try:
+            return build_resource_from_package(pkg_dir)
+        except (KeyError, ValueError, FileNotFoundError, yaml.YAMLError) as exc:
+            raise APIError(
+                status_code=400,
+                code="invalid_metadata_package",
+                detail=f"Could not parse metadata-package for model {model_id}: {exc}",
+            ) from exc
+
+    def read_metadata_package_raw(self, model_id: str) -> list[tuple[str, str]]:
+        """Return the raw text of each metadata-package YAML file, in order.
+
+        ``[(metadata.yaml, text), (execution.yaml, text)]`` — for the review view.
+        Raises 404 if the model / package / files are missing.
+        """
+        pkg_dir = self._metadata_package_dir(model_id)
+        return [(name, (pkg_dir / name).read_text(encoding="utf-8")) for name in _PACKAGE_FILES]
+
+    def write_metadata_package_raw(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        model_id: str,
+        files: list[tuple[str, str]],
+    ) -> list[tuple[str, str]]:
+        """Write edited raw YAML back to the metadata-package, then re-read it.
+
+        Only the two known filenames are accepted (blocks path traversal), and
+        each file must parse as YAML before anything is written (all-or-nothing).
+        Returns the re-read raw files. Raises 403 (not owner), 404 (missing),
+        400 (unknown filename or malformed YAML).
+        """
+        self.get_resource_and_assert_ownership(principal, resource_id=model_id)
+        pkg_dir = self._metadata_package_dir(model_id)
+
+        # Validate everything up front so a bad file never partially overwrites.
+        for name, content in files:
+            if name not in _PACKAGE_FILES:
+                raise APIError(
+                    status_code=400,
+                    code="invalid_metadata_package",
+                    detail=f"Unknown metadata-package file '{name}'. "
+                    f"Allowed: {', '.join(_PACKAGE_FILES)}.",
+                )
+            try:
+                yaml.safe_load(content)
+            except yaml.YAMLError as exc:
+                raise APIError(
+                    status_code=400,
+                    code="invalid_metadata_package",
+                    detail=f"'{name}' is not valid YAML: {exc}",
+                ) from exc
+
+        for name, content in files:
+            (pkg_dir / name).write_text(content, encoding="utf-8")
+        logger.info("Updated metadata-package for model %s by %s", model_id, principal.subject)
+
+        # Parse the updated package and sync every YAML-derived field into the DB.
+        try:
+            parsed = build_resource_from_package(pkg_dir)
+        except (KeyError, TypeError, ValueError, FileNotFoundError, yaml.YAMLError) as exc:
+            raise APIError(
+                status_code=400,
+                code="invalid_metadata_package",
+                detail=f"Metadata-package saved but could not be parsed for model {model_id}: {exc}",  # noqa: E501
+            ) from exc
+
+        try:
+            resource = self._registry.get_resource(model_id)
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+        # Apply YAML-derived fields. Preserve system-managed fields:
+        # id, owner, registration_status, metadata dict, location_uri (iRODS path),
+        # execution_ref, format_tags, digest_sha256, size_bytes, io_spec, version_status,
+        # new_version_of, superseded_by, organization, contact_email, date_published.
+        resource.name = parsed.name
+        resource.short_description = parsed.short_description
+        resource.description = parsed.description
+        # resource.version = parsed.version
+        resource.external_ids = parsed.external_ids
+        resource.license = parsed.license
+        resource.authors = parsed.authors
+        resource.contacts = parsed.contacts
+        resource.publications = parsed.publications
+        resource.related_resources = parsed.related_resources
+        resource.funding = parsed.funding
+        resource.model_scales = parsed.model_scales
+        resource.organisms = parsed.organisms
+        resource.domains = parsed.domains
+        resource.infectious_agents = parsed.infectious_agents
+        resource.health_conditions = parsed.health_conditions
+        resource.biological_processes = parsed.biological_processes
+        resource.molecular_entities = parsed.molecular_entities
+        resource.proteins_genes = parsed.proteins_genes
+        resource.model_class = parsed.model_class
+        resource.formalism = parsed.formalism
+        resource.determinism = parsed.determinism
+        resource.time_dynamics = parsed.time_dynamics
+        resource.spatial = parsed.spatial
+        resource.multiscale = parsed.multiscale
+        resource.execution_type = parsed.execution_type
+        resource.execution_status = parsed.execution_status
+        resource.language_name = parsed.language_name
+        resource.language_version = parsed.language_version
+        resource.execution_notes = parsed.execution_notes
+        resource.dependencies = parsed.dependencies
+        resource.containers = parsed.containers
+        resource.compute = parsed.compute
+        resource.entry_points = parsed.entry_points
+        resource.tests = parsed.tests
+        resource.io = parsed.io
+        resource.registration_status = ResourceRegistrationStatus.APPROVED
+
+        try:
+            self._registry.update_resource(resource)
+            self._session.commit()
+        except RegistryValidationError as exc:
+            self._session.rollback()
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+
+        logger.info("Synced metadata-package to database for model %s", model_id)
+
+        return [(name, (pkg_dir / name).read_text(encoding="utf-8")) for name in _PACKAGE_FILES]
 
     def resolve_resource_file(self, resource_id: str, rel_path: str) -> tuple[Resource, Path]:
         """Resolve a single file inside a resource's directory.
@@ -424,8 +627,23 @@ class RegistryService:
 
     # ── Search ────────────────────────────────────────────────────────
 
+    # Search only surfaces published resources: the active version of a resource
+    # whose registration workflow reached APPROVED. Enforced here (not the
+    # endpoint) so no caller can bypass or widen the gate.
+    _SEARCH_GATE = {"version_status": "active", "registration_status": "approved"}
+
     def search(self, query: SearchQuery) -> SearchResult:
-        """Validate and execute a full-text search with filters and aggregations."""
+        """Validate and execute a full-text search with filters and aggregations.
+
+        A fixed gate (version_status=active, registration_status=approved) is
+        forced on every search, overriding any client-supplied filters on those
+        fields so drafts / pending / rejected resources never leak into results.
+        """
+        # Drop client filters on the gated fields, then append the forced gate.
+        kept = tuple(f for f in query.filters if f.field not in self._SEARCH_GATE)
+        gate = tuple(FieldFilter(field=k, op="eq", value=v) for k, v in self._SEARCH_GATE.items())
+        query = dataclasses.replace(query, filters=kept + gate)
+
         # Validate filter fields and operators
         for f in query.filters:
             meta = FILTERABLE_FIELDS.get(f.field)
@@ -484,7 +702,7 @@ class RegistryService:
         contact_email: str = "",
         publications: list[Publication] | None = None,
         funding: list[str] | None = None,
-        modeling_scales: list[str] | None = None,
+        model_scales: list[str] | None = None,
         organisms: list[str] | None = None,
         domains: list[str] | None = None,
         date_published: date | None = None,
@@ -508,7 +726,7 @@ class RegistryService:
                 contact_email=contact_email,
                 publications=publications or [],
                 funding=funding or [],
-                modeling_scales=modeling_scales or [],
+                model_scales=model_scales or [],
                 organisms=organisms or [],
                 domains=domains or [],
                 date_published=date_published,
@@ -546,7 +764,7 @@ class RegistryService:
         contact_email: str | None = None,
         publications: list[Publication] | None = None,
         funding: list[str] | None = None,
-        modeling_scales: list[str] | None = None,
+        model_scales: list[str] | None = None,
         organisms: list[str] | None = None,
         domains: list[str] | None = None,
         date_published: date | None = None,
@@ -591,8 +809,8 @@ class RegistryService:
             resource.publications = publications
         if funding is not None:
             resource.funding = funding
-        if modeling_scales is not None:
-            resource.modeling_scales = modeling_scales
+        if model_scales is not None:
+            resource.model_scales = model_scales
         if organisms is not None:
             resource.organisms = organisms
         if domains is not None:
@@ -652,7 +870,7 @@ class RegistryService:
         except ResourceNotFoundError:
             raise self._not_authorized_error() from None
 
-        if resource.owner != principal.subject:
+        if principal.issuer != "local" and resource.owner != principal.subject:
             raise self._not_authorized_error()
         return resource
 
@@ -675,7 +893,7 @@ class RegistryService:
         without forcing the user to compute the path correctly at create time.
 
         Idempotent. `upload_status` is kept in `metadata` because
-        `mism_registry.ResourceStatus` models publication lifecycle
+        `mism_registry.ResourceVersionStatus` models publication lifecycle
         (active/superseded/archived), not content lifecycle.
         """
         resource = self.get_resource_and_assert_ownership(principal, resource_id=resource_id)

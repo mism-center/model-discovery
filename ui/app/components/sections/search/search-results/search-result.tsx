@@ -108,9 +108,9 @@ export function SearchResult({ result }: SearchResultProps) {
           </p>
         )}
 
-        {result.modeling_scales?.length || result.domains?.length ? (
+        {result.model_scales?.length || result.domains?.length ? (
           <div className="flex flex-wrap items-center gap-2 mt-3">
-            {result.modeling_scales?.map((scale) => (
+            {result.model_scales?.map((scale) => (
               <span
                 key={scale}
                 className={cn(

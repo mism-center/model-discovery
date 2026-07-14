@@ -30,7 +30,7 @@ def _dataset_list_item(r: Resource) -> ModelListItem:
         location_uri=r.location_uri,
         description=r.description,
         version=r.version,
-        status=r.status.value,
+        status=r.version_status.value,
         owner=r.owner,
         execution_type=r.execution_type.value if r.execution_type else None,
         execution_ref=r.execution_ref,
@@ -41,7 +41,7 @@ def _dataset_list_item(r: Resource) -> ModelListItem:
         contact_email=r.contact_email,
         publications=[pub_to_dto(p) for p in r.publications],
         funding=list(r.funding),
-        modeling_scales=list(r.modeling_scales),
+        model_scales=list(r.model_scales),
         organisms=list(r.organisms),
         domains=list(r.domains),
         date_published=r.date_published,
@@ -63,7 +63,7 @@ def _dataset_response(r: Resource) -> RegisterDatasetResponse:
         location_uri=r.location_uri,
         description=r.description,
         version=r.version,
-        status=r.status.value,
+        status=r.version_status.value,
         owner=r.owner,
         format_tags=list(r.format_tags),
         authors=[author_to_dto(a) for a in r.authors],
@@ -71,7 +71,7 @@ def _dataset_response(r: Resource) -> RegisterDatasetResponse:
         contact_email=r.contact_email,
         publications=[pub_to_dto(p) for p in r.publications],
         funding=list(r.funding),
-        modeling_scales=list(r.modeling_scales),
+        model_scales=list(r.model_scales),
         organisms=list(r.organisms),
         domains=list(r.domains),
         date_published=r.date_published,
@@ -91,7 +91,6 @@ async def create_dataset(
     service: RegistryServiceDep,
     principal: AuthenticatedPrincipalDep,
 ) -> RegisterDatasetResponse:
-
     resource = service.create_dataset(
         principal,
         name=payload.name,
@@ -110,7 +109,7 @@ async def create_dataset(
         contact_email=payload.contact_email,
         publications=[pub_from_dto(p) for p in payload.publications],
         funding=payload.funding,
-        modeling_scales=payload.modeling_scales,
+        model_scales=payload.model_scales,
         organisms=payload.organisms,
         domains=payload.domains,
         date_published=payload.date_published,
@@ -126,7 +125,6 @@ async def update_dataset(
     service: RegistryServiceDep,
     principal: AuthenticatedPrincipalDep,
 ) -> RegisterDatasetResponse:
-
     resource = service.update_dataset(
         principal,
         dataset_id=dataset_id,
@@ -150,7 +148,7 @@ async def update_dataset(
         if payload.publications is not None
         else None,
         funding=payload.funding,
-        modeling_scales=payload.modeling_scales,
+        model_scales=payload.model_scales,
         organisms=payload.organisms,
         domains=payload.domains,
         date_published=payload.date_published,
@@ -166,11 +164,10 @@ async def list_datasets(
     owner: str | None = Query(default=None, description="Exact match on owner"),
     tags: list[str] | None = Query(default=None, description="Format tags (all must match)"),
     organisms: list[str] | None = Query(default=None, description="Organisms (any must match)"),
-    scales: list[str] | None = Query(default=None, description="Modeling scales (any must match)"),
+    scales: list[str] | None = Query(default=None, description="Model scales (any must match)"),
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> ModelListResponse:
-
     resources = service.list_datasets(
         name_contains=name,
         owner=owner,

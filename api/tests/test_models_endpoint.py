@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
-from mism_registry.enums import ExecutionType, ResourceStatus, ResourceType
+from mism_registry.enums import ExecutionType, ResourceType, ResourceVersionStatus
 from mism_registry.resource import Resource
 
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
@@ -32,7 +32,7 @@ def _make_model(
         execution_ref=execution_ref,
         description=description,
         version=version,
-        status=ResourceStatus.ACTIVE,
+        version_status=ResourceVersionStatus.ACTIVE,
         owner=owner,
         created_at=datetime(2025, 1, 1, tzinfo=UTC),
     )
@@ -347,7 +347,7 @@ def test_create_model_forwards_attribution_fields() -> None:
 
 
 def test_create_model_forwards_scientific_fields() -> None:
-    """POST /models passes modeling_scales, organisms, domains, date_published to service."""
+    """POST /models passes model_scales, organisms, domains, date_published to service."""
     service = MagicMock(spec=RegistryService)
     service.create_model.return_value = _make_model()
 
@@ -358,7 +358,7 @@ def test_create_model_forwards_scientific_fields() -> None:
             "name": "Sci Model",
             "location_uri": "irods:///models/sci",
             "execution_type": "python",
-            "modeling_scales": ["cellular", "tissue"],
+            "model_scales": ["cellular", "tissue"],
             "organisms": ["human"],
             "domains": ["cardiology"],
             "date_published": "2024-06-01",
@@ -367,7 +367,7 @@ def test_create_model_forwards_scientific_fields() -> None:
 
     assert response.status_code == 201
     kwargs = service.create_model.call_args.kwargs
-    assert kwargs["modeling_scales"] == ["cellular", "tissue"]
+    assert kwargs["model_scales"] == ["cellular", "tissue"]
     assert kwargs["organisms"] == ["human"]
     assert kwargs["domains"] == ["cardiology"]
     assert str(kwargs["date_published"]) == "2024-06-01"
@@ -454,7 +454,7 @@ def test_create_model_response_includes_new_fields() -> None:
     assert "contact_email" in payload
     assert "publications" in payload
     assert "funding" in payload
-    assert "modeling_scales" in payload
+    assert "model_scales" in payload
     assert "organisms" in payload
     assert "domains" in payload
     assert "date_published" in payload
@@ -510,6 +510,57 @@ def test_update_model_omitted_new_fields_are_none() -> None:
     assert kwargs["license"] is None
     assert kwargs["authors"] is None
     assert kwargs["io_spec"] is None
+
+
+# ── metadata-package raw review ─────────────────────────────────
+
+
+def test_get_metadata_package_raw_returns_sections() -> None:
+    service = MagicMock(spec=RegistryService)
+    service.read_metadata_package_raw.return_value = [
+        ("metadata.yaml", "model:\n  name: x\n"),
+        ("execution.yaml", "execution:\n  status: ok\n"),
+    ]
+
+    client = _make_app_with_service(service)
+    response = client.get("/api/v1/models/m-1/metadata-package/raw")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["model_id"] == "m-1"
+    assert [f["filename"] for f in payload["files"]] == ["metadata.yaml", "execution.yaml"]
+    assert payload["files"][0]["content"] == "model:\n  name: x\n"
+    service.read_metadata_package_raw.assert_called_once_with("m-1")
+
+
+def test_update_metadata_package_raw_forwards_files() -> None:
+    service = MagicMock(spec=RegistryService)
+    service.write_metadata_package_raw.return_value = [
+        ("metadata.yaml", "model:\n  name: edited\n"),
+        ("execution.yaml", "execution:\n  status: ok\n"),
+    ]
+
+    client = _make_app_with_service(service)
+    response = client.put(
+        "/api/v1/models/m-1/metadata-package/raw",
+        json={"files": [{"filename": "metadata.yaml", "content": "model:\n  name: edited\n"}]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["files"][0]["content"] == "model:\n  name: edited\n"
+    kwargs = service.write_metadata_package_raw.call_args.kwargs
+    assert kwargs["model_id"] == "m-1"
+    assert kwargs["files"] == [("metadata.yaml", "model:\n  name: edited\n")]
+
+
+def test_update_metadata_package_raw_requires_files() -> None:
+    service = MagicMock(spec=RegistryService)
+    client = _make_app_with_service(service)
+
+    response = client.put("/api/v1/models/m-1/metadata-package/raw", json={"files": []})
+
+    assert response.status_code == 400  # app maps request validation errors to 400
+    service.write_metadata_package_raw.assert_not_called()
 
 
 # ── location_uri validation ────────────────────────────────────
