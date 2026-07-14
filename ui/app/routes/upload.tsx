@@ -217,7 +217,8 @@ async function fetchAnnotationOutputFiles(
   const data =
     (await res.json()) as components['schemas']['ResourceFilesResponse'];
   const outputDir =
-    (import.meta.env.VITE_ANNOTATION_OUTPUT_DIR as string | undefined) ?? 'out';
+    (import.meta.env.VITE_ANNOTATION_OUTPUT_DIR as string | undefined) ??
+    'metadata-package';
   return (data.files ?? []).filter(
     (f) =>
       !f.is_dir && f.path.startsWith(`${outputDir}/`) && !f.name.startsWith('.')
