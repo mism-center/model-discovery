@@ -41,7 +41,8 @@ def _make_service(mount: Path, monkeypatch: pytest.MonkeyPatch) -> RegistryServi
             id="m-1",
             name="Example Model",
             resource_type=ResourceType.MODEL,
-            location_uri="irods:///models/m-1",
+            # Matches what mark_upload_complete stamps: upload_dir("m-1", "0.1.0")
+            location_uri="irods:///m-1/0.1.0",
             execution_type=ExecutionType.PYTHON,
             version="0.1.0",
             version_status=ResourceVersionStatus.ACTIVE,
@@ -53,7 +54,7 @@ def _make_service(mount: Path, monkeypatch: pytest.MonkeyPatch) -> RegistryServi
 
 
 def _make_package(mount: Path) -> Path:
-    # Mirrors upload_dir(<id>, <version>): <mount>/m-1/0.1.0/metadata-package
+    # Mirrors location_uri "irods:///m-1/0.1.0": <mount>/m-1/0.1.0/metadata-package
     pkg = mount / "m-1" / "0.1.0" / "metadata-package"
     pkg.mkdir(parents=True)
     (pkg / "metadata.yaml").write_text(_META, encoding="utf-8")
@@ -133,6 +134,34 @@ def test_write_rejects_other_owners(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         )
 
     assert exc.value.status_code == 403
+
+
+def test_metadata_package_found_after_version_sync(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: after write_metadata_package_raw syncs model.version from the
+    annotation YAML, subsequent reads must still find the package via location_uri,
+    not via upload_dir(id, new_version).
+
+    Scenario: resource has location_uri="m-1/0.1.0" and version="0.1.0".
+    The annotation YAML has no version field → write syncs version to "".
+    upload_dir("m-1", "") = "m-1" (no version segment), which is a different path.
+    The fix: _metadata_package_dir uses location_uri, so the version change is irrelevant.
+    """
+    _make_package(tmp_path)
+    service = _make_service(tmp_path, monkeypatch)
+
+    # Write YAML that has no version field → syncs resource.version to "" in DB.
+    service.write_metadata_package_raw(
+        _principal(), model_id="m-1", files=[("metadata.yaml", _META)]
+    )
+    assert service._registry.get_resource("m-1").version == "", (
+        "Precondition: version must have been synced away from '0.1.0'"
+    )
+
+    # Subsequent read must still work — files are at location_uri path, not upload_dir path.
+    out = service.read_metadata_package_raw("m-1")
+    assert dict(out)["metadata.yaml"] == _META
 
 
 def test_write_invalid_structure_raises_400_after_write(
