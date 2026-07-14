@@ -45,7 +45,7 @@ type ExecuteRunApiResponse = {
 
 type WorkflowStep =
   | 'idle'
-  | 'registering'
+  | 'Initializing'
   | 'importing'
   | 'annotating'
   | 'monitoring'
@@ -216,12 +216,11 @@ async function fetchAnnotationOutputFiles(
   if (!res.ok) return null;
   const data =
     (await res.json()) as components['schemas']['ResourceFilesResponse'];
-  const outputDir =
-    (import.meta.env.VITE_ANNOTATION_OUTPUT_DIR as string | undefined) ??
-    'metadata-package';
   return (data.files ?? []).filter(
     (f) =>
-      !f.is_dir && f.path.startsWith(`${outputDir}/`) && !f.name.startsWith('.')
+      !f.is_dir &&
+      f.path.startsWith('metadata-package/') &&
+      !f.name.startsWith('.')
   );
 }
 
@@ -354,14 +353,14 @@ type StepDef = {
 };
 
 const GITHUB_STEPS: StepDef[] = [
-  { key: 'registering', label: 'Register model' },
+  { key: 'Initializing', label: 'Initialize workflow' },
   { key: 'importing', label: 'Download & extract repository' },
   { key: 'annotating', label: 'Initiate annotation run' },
   { key: 'monitoring', label: 'Monitor annotation' },
 ];
 
 const STEP_ORDER: WorkflowStep[] = [
-  'registering',
+  'Initializing',
   'importing',
   'annotating',
   'monitoring',
@@ -608,8 +607,8 @@ export default function TusTest() {
 
     try {
       // Step 1: register (or reuse) the model.
-      activeStep = 'registering';
-      setWorkflowStep('registering');
+      activeStep = 'Initializing';
+      setWorkflowStep('Initializing');
       const model = await findOrCreateModel(name, 'Created via GitHub import');
       setRegisteredModelId(model.id);
 
@@ -636,7 +635,7 @@ export default function TusTest() {
 
   const fileList = Object.values(files);
   const isRunning =
-    workflowStep === 'registering' ||
+    workflowStep === 'Initializing' ||
     workflowStep === 'importing' ||
     workflowStep === 'annotating' ||
     workflowStep === 'monitoring';
