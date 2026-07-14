@@ -18,7 +18,7 @@ from mism_registry import (
     ValidationError as RegistryValidationError,
 )
 from mism_registry.backends.postgres import PostgresRegistry
-from mism_registry.enums import ExecutionType
+from mism_registry.enums import ExecutionType, ResourceRegistrationStatus
 from mism_registry.protocol import Registry
 from mism_registry.resource import Resource
 from mism_registry.run import Run
@@ -138,8 +138,6 @@ class RegistryService:
         so we fetch all models and filter in-memory — safe because the
         ANNOTATING set is always small (O(1-10) in practice).
         """
-        from mism_registry.enums import ResourceRegistrationStatus
-
         resources = find_resources(self._registry, resource_type=ResourceType.MODEL)
         return [
             r for r in resources if r.registration_status == ResourceRegistrationStatus.ANNOTATING
@@ -457,7 +455,7 @@ class RegistryService:
         resource.name = parsed.name
         resource.short_description = parsed.short_description
         resource.description = parsed.description
-        resource.version = parsed.version
+        # resource.version = parsed.version
         resource.external_ids = parsed.external_ids
         resource.license = parsed.license
         resource.authors = parsed.authors
@@ -490,6 +488,7 @@ class RegistryService:
         resource.entry_points = parsed.entry_points
         resource.tests = parsed.tests
         resource.io = parsed.io
+        resource.registration_status = ResourceRegistrationStatus.APPROVED
 
         try:
             self._registry.update_resource(resource)
