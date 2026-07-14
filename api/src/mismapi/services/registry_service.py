@@ -332,9 +332,15 @@ class RegistryService:
         return resource, directory
 
     def _metadata_package_dir(self, model_id: str) -> Path:
-        """Resolve ``<model_id>/<version>/metadata-package/`` on the mount.
+        """Resolve ``<location_uri>/metadata-package/`` on the mount.
 
-        The version comes from the registered model, mirroring ``upload_dir``.
+        Derives the path from ``model.location_uri`` (the authoritative on-disk
+        path), not from ``upload_dir(model_id, model.version)``.
+        ``write_metadata_package_raw`` syncs ``model.version`` from the annotation
+        YAML, so the version field can diverge from the version segment embedded
+        in ``location_uri`` after the first save — causing ``upload_dir``-based
+        lookups to 404 while the download endpoint (which uses ``location_uri``
+        directly) continues to work.
         Raises 404 if the model, the package dir, or either required YAML file
         is missing; 400 for unsupported schemes / path traversal.
         """
@@ -344,9 +350,15 @@ class RegistryService:
             raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
 
         mount = get_settings().irods_mount_path
-        rel = f"{upload_dir(model_id, model.version)}/metadata-package"
         # resolve_location_uri enforces the traversal check and that the dir exists.
-        pkg_dir = resolve_location_uri(rel, mount)
+        model_dir = resolve_location_uri(model.location_uri, mount)
+        pkg_dir = model_dir / "metadata-package"
+        if not pkg_dir.is_dir():
+            raise APIError(
+                status_code=404,
+                code="metadata_package_not_found",
+                detail=f"No metadata-package directory found for model {model_id}.",
+            )
         missing = [f for f in (METADATA_FILE, EXECUTION_FILE) if not (pkg_dir / f).is_file()]
         if missing:
             raise APIError(
