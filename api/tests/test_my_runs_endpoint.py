@@ -94,7 +94,12 @@ def _build_service(*, runs: list[Run], resources: list[Resource]) -> RegistrySer
     by_id = {r.id: r for r in resources}
     registry = MagicMock(spec=Registry)
 
-    def _find_runs(*, model_id=None, input_resource_id=None, status=None):
+    def _find_runs(
+        *,
+        model_id: str | None = None,
+        input_resource_id: str | None = None,
+        status: RunStatus | None = None,
+    ) -> list[Run]:
         result = list(runs)
         if model_id is not None:
             result = [r for r in result if r.model_id == model_id]
@@ -102,7 +107,7 @@ def _build_service(*, runs: list[Run], resources: list[Resource]) -> RegistrySer
             result = [r for r in result if r.status == status]
         return result
 
-    def _get_resource(rid):
+    def _get_resource(rid: str) -> Resource:
         try:
             return by_id[rid]
         except KeyError as exc:

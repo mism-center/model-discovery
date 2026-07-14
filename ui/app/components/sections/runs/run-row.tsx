@@ -20,7 +20,7 @@ import { runDetailQueryOptions } from '~/api/query/runs';
 import { RunModelModal } from '~/components/sections/search/search-results/run-model-modal';
 import { RunOutputFiles } from '~/components/sections/search/search-results/run-output-files';
 import { TerminateRunModal } from '~/components/sections/search/search-results/terminate-run-modal';
-import { formatTimestamp, STATUS_COLOR } from './run-format';
+import { formatDuration, formatTimestamp, STATUS_COLOR } from './run-format';
 
 interface RunRowProps {
   /**
@@ -90,24 +90,42 @@ export function RunRow({ item }: RunRowProps) {
         aria-controls={panelId}
         onClick={() => setExpanded((open) => !open)}
         className={cn(
-          'flex w-full items-center gap-4 px-5 py-4 text-left',
+          // Grid (not flex) with fixed tracks so the timestamp and status
+          // columns start at the same x-position on every row, like a table.
+          // On <sm the timestamp track collapses to 0 (that column is hidden).
+          'grid w-full items-center gap-4 px-5 py-4 text-left',
+          'grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_13rem_9rem]',
           'rounded-2xl outline-none cursor-pointer',
           'focus-visible:ring-2 focus-visible:ring-primary/50'
         )}
       >
-        <div className="flex-1 min-w-0">
+        <div className="min-w-0">
           <h3 className="text-base font-bold font-headline text-primary truncate">
             {item.model.name}
           </h3>
-          <p className="mt-0.5 text-[11px] font-mono text-default-600 truncate">
-            {run.id}
+          <p className="mt-0.5 flex items-center gap-2 text-[11px] text-default-600">
+            <span className="font-mono truncate">{run.id}</span>
+            <span aria-hidden="true" className="text-default-400">
+              •
+            </span>
+            <span className="tabular-nums shrink-0">
+              {formatDuration(run.started_at, run.completed_at)}
+            </span>
+            <span aria-hidden="true" className="text-default-400">
+              •
+            </span>
+            <span className="shrink-0">
+              {outputs.length} out / {inputs.length} in
+            </span>
           </p>
         </div>
 
+        {/* Left-aligned label/value columns; the parent grid pins this track to
+            a fixed width so timestamps line up across rows. */}
         <dl
           className={cn(
-            'hidden sm:grid grid-cols-[auto_auto] gap-x-2 gap-y-0.5 shrink-0',
-            'text-[11px] text-default-800 uppercase tracking-tight text-right'
+            'hidden sm:grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5',
+            'text-[11px] text-default-800 uppercase tracking-tight'
           )}
         >
           <dt className="text-default-600">Created</dt>
@@ -116,23 +134,25 @@ export function RunRow({ item }: RunRowProps) {
           <dd className="tabular-nums">{formatTimestamp(run.started_at)}</dd>
         </dl>
 
-        <Chip
-          size="sm"
-          color={color}
-          variant="flat"
-          className="capitalize font-bold shrink-0"
-          startContent={<StatusIcon status={run.status} />}
-        >
-          {run.status}
-        </Chip>
+        <div className="flex items-center justify-end gap-3">
+          <Chip
+            size="sm"
+            color={color}
+            variant="flat"
+            className="capitalize font-bold"
+            startContent={<StatusIcon status={run.status} />}
+          >
+            {run.status}
+          </Chip>
 
-        <ChevronDownIcon
-          aria-hidden="true"
-          className={cn(
-            'size-4 shrink-0 text-default-600 transition-transform duration-200',
-            expanded && 'rotate-180'
-          )}
-        />
+          <ChevronDownIcon
+            aria-hidden="true"
+            className={cn(
+              'size-4 shrink-0 text-default-600 transition-transform duration-200',
+              expanded && 'rotate-180'
+            )}
+          />
+        </div>
       </button>
 
       {/* Expanded detail panel */}
@@ -143,10 +163,10 @@ export function RunRow({ item }: RunRowProps) {
         >
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs pt-3">
             <dt className="text-default-600">Model</dt>
-            <dd className="font-semibold text-default-900">
+            <dd>
               {item.model.name}
               {run.model_version && (
-                <span className="ml-2 font-normal text-default-600">
+                <span className="ml-2 text-default-600">
                   v{run.model_version}
                 </span>
               )}

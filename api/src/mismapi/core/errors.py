@@ -215,7 +215,9 @@ def install_openapi_customizations(app: FastAPI) -> None:
         for route in app.routes:
             if not _route_has_dependency(route, require_principal):
                 continue
-            path_item = paths.get(getattr(route, "path_format", None) or route.path)
+            path_item = paths.get(
+                getattr(route, "path_format", None) or getattr(route, "path", None)
+            )
             if not path_item:
                 continue
             for method in (m.lower() for m in getattr(route, "methods", set())):
@@ -227,4 +229,4 @@ def install_openapi_customizations(app: FastAPI) -> None:
         app.openapi_schema = schema
         return schema
 
-    app.openapi = custom_openapi
+    app.openapi = custom_openapi  # type: ignore[method-assign]
