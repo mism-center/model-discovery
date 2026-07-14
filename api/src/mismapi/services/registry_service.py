@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 from datetime import date
 from pathlib import Path
@@ -26,6 +27,7 @@ from mism_registry.run_detail import ModelRunSummary
 from mism_registry.search import (
     AGGREGATABLE_FIELDS,
     FILTERABLE_FIELDS,
+    FieldFilter,
     SearchQuery,
     SearchResult,
 )
@@ -555,8 +557,23 @@ class RegistryService:
 
     # ── Search ────────────────────────────────────────────────────────
 
+    # Search only surfaces published resources: the active version of a resource
+    # whose registration workflow reached APPROVED. Enforced here (not the
+    # endpoint) so no caller can bypass or widen the gate.
+    _SEARCH_GATE = {"version_status": "active", "registration_status": "approved"}
+
     def search(self, query: SearchQuery) -> SearchResult:
-        """Validate and execute a full-text search with filters and aggregations."""
+        """Validate and execute a full-text search with filters and aggregations.
+
+        A fixed gate (version_status=active, registration_status=approved) is
+        forced on every search, overriding any client-supplied filters on those
+        fields so drafts / pending / rejected resources never leak into results.
+        """
+        # Drop client filters on the gated fields, then append the forced gate.
+        kept = tuple(f for f in query.filters if f.field not in self._SEARCH_GATE)
+        gate = tuple(FieldFilter(field=k, op="eq", value=v) for k, v in self._SEARCH_GATE.items())
+        query = dataclasses.replace(query, filters=kept + gate)
+
         # Validate filter fields and operators
         for f in query.filters:
             meta = FILTERABLE_FIELDS.get(f.field)
