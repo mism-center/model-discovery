@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import type { components } from '~/api/generated/schema';
+import { MetadataFormViewer } from '~/components/sections/upload/metadata-form-viewer';
 import { browserApiBaseUrl, resolveTusdPlaceholderUrl } from '~/utils/env';
 import '@uppy/core/css/style.min.css';
 import '@uppy/dashboard/css/style.min.css';
@@ -188,9 +189,10 @@ async function fetchModelStatus(modelId: string): Promise<string | null> {
   return data.registration_status ?? null;
 }
 
-async function fetchAnnotationMetadata(
-  modelId: string
-): Promise<{ content: string; registryId: string } | null> {
+async function fetchAnnotationPackage(modelId: string): Promise<{
+  files: { filename: string; content: string }[];
+  registryId: string;
+} | null> {
   const res = await fetch(
     `${apiOrigin()}/api/v1/models/${encodeURIComponent(modelId)}/metadata-package/raw`,
     { credentials: 'include' }
@@ -199,9 +201,7 @@ async function fetchAnnotationMetadata(
   const data = (await res.json()) as {
     files?: { filename: string; content: string }[];
   };
-  const content =
-    data.files?.find((f) => f.filename === 'metadata.yaml')?.content ?? '';
-  return { content, registryId: modelId };
+  return { files: data.files ?? [], registryId: modelId };
 }
 
 type ResourceFileItem = components['schemas']['ResourceFileItem'];
@@ -417,7 +417,9 @@ export default function TusTest() {
   const [runId, setRunId] = useState('');
   const [importError, setImportError] = useState('');
   const [annotationStatus, setAnnotationStatus] = useState('');
-  const [metadataYaml, setMetadataYaml] = useState<string | null>(null);
+  const [rawFiles, setRawFiles] = useState<
+    { filename: string; content: string }[]
+  >([]);
   const [metadataRegistryId, setMetadataRegistryId] = useState('');
   const [metadataSaveState, setMetadataSaveState] = useState<
     'idle' | 'saving' | 'saved' | 'error'
@@ -521,10 +523,10 @@ export default function TusTest() {
             setWorkflowStep('error');
           } else {
             const [metaResult, files] = await Promise.all([
-              fetchAnnotationMetadata(registeredModelId),
+              fetchAnnotationPackage(registeredModelId),
               fetchAnnotationOutputFiles(registeredModelId),
             ]);
-            setMetadataYaml(metaResult?.content ?? null);
+            setRawFiles(metaResult?.files ?? []);
             setMetadataRegistryId(metaResult?.registryId ?? '');
             setMetadataSaveState('idle');
             setOutputFiles(files);
@@ -544,7 +546,7 @@ export default function TusTest() {
     setRunId('');
     setImportedBranch('');
     setAnnotationStatus('pending_review');
-    setMetadataYaml(null);
+    setRawFiles([]);
     setMetadataRegistryId('');
     setMetadataSaveState('idle');
     setMetadataSaveError('');
@@ -554,36 +556,12 @@ export default function TusTest() {
     setRegisteredModelId(resourceId);
     setWorkflowStep('complete');
     const [metaResult, files] = await Promise.all([
-      fetchAnnotationMetadata(resourceId),
+      fetchAnnotationPackage(resourceId),
       fetchAnnotationOutputFiles(resourceId),
     ]);
-    setMetadataYaml(metaResult?.content ?? null);
+    setRawFiles(metaResult?.files ?? []);
     setMetadataRegistryId(metaResult?.registryId ?? '');
     setOutputFiles(files);
-  }
-
-  async function uploadAnnotationMetadata() {
-    if (!metadataYaml || !metadataRegistryId) return;
-    setMetadataSaveState('saving');
-    setMetadataSaveError('');
-    const res = await fetch(
-      `${apiOrigin()}/api/v1/models/${encodeURIComponent(metadataRegistryId)}/metadata-package/raw`,
-      {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          files: [{ filename: 'metadata.yaml', content: metadataYaml }],
-        }),
-      }
-    );
-    if (!res.ok) {
-      const detail = await readApiErrorDetail(res, 'Save failed');
-      setMetadataSaveState('error');
-      setMetadataSaveError(detail);
-      return;
-    }
-    setMetadataSaveState('saved');
   }
 
   async function handleGitHubImport() {
@@ -596,7 +574,7 @@ export default function TusTest() {
     setRegisteredModelId('');
     setImportedBranch('');
     setAnnotationStatus('');
-    setMetadataYaml(null);
+    setRawFiles([]);
     setOutputFiles(null);
     setShowOutputFiles(false);
     setFailedStep('idle');
@@ -861,42 +839,22 @@ export default function TusTest() {
                     Run ID: <code className="font-mono">{runId}</code>
                   </span>
                 )}
-                {metadataYaml !== null && (
-                  <div className="mt-2 flex flex-col gap-1">
-                    <span className="text-xs font-medium text-default-800">
-                      metadata.yaml
-                    </span>
-                    <textarea
-                      className="text-xs bg-default-100 rounded p-3 overflow-auto max-h-64 font-mono border border-default-200 resize-y w-full"
-                      rows={12}
-                      value={metadataYaml}
-                      onChange={(e) => {
-                        setMetadataYaml(e.target.value);
-                        setMetadataSaveState('idle');
-                        setMetadataSaveError('');
+                {rawFiles.length > 0 && (
+                  <div className="mt-2">
+                    <MetadataFormViewer
+                      modelId={metadataRegistryId}
+                      rawFiles={rawFiles}
+                      onSaved={() => setMetadataSaveState('saved')}
+                      onSaveError={(msg) => {
+                        setMetadataSaveState('error');
+                        setMetadataSaveError(msg);
                       }}
                     />
-                    <div className="flex items-center gap-2 mt-1">
-                      <Button
-                        size="sm"
-                        color="success"
-                        variant="flat"
-                        className="text-foreground"
-                        isLoading={metadataSaveState === 'saving'}
-                        isDisabled={metadataSaveState === 'saving'}
-                        onPress={() => void uploadAnnotationMetadata()}
-                      >
-                        Approve
-                      </Button>
-                      {metadataSaveState === 'saved' && (
-                        <span className="text-xs text-success-700">Saved</span>
-                      )}
-                      {metadataSaveState === 'error' && (
-                        <span className="text-xs text-danger-600">
-                          {metadataSaveError}
-                        </span>
-                      )}
-                    </div>
+                    {metadataSaveState === 'error' && (
+                      <span className="text-xs text-danger-600 mt-1">
+                        {metadataSaveError}
+                      </span>
+                    )}
                   </div>
                 )}
                 {outputFiles && outputFiles.length > 0 && (
