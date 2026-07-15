@@ -1,6 +1,8 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import anyio
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -12,6 +14,10 @@ from mismapi.core.logging import configure_root_logger
 from mismapi.core.settings import Settings, get_settings
 from mismapi.core.uvicorn_access_log import install_uvicorn_access_formatter
 from mismapi.middleware.request_context import RequestContextMiddleware
+
+logger = logging.getLogger(__name__)
+
+_ANNOTATION_POLL_INTERVAL_SECONDS = 15
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -30,8 +36,43 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.container = container
         await container.prime()
 
+        async def _annotation_poll_loop() -> None:
+            """Poll for ANNOTATING models and log them every interval seconds.
+
+            Runs inside an anyio task group so cancellation and thread offloading
+            are handled correctly regardless of the asyncio/trio backend.
+            DB work is offloaded to a worker thread via anyio.to_thread.run_sync.
+            abandon_on_cancel=True lets shutdown proceed immediately without
+            waiting for the current sync DB call to finish.
+            """
+            from mism_registry.backends.postgres import PostgresRegistry
+
+            from mismapi.services.registry_service import RegistryService
+
+            def _sync_check() -> None:
+                with container.open_session() as session:
+                    registry = PostgresRegistry(session)
+                    service = RegistryService(registry, session)
+                    annotating = service.list_annotating_models()
+                    if annotating:
+                        logger.info(
+                            "annotation_poll active_count=%d ids=%s",
+                            len(annotating),
+                            [r.id for r in annotating],
+                        )
+
+            while True:
+                try:
+                    await anyio.to_thread.run_sync(_sync_check, abandon_on_cancel=True)
+                except Exception:
+                    logger.exception("annotation_poll_error")
+                await anyio.sleep(_ANNOTATION_POLL_INTERVAL_SECONDS)
+
         try:
-            yield
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(_annotation_poll_loop)
+                yield
+                tg.cancel_scope.cancel()
         finally:
             await container.aclose()
 

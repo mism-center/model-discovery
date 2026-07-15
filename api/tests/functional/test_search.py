@@ -7,7 +7,7 @@ import uuid
 import httpx
 import pytest
 
-from tests.functional.helpers import unique_name
+from tests.functional.helpers import approve, unique_name
 
 pytestmark = pytest.mark.integration
 
@@ -54,6 +54,10 @@ def _seed_search_fixtures(api: httpx.Client) -> dict[str, str]:
     )
     assert r.status_code == 201
     nn_model = r.json()
+
+    # Resources are created DRAFT; search only surfaces approved ones, so
+    # promote the fixtures to approved before any search assertions run.
+    approve(model["id"], dataset["id"], nn_model["id"])
 
     return {
         "tag": tag,
@@ -358,7 +362,7 @@ def test_search_response_shape(api: httpx.Client) -> None:
         # Scientific context
         "organisms",
         "domains",
-        "modeling_scales",
+        "model_scales",
         "date_published",
         # Location & integrity
         "format_tags",
@@ -397,7 +401,7 @@ def test_search_response_new_fields_default_values(api: httpx.Client) -> None:
     assert item["contact_email"] == ""
     assert item["organisms"] == []
     assert item["domains"] == []
-    assert item["modeling_scales"] == []
+    assert item["model_scales"] == []
     assert item["date_published"] is None
     assert item["digest_sha256"] == ""
     assert item["size_bytes"] is None
@@ -431,7 +435,7 @@ def test_create_model_with_full_fields_roundtrip(api: httpx.Client) -> None:
                 {"title": "A paper", "doi": "10.1234/test", "url": "", "citation": ""}
             ],
             "funding": ["NIH R01", "NSF 2345"],
-            "modeling_scales": ["cellular", "tissue"],
+            "model_scales": ["cellular", "tissue"],
             "organisms": ["human", "mouse"],
             "domains": ["cardiology"],
             "date_published": "2024-03-15",
@@ -477,7 +481,7 @@ def test_create_model_with_full_fields_roundtrip(api: httpx.Client) -> None:
         {"title": "A paper", "doi": "10.1234/test", "url": "", "citation": ""}
     ]
     assert m["funding"] == ["NIH R01", "NSF 2345"]
-    assert set(m["modeling_scales"]) == {"cellular", "tissue"}
+    assert set(m["model_scales"]) == {"cellular", "tissue"}
     assert set(m["organisms"]) == {"human", "mouse"}
     assert m["domains"] == ["cardiology"]
     assert m["date_published"] == "2024-03-15"
@@ -509,7 +513,7 @@ def test_create_dataset_with_full_fields_roundtrip(api: httpx.Client) -> None:
                 {"title": "Dataset paper", "doi": "10.5678/data", "url": "", "citation": ""}
             ],
             "funding": ["NIH P41"],
-            "modeling_scales": ["organ"],
+            "model_scales": ["organ"],
             "organisms": ["rat"],
             "domains": ["neuroscience"],
             "date_published": "2023-11-01",
@@ -586,7 +590,7 @@ def test_update_dataset_new_fields(api: httpx.Client) -> None:
         json={
             "authors": [{"name": "Alice", "orcid": "", "affiliation": "MIT", "role": "author"}],
             "funding": ["DOE"],
-            "modeling_scales": ["population"],
+            "model_scales": ["population"],
             "size_bytes": 512,
         },
     )
@@ -594,7 +598,7 @@ def test_update_dataset_new_fields(api: httpx.Client) -> None:
     d = r.json()
     assert d["authors"] == [{"name": "Alice", "orcid": "", "affiliation": "MIT", "role": "author"}]
     assert d["funding"] == ["DOE"]
-    assert d["modeling_scales"] == ["population"]
+    assert d["model_scales"] == ["population"]
     assert d["size_bytes"] == 512
 
 

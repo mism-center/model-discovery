@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
 from mism_registry import ModelRunDetail, ModelRunSummary
-from mism_registry.enums import ExecutionType, ResourceStatus, ResourceType, RunStatus
+from mism_registry.enums import ExecutionType, ResourceType, ResourceVersionStatus, RunStatus
 from mism_registry.resource import Resource
 from mism_registry.run import Run
 
@@ -24,7 +24,7 @@ def _make_model(id: str = "m-1", name: str = "Example Model") -> Resource:
         execution_type=ExecutionType.PYTHON,
         description="A test model",
         version="0.1.0",
-        status=ResourceStatus.ACTIVE,
+        version_status=ResourceVersionStatus.ACTIVE,
         owner="user-1",
         format_tags=["python"],
         created_at=datetime(2025, 1, 1, tzinfo=UTC),
@@ -40,7 +40,7 @@ def _make_dataset(id: str = "d-1", name: str = "Input Dataset") -> Resource:
         location_uri="s3://bucket/data.csv",
         description="Input dataset",
         version="1.0",
-        status=ResourceStatus.ACTIVE,
+        version_status=ResourceVersionStatus.ACTIVE,
         owner="user-1",
         format_tags=["csv"],
         created_at=datetime(2025, 1, 1, tzinfo=UTC),

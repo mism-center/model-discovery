@@ -47,11 +47,11 @@ dev:
 
 ## Run the unit tests (pytest)
 test-unit:
-	$(UV) run pytest tests/unit/*.py -v
+	$(UV) run pytest tests/unit/ -v
 
 ## Run the integration tests (pytest)
 test-integration:
-	$(UV) run pytest tests/integration/*.py -v
+	$(UV) run pytest tests/integration/ -v
 
 functional-up:
 	$(COMPOSE_TEST) up -d --build --wait

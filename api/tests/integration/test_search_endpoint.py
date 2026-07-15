@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
-from mism_registry.enums import ExecutionType, ResourceStatus, ResourceType
+from mism_registry.enums import ExecutionType, ResourceType, ResourceVersionStatus
 from mism_registry.resource import Resource
 from mism_registry.search import SearchResult
 
@@ -27,7 +27,7 @@ def _make_resource(
         execution_type=ExecutionType.DOCKER,
         description=description,
         version="1.0",
-        status=ResourceStatus.ACTIVE,
+        version_status=ResourceVersionStatus.ACTIVE,
         owner=owner,
         created_at=datetime(2025, 1, 1, tzinfo=UTC),
     )
@@ -146,7 +146,7 @@ def test_list_models_response_shape() -> None:
     assert item["location_uri"] == "https://example.com/model"
     assert item["execution_type"] == ExecutionType.DOCKER.value
     assert item["version"] == "1.0"
-    assert item["status"] == ResourceStatus.ACTIVE.value
+    assert item["status"] == ResourceVersionStatus.ACTIVE.value
     assert item["owner"] == "user-1"
     assert item["description"] == "A test model"
     assert "created_at" in item
@@ -177,7 +177,7 @@ def test_search_result_includes_all_new_fields() -> None:
     assert "publications" in item
     assert "funding" in item
     # New scientific fields
-    assert "modeling_scales" in item
+    assert "model_scales" in item
     assert "domains" in item
     assert "date_published" in item
     # New integrity fields
@@ -209,7 +209,7 @@ def test_search_result_new_fields_default_correctly() -> None:
     assert item["funding"] == []
     assert item["organization"] == ""
     assert item["contact_email"] == ""
-    assert item["modeling_scales"] == []
+    assert item["model_scales"] == []
     assert item["domains"] == []
     assert item["date_published"] is None
     assert item["digest_sha256"] == ""
@@ -234,7 +234,7 @@ def test_search_result_with_rich_resource() -> None:
         execution_ref="docker://rich:1",
         description="Fully populated",
         version="2.0",
-        status=ResourceStatus.ACTIVE,
+        version_status=ResourceVersionStatus.ACTIVE,
         owner="user-1",
         authors=[
             Author(name="Jane", orcid="0000-0001-2345-6789", affiliation="RENCI", role="lead")
@@ -243,7 +243,7 @@ def test_search_result_with_rich_resource() -> None:
         contact_email="jane@renci.org",
         publications=[Publication(title="Paper", doi="10.1/x")],
         funding=["NIH"],
-        modeling_scales=["cellular"],
+        model_scales=["cellular"],
         organisms=["human"],
         domains=["cardiology"],
         io_spec=IOSpec(
@@ -273,7 +273,7 @@ def test_search_result_with_rich_resource() -> None:
     assert item["contact_email"] == "jane@renci.org"
     assert item["publications"] == [{"title": "Paper", "doi": "10.1/x", "url": "", "citation": ""}]
     assert item["funding"] == ["NIH"]
-    assert item["modeling_scales"] == ["cellular"]
+    assert item["model_scales"] == ["cellular"]
     assert item["organisms"] == ["human"]
     assert item["domains"] == ["cardiology"]
     assert item["execution_ref"] == "docker://rich:1"
@@ -302,7 +302,7 @@ def test_list_models_response_includes_new_fields() -> None:
     assert "contact_email" in item
     assert "publications" in item
     assert "funding" in item
-    assert "modeling_scales" in item
+    assert "model_scales" in item
     assert "organisms" in item
     assert "domains" in item
     assert "date_published" in item

@@ -1,4 +1,6 @@
+import dataclasses
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Query
 from mism_registry.enums import RunStatus
@@ -16,6 +18,9 @@ from mismapi.core.deps import (
 from mismapi.schemas.registry import (
     ExecuteRunRequest,
     ExecuteRunResponse,
+    MetadataPackageFile,
+    MetadataPackageRawResponse,
+    MetadataPackageUpdateRequest,
     ModelRunDetailItem,
     ModelRunDetailsResponse,
     RegisterModelRequest,
@@ -45,7 +50,7 @@ def _model_list_item(r: Resource) -> ModelListItem:
         location_uri=r.location_uri,
         description=r.description,
         version=r.version,
-        status=r.status.value,
+        status=r.version_status.value,
         owner=r.owner,
         execution_type=r.execution_type.value if r.execution_type else None,
         execution_ref=r.execution_ref,
@@ -56,7 +61,7 @@ def _model_list_item(r: Resource) -> ModelListItem:
         contact_email=r.contact_email,
         publications=[pub_to_dto(p) for p in r.publications],
         funding=list(r.funding),
-        modeling_scales=list(r.modeling_scales),
+        model_scales=list(r.model_scales),
         organisms=list(r.organisms),
         domains=list(r.domains),
         date_published=r.date_published,
@@ -78,7 +83,8 @@ def _model_response(r: Resource) -> RegisterModelResponse:
         location_uri=r.location_uri,
         description=r.description,
         version=r.version,
-        status=r.status.value,
+        status=r.version_status.value,
+        registration_status=r.registration_status.value,
         owner=r.owner,
         execution_type=r.execution_type.value if r.execution_type else None,
         execution_ref=r.execution_ref,
@@ -89,7 +95,7 @@ def _model_response(r: Resource) -> RegisterModelResponse:
         contact_email=r.contact_email,
         publications=[pub_to_dto(p) for p in r.publications],
         funding=list(r.funding),
-        modeling_scales=list(r.modeling_scales),
+        model_scales=list(r.model_scales),
         organisms=list(r.organisms),
         domains=list(r.domains),
         date_published=r.date_published,
@@ -110,7 +116,7 @@ async def list_models(
     owner: str | None = Query(default=None, description="Exact match on owner"),
     tags: list[str] | None = Query(default=None, description="Format tags (all must match)"),
     organisms: list[str] | None = Query(default=None, description="Organisms (any must match)"),
-    scales: list[str] | None = Query(default=None, description="Modeling scales (any must match)"),
+    scales: list[str] | None = Query(default=None, description="Model scales (any must match)"),
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> ModelListResponse:
@@ -127,6 +133,22 @@ async def list_models(
     page = resources[offset : offset + limit]
 
     return ModelListResponse(total=total, results=[_model_list_item(r) for r in page])
+
+
+@router.get("/models/{model_id}", response_model=RegisterModelResponse)
+async def get_model(
+    model_id: str,
+    service: RegistryServiceDep,
+) -> RegisterModelResponse:
+    """Fetch a single model by ID.
+
+    Includes ``registration_status`` so the UI can poll annotation progress
+    (DRAFT → ANNOTATING → PENDING_REVIEW / ANNOTATION_FAILED → APPROVED).
+    The execution-platform's background poller writes these transitions directly
+    to the shared registry; this endpoint reads the current value on demand.
+    """
+    resource = service.get_model(model_id)
+    return _model_response(resource)
 
 
 @router.post("/models", response_model=RegisterModelResponse, status_code=201)
@@ -157,7 +179,7 @@ async def create_model(
         contact_email=payload.contact_email,
         publications=[pub_from_dto(p) for p in payload.publications],
         funding=payload.funding,
-        modeling_scales=payload.modeling_scales,
+        model_scales=payload.model_scales,
         organisms=payload.organisms,
         domains=payload.domains,
         date_published=payload.date_published,
@@ -200,7 +222,7 @@ async def update_model(
         if payload.publications is not None
         else None,
         funding=payload.funding,
-        modeling_scales=payload.modeling_scales,
+        model_scales=payload.model_scales,
         organisms=payload.organisms,
         domains=payload.domains,
         date_published=payload.date_published,
@@ -231,6 +253,55 @@ async def initiate_model_file_upload(
         resource_id=model_id,
         token=token,
     )
+
+
+@router.get("/models/{model_id}/metadata-package", response_model=None)
+async def get_model_metadata_package(
+    model_id: str,
+    service: RegistryServiceDep,
+) -> dict[str, Any]:
+    """Parse the model's annotation ``metadata-package`` into a Resource preview.
+
+    Looks for ``<model_id>/<version>/metadata-package/`` on the storage mount and
+    maps its ``metadata.yaml`` + ``execution.yaml`` onto a Resource (values only,
+    not persisted). 404 if the package is absent, 400 if it can't be parsed.
+    """
+    resource = service.parse_metadata_package(model_id)
+    # asdict gives full nested detail (io, dependencies, ...); FastAPI's encoder
+    # turns the enums into their string values and datetimes into ISO strings.
+    return dataclasses.asdict(resource)
+
+
+def _raw_response(model_id: str, files: list[tuple[str, str]]) -> MetadataPackageRawResponse:
+    return MetadataPackageRawResponse(
+        model_id=model_id,
+        files=[MetadataPackageFile(filename=name, content=content) for name, content in files],
+    )
+
+
+@router.get("/models/{model_id}/metadata-package/raw", response_model=MetadataPackageRawResponse)
+async def get_model_metadata_package_raw(
+    model_id: str,
+    service: RegistryServiceDep,
+) -> MetadataPackageRawResponse:
+    """Return the model's raw metadata-package YAML files as review sections."""
+    return _raw_response(model_id, service.read_metadata_package_raw(model_id))
+
+
+@router.put("/models/{model_id}/metadata-package/raw", response_model=MetadataPackageRawResponse)
+async def update_model_metadata_package_raw(
+    model_id: str,
+    payload: MetadataPackageUpdateRequest,
+    service: RegistryServiceDep,
+    principal: AuthenticatedPrincipalDep,
+) -> MetadataPackageRawResponse:
+    """Write edited raw YAML back to the metadata-package and return the result."""
+    files = service.write_metadata_package_raw(
+        principal,
+        model_id=model_id,
+        files=[(f.filename, f.content) for f in payload.files],
+    )
+    return _raw_response(model_id, files)
 
 
 @router.post(
