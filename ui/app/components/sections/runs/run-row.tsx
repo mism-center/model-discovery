@@ -3,6 +3,7 @@ import cn from 'classnames';
 import { Button, Chip, Spinner, useDisclosure } from '@heroui/react';
 import {
   ArrowPathIcon,
+  ArrowTopRightOnSquareIcon,
   CheckCircleIcon,
   ChevronDownIcon,
   NoSymbolIcon,
@@ -10,6 +11,7 @@ import {
   XCircleIcon,
 } from '@heroicons/react/16/solid';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router';
 
 import {
   isTerminalStatus,
@@ -103,15 +105,15 @@ export function RunRow({ item }: RunRowProps) {
           <h3 className="text-base font-bold font-headline text-primary truncate">
             {item.model.name}
           </h3>
-          <p className="mt-0.5 flex items-center gap-2 text-[11px] text-default-600">
+          <p className="mt-0.5 flex items-center gap-2 text-[11px] text-default-700">
             <span className="font-mono truncate">{run.id}</span>
-            <span aria-hidden="true" className="text-default-400">
+            <span aria-hidden="true" className="text-default-500">
               •
             </span>
             <span className="tabular-nums shrink-0">
               {formatDuration(run.started_at, run.completed_at)}
             </span>
-            <span aria-hidden="true" className="text-default-400">
+            <span aria-hidden="true" className="text-default-500">
               •
             </span>
             <span className="shrink-0">
@@ -134,13 +136,17 @@ export function RunRow({ item }: RunRowProps) {
           <dd className="tabular-nums">{formatTimestamp(run.started_at)}</dd>
         </dl>
 
-        <div className="flex items-center justify-end gap-3">
+        <div className="flex items-center justify-end gap-5">
           <Chip
             size="sm"
             color={color}
             variant="flat"
-            className="capitalize font-bold"
-            startContent={<StatusIcon status={run.status} />}
+            className="capitalize font-bold px-2 h-7"
+            startContent={
+              <div className="mr-1.5">
+                <StatusIcon status={run.status} />
+              </div>
+            }
           >
             {run.status}
           </Chip>
@@ -162,28 +168,28 @@ export function RunRow({ item }: RunRowProps) {
           className="flex flex-col gap-4 px-5 pb-5 pt-1 border-t border-default-200/75"
         >
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs pt-3">
-            <dt className="text-default-600">Model</dt>
+            <dt className="text-default-700">Model</dt>
             <dd>
               {item.model.name}
               {run.model_version && (
-                <span className="ml-2 text-default-600">
-                  v{run.model_version}
+                <span className="ml-2 text-default-700">
+                  (v{run.model_version})
                 </span>
               )}
             </dd>
 
-            <dt className="text-default-600">Run ID</dt>
+            <dt className="text-default-700">Run ID</dt>
             <dd className="font-mono wrap-break-word">{run.id}</dd>
 
-            <dt className="text-default-600">Created</dt>
-            <dd>{formatTimestamp(run.created_at)}</dd>
+            <dt className="text-default-700">Created</dt>
+            <dd className="tabular-nums">{formatTimestamp(run.created_at)}</dd>
 
-            <dt className="text-default-600">Started</dt>
-            <dd>{formatTimestamp(run.started_at)}</dd>
+            <dt className="text-default-700">Started</dt>
+            <dd className="tabular-nums">{formatTimestamp(run.started_at)}</dd>
 
             {terminal && (
               <>
-                <dt className="text-default-600">Completed</dt>
+                <dt className="text-default-700">Completed</dt>
                 <dd>{formatTimestamp(run.completed_at)}</dd>
               </>
             )}
@@ -223,6 +229,15 @@ export function RunRow({ item }: RunRowProps) {
           {terminal && <RunOutputFiles outputs={outputs} />}
 
           <div className="flex justify-end gap-2 mt-1">
+            <Button
+              as={Link}
+              to={`/models/${item.model.id}`}
+              size="sm"
+              className="font-semibold bg-default-300"
+              endContent={<ArrowTopRightOnSquareIcon className="size-4" />}
+            >
+              View model
+            </Button>
             {terminal ? (
               <Button
                 size="sm"

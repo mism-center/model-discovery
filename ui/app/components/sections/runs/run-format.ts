@@ -36,6 +36,20 @@ export const formatTimestamp = (iso: string | null | undefined): string => {
 };
 
 /**
+ * Format a number of seconds as a compact `1h 04m` / `44m 12s` / `8s` string.
+ */
+export const formatSeconds = (totalSecondsRaw: number): string => {
+  const totalSeconds = Math.max(0, Math.round(totalSecondsRaw));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`;
+  if (minutes > 0) return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+  return `${seconds}s`;
+};
+
+/**
  * Format the elapsed time between two ISO timestamps as a compact `1h 04m` /
  * `44m 12s` / `8s` string. Returns `0s` when either bound is missing or
  * unparseable (e.g. a run that never started, or is still running).
@@ -48,13 +62,5 @@ export const formatDuration = (
   const startMs = Date.parse(start);
   const endMs = Date.parse(end);
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return '0s';
-  const totalSeconds = Math.max(0, Math.round((endMs - startMs) / 1000));
-
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`;
-  if (minutes > 0) return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
-  return `${seconds}s`;
+  return formatSeconds((endMs - startMs) / 1000);
 };

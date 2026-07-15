@@ -1,10 +1,6 @@
 import { matchSorter } from 'match-sorter';
 
-import {
-  isTerminalStatus,
-  type RunStatus,
-  type UserRunItem,
-} from '~/api/endpoints/runs';
+import type { RunStatus, UserRunItem } from '~/api/endpoints/runs';
 
 export const STATUS_VALUES: readonly RunStatus[] = [
   'registered',
@@ -144,54 +140,4 @@ export function modelBuckets(
   return [...byId.values()].sort(
     (a, b) => b.count - a.count || a.name.localeCompare(b.name)
   );
-}
-
-export interface RunStats {
-  total: number;
-  running: number;
-  /** Percentage 0–100 of terminal runs that completed successfully, or null if none are terminal. */
-  successRate: number | null;
-  /** Total output resources produced across all runs. */
-  outputs: number;
-  /** The most-run model, or null when there are no runs. */
-  topModel: { name: string; count: number } | null;
-}
-
-/** At-a-glance stats over the full (unfiltered) run list. */
-export function deriveStats(runs: UserRunItem[]): RunStats {
-  let running = 0;
-  let terminal = 0;
-  let completed = 0;
-  let outputs = 0;
-  const modelCounts = new Map<string, { name: string; count: number }>();
-
-  for (const item of runs) {
-    const status = item.run.status;
-    if (status === 'running') running += 1;
-    if (isTerminalStatus(status)) {
-      terminal += 1;
-      if (status === 'completed') completed += 1;
-    }
-    outputs += outputsOf(item).length;
-
-    const { id, name } = item.model;
-    const entry = modelCounts.get(id);
-    if (entry) entry.count += 1;
-    else modelCounts.set(id, { name, count: 1 });
-  }
-
-  let topModel: RunStats['topModel'] = null;
-  for (const entry of modelCounts.values()) {
-    if (!topModel || entry.count > topModel.count) {
-      topModel = { name: entry.name, count: entry.count };
-    }
-  }
-
-  return {
-    total: runs.length,
-    running,
-    successRate: terminal > 0 ? Math.round((completed / terminal) * 100) : null,
-    outputs,
-    topModel,
-  };
 }

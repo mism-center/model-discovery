@@ -11,16 +11,12 @@ import { userRunsQueryOptions } from '~/api/query/runs';
 import { ApiErrorDisplay } from '~/components/common/api-error-display';
 import { RunRow } from './run-row';
 import { RunsSidebar } from './runs-sidebar';
-import { RunsStats } from './runs-stats';
 import {
   activeFilterCount,
   applyFilters,
   parseRunFilters,
   STATUS_VALUES,
 } from './run-filters';
-
-/** Minimum run count before the stats strip earns its space. */
-const STATS_MIN_RUNS = 3;
 
 function RunRowSkeleton() {
   return (
@@ -318,9 +314,6 @@ export default function MyRunsSection() {
               </div>
             </div>
 
-            {/* Stats strip */}
-            {runs.length >= STATS_MIN_RUNS && <RunsStats runs={runs} />}
-
             {/* Status tabs + free-text search */}
             <div className="flex flex-col sm:flex-row sm:items-end gap-3 sm:gap-4 mb-4 border-b border-default-200/75">
               {/* Own scroll region so a narrow viewport scrolls the tab list
@@ -410,9 +403,9 @@ export default function MyRunsSection() {
 
 function TabLabel({ label, count }: { label: string; count: number }) {
   return (
-    <span className="flex items-center gap-1.5">
+    <span className="flex items-center gap-3">
       {label}
-      <span className="text-sm font-bold text-default-500">{count}</span>
+      <span className="text-sm font-bold text-default-700/75">{count}</span>
     </span>
   );
 }
