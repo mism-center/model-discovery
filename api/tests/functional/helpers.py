@@ -31,10 +31,7 @@ def approve(*resource_ids: str) -> None:
     try:
         with engine.begin() as conn:
             conn.execute(
-                text(
-                    "UPDATE resources SET registration_status = 'approved' "
-                    "WHERE id = ANY(:ids)"
-                ),
+                text("UPDATE resources SET registration_status = 'approved' WHERE id = ANY(:ids)"),
                 {"ids": list(resource_ids)},
             )
     finally:
