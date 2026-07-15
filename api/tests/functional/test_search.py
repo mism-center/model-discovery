@@ -7,7 +7,7 @@ import uuid
 import httpx
 import pytest
 
-from tests.functional.helpers import unique_name
+from tests.functional.helpers import approve, unique_name
 
 pytestmark = pytest.mark.integration
 
@@ -54,6 +54,10 @@ def _seed_search_fixtures(api: httpx.Client) -> dict[str, str]:
     )
     assert r.status_code == 201
     nn_model = r.json()
+
+    # Resources are created DRAFT; search only surfaces approved ones, so
+    # promote the fixtures to approved before any search assertions run.
+    approve(model["id"], dataset["id"], nn_model["id"])
 
     return {
         "tag": tag,
