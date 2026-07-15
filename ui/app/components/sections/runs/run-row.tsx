@@ -81,7 +81,7 @@ export function RunRow({ item }: RunRowProps) {
       className={cn(
         'rounded-2xl border transition-colors duration-200',
         expanded
-          ? 'border-default-200 bg-primary/2 shadow-sm shadow-primary/5'
+          ? 'border-slate-200 bg-primary/2'
           : 'border-transparent hover:bg-primary/4'
       )}
     >
@@ -165,7 +165,7 @@ export function RunRow({ item }: RunRowProps) {
       {expanded && (
         <div
           id={panelId}
-          className="flex flex-col gap-4 px-5 pb-5 pt-1 border-t border-default-200/75"
+          className="flex flex-col gap-5 px-5 pb-5 pt-1 border-t border-default-200/75"
         >
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs pt-3">
             <dt className="text-default-700">Model</dt>
@@ -234,7 +234,7 @@ export function RunRow({ item }: RunRowProps) {
               to={`/models/${item.model.id}`}
               size="sm"
               className="font-semibold bg-default-300"
-              endContent={<ArrowTopRightOnSquareIcon className="size-4" />}
+              startContent={<ArrowTopRightOnSquareIcon className="size-4" />}
             >
               View model
             </Button>
@@ -258,7 +258,7 @@ export function RunRow({ item }: RunRowProps) {
                 startContent={<StopIcon className="size-4" />}
                 onPress={terminateModal.onOpen}
               >
-                Terminate run
+                Abort
               </Button>
             )}
           </div>

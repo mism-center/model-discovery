@@ -27,7 +27,7 @@ const formatBytes = (bytes: number): string => {
 export function RunOutputFiles({ outputs }: RunOutputFilesProps) {
   return (
     <div className="flex flex-col gap-2">
-      <span className="text-xs font-bold uppercase tracking-wider text-primary">
+      <span className="text-xs font-bold uppercase tracking-wider text-primary mb-1">
         Outputs
       </span>
       {outputs.length === 0 ? (

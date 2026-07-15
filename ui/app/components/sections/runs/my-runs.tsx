@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import cn from 'classnames';
-import { Button, Input, Skeleton, Tab, Tabs } from '@heroui/react';
+import {
+  BreadcrumbItem,
+  Button,
+  Input,
+  Skeleton,
+  Tab,
+  Tabs,
+} from '@heroui/react';
 import { MagnifyingGlassIcon } from '@heroicons/react/16/solid';
 import { ArrowRightIcon, RocketLaunchIcon } from '@heroicons/react/24/outline';
 import { useQuery } from '@tanstack/react-query';
@@ -9,6 +16,7 @@ import { Link, useSearchParams } from 'react-router';
 import type { UserRunItem } from '~/api/endpoints/runs';
 import { userRunsQueryOptions } from '~/api/query/runs';
 import { ApiErrorDisplay } from '~/components/common/api-error-display';
+import { CompactBreadcrumbs } from '~/components/layout/breadcrumbs';
 import { RunRow } from './run-row';
 import { RunsSidebar } from './runs-sidebar';
 import {
@@ -288,30 +296,38 @@ export default function MyRunsSection() {
         <section className="col-start-2 lg:border-l border-slate-200 bg-white">
           <div className="flex flex-col w-full grow p-10">
             {/* Header */}
-            <div className="mb-8">
+            <div className="mb-6">
+              <CompactBreadcrumbs className="mb-3">
+                <BreadcrumbItem href="/">Home</BreadcrumbItem>
+                <BreadcrumbItem>Run History</BreadcrumbItem>
+              </CompactBreadcrumbs>
               <h1 className="text-3xl font-headline font-extrabold text-primary tracking-tight">
-                My Runs
+                Run History
               </h1>
-              {/* Fixed row height so the Clear button (taller than the count
-                  text alone) doesn't resize the header when it appears. */}
-              <div className="mt-3 flex items-center gap-2.5 h-6">
-                <span className="text-[16px] font-semibold text-default-800">
-                  {filtered
-                    ? `${visibleRuns.length} of ${runs.length} ${runs.length === 1 ? 'run' : 'runs'}`
-                    : `${runs.length} ${runs.length === 1 ? 'run' : 'runs'}`}
+              <div className="mt-3 flex items-center gap-2.5">
+                <span className="text-[16px] font-medium text-default-800/90">
+                  Manage and review your latest model executions.
                 </span>
-                {activeCount > 0 && (
-                  <Button
-                    size="sm"
-                    variant="light"
-                    color="primary"
-                    className="h-6 min-w-0 px-2 text-[13px] font-semibold"
-                    onPress={clearFilters}
-                  >
-                    Clear all
-                  </Button>
-                )}
               </div>
+              {filtered && (
+                <div className="mt-3 flex items-center gap-2.5">
+                  <span className="text-[15px] font-semibold text-secondary">
+                    {visibleRuns.length} of {runs.length}{' '}
+                    {runs.length === 1 ? 'run' : 'runs'}
+                  </span>
+                  {activeCount > 0 && (
+                    <Button
+                      size="sm"
+                      variant="light"
+                      color="primary"
+                      className="h-6 min-w-0 px-2 text-[13px] font-semibold"
+                      onPress={clearFilters}
+                    >
+                      Clear all
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Status tabs + free-text search */}
