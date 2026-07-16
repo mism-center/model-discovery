@@ -383,7 +383,7 @@ function FieldSection({
                 onChange={onChange}
                 items={resolveListItems(key, parsedMeta)}
                 forceEditable={isEditing}
-                formValues={formValues}
+                getFormValue={(k) => formValues[k] ?? ''}
               />
             );
           })}

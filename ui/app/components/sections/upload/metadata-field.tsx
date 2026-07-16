@@ -1,5 +1,5 @@
 import { Input, Textarea, Chip } from '@heroui/react';
-import type { FieldAnnotation, FormValues } from './metadata-types';
+import type { FieldAnnotation } from './metadata-types';
 
 type MetadataFieldProps = {
   fieldKey: string;
@@ -11,8 +11,8 @@ type MetadataFieldProps = {
   items?: unknown[];
   /** When true, viewable fields that support editing are rendered as inputs */
   forceEditable?: boolean;
-  /** Full form state — needed so editable ontology list items can read their indexed keys */
-  formValues?: FormValues;
+  /** Read current form value by key — used by EditableOntologyList for per-item editing */
+  getFormValue?: (key: string) => string;
 };
 
 const FORCE_EDITABLE_TYPES = new Set([
@@ -32,20 +32,22 @@ export function MetadataField({
   onChange,
   items,
   forceEditable,
-  formValues,
+  getFormValue,
 }: MetadataFieldProps) {
   const isEditable =
     annotation.visibility === 'editable' ||
-    (forceEditable === true && FORCE_EDITABLE_TYPES.has(annotation.inputType));
+    (forceEditable === true &&
+      annotation.forceReadOnly !== true &&
+      FORCE_EDITABLE_TYPES.has(annotation.inputType));
 
   if (isEditable && annotation.inputType === 'list-ontology') {
     return (
       <EditableOntologyList
-        fieldKey={fieldKey}
         annotation={annotation}
         items={items ?? []}
-        formValues={formValues ?? {}}
+        fieldKey={fieldKey}
         onChange={onChange}
+        getFormValue={getFormValue}
       />
     );
   }
@@ -61,7 +63,7 @@ export function MetadataField({
       />
     );
   }
-  return <ViewableField annotation={annotation} value={value} items={items} />;
+  return <ViewableField annotation={annotation} value={value} items={items} confidence={confidence} />;
 }
 
 // ── Editable renderer ─────────────────────────────────────────────────────────
@@ -84,7 +86,6 @@ function EditableField({
   const label = annotation.required
     ? `${annotation.label} *`
     : annotation.label;
-  const showConfidence = annotation.hasConfidence === true;
 
   if (annotation.inputType === 'boolean') {
     return (
@@ -130,78 +131,49 @@ function EditableField({
       />
     );
 
-  if (!showConfidence) return mainInput;
-
   return (
     <div className="flex flex-col gap-1.5">
       {mainInput}
-      <div className="flex items-center gap-2 pl-1">
-        <span className="text-xs text-default-800 shrink-0">Confidence</span>
-        <select
-          value={confidence ?? ''}
-          onChange={(e) => onChange(`${fieldKey}.$confidence`, e.target.value)}
-          aria-label={`${annotation.label} confidence`}
-          className="text-xs text-default-800 bg-default-200 border border-default-200 rounded px-2 py-1"
-        >
-          <option value="">—</option>
-          <option value="high">high</option>
-          <option value="medium">medium</option>
-          <option value="low">low</option>
-          <option value="none">none</option>
-        </select>
-      </div>
+      {confidence && (
+        <div className="flex items-center gap-2 pl-1">
+          <span className="text-xs text-default-800 shrink-0">Confidence</span>
+          <ConfidenceBadge value={confidence} />
+        </div>
+      )}
     </div>
+  );
+}
+
+// ── Confidence badge ──────────────────────────────────────────────────────────
+
+function ConfidenceBadge({ value }: { value: string }) {
+  const colorMap: Record<string, 'danger' | 'warning' | 'success' | 'default'> =
+    { none: 'danger', inferred: 'danger', medium: 'warning', high: 'success' };
+  const color = colorMap[value] ?? 'default';
+  return (
+    <Chip size="sm" color={color} variant="flat">
+      {value}
+    </Chip>
   );
 }
 
 // ── Editable ontology list ────────────────────────────────────────────────────
 
-const CONFIDENCE_SELECT_CLASS =
-  'text-xs text-default-800 bg-default-200 border border-default-200 rounded px-2 py-1';
-
-function ConfidenceSelect({
-  label,
-  ariaLabel,
-  value,
-  onChange,
-}: {
-  label: string;
-  ariaLabel: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-xs text-default-800">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label={ariaLabel}
-        className={CONFIDENCE_SELECT_CLASS}
-      >
-        <option value="">—</option>
-        <option value="high">high</option>
-        <option value="medium">medium</option>
-        <option value="low">low</option>
-        <option value="none">none</option>
-      </select>
-    </div>
-  );
-}
-
 function EditableOntologyList({
-  fieldKey,
   annotation,
   items,
-  formValues,
+  fieldKey,
   onChange,
+  getFormValue,
 }: {
-  fieldKey: string;
   annotation: FieldAnnotation;
   items: unknown[];
-  formValues: FormValues;
-  onChange: (key: string, value: string) => void;
+  fieldKey: string;
+  onChange: (key: string, newValue: string) => void;
+  getFormValue?: (key: string) => string;
 }) {
+  const gv = (key: string) => getFormValue?.(key) ?? '';
+
   return (
     <div className="flex flex-col gap-1.5">
       <span className="text-xs text-default-800 font-medium">
@@ -214,55 +186,67 @@ function EditableOntologyList({
         <span className="text-xs text-default-800 italic">none</span>
       ) : (
         <div className="flex flex-col gap-2">
-          {items.map((item, index) => {
-            const record = item as Record<string, unknown>;
-            const label = String(
-              record['ontology_label'] ?? record['value'] ?? ''
-            );
-            const iri = record['iri'] ? String(record['iri']) : null;
-            const ontology = record['ontology']
-              ? String(record['ontology'])
-              : null;
-            const confKey = `${fieldKey}[${index}].confidence`;
-            const mapKey = `${fieldKey}[${index}].mapping_confidence`;
-            const conf =
-              formValues[confKey] ??
-              (record['confidence'] ? String(record['confidence']) : '');
-            const mapConf =
-              formValues[mapKey] ??
-              (record['mapping_confidence']
-                ? String(record['mapping_confidence'])
-                : '');
+          {items.map((_, index) => {
+            const conf = gv(`${fieldKey}[${index}].confidence`);
+            const mapConf = gv(`${fieldKey}[${index}].mapping_confidence`);
 
             return (
               <div
                 key={index}
-                className="bg-default-100 border border-default-200 rounded px-3 py-2 flex flex-col gap-1.5"
+                className="bg-default-100 border border-default-200 rounded px-3 py-2 flex flex-col gap-2"
               >
-                <span className="text-xs font-medium text-default-800">
-                  {label}
-                </span>
-                {iri && (
-                  <span className="text-xs text-default-800 font-mono break-all">
-                    {iri}
-                  </span>
-                )}
-                {ontology && (
-                  <span className="text-xs text-default-800">{ontology}</span>
-                )}
+                <Input
+                  size="sm"
+                  label="label"
+                  value={gv(`${fieldKey}[${index}].ontology_label`)}
+                  onValueChange={(v) =>
+                    onChange(`${fieldKey}[${index}].ontology_label`, v)
+                  }
+                  classNames={{ label: 'text-xs text-default-800' }}
+                />
+                <Input
+                  size="sm"
+                  label="iri"
+                  value={gv(`${fieldKey}[${index}].iri`)}
+                  onValueChange={(v) =>
+                    onChange(`${fieldKey}[${index}].iri`, v)
+                  }
+                  classNames={{
+                    label: 'text-xs text-default-800',
+                    input: 'font-mono text-xs',
+                  }}
+                />
+                <Input
+                  size="sm"
+                  label="ontology"
+                  value={gv(`${fieldKey}[${index}].ontology`)}
+                  onValueChange={(v) =>
+                    onChange(`${fieldKey}[${index}].ontology`, v)
+                  }
+                  classNames={{ label: 'text-xs text-default-800' }}
+                />
+                <Input
+                  size="sm"
+                  label="source"
+                  value={gv(`${fieldKey}[${index}].source`)}
+                  onValueChange={(v) =>
+                    onChange(`${fieldKey}[${index}].source`, v)
+                  }
+                  classNames={{ label: 'text-xs text-default-800' }}
+                />
                 <div className="flex items-center gap-4 pt-0.5">
-                  <ConfidenceSelect
-                    label="Confidence"
-                    ariaLabel={`${label} confidence`}
-                    value={conf}
-                    onChange={(v) => onChange(confKey, v)}
-                  />
-                  <ConfidenceSelect
-                    label="Map confidence"
-                    ariaLabel={`${label} mapping confidence`}
-                    value={mapConf}
-                    onChange={(v) => onChange(mapKey, v)}
-                  />
+                  {conf && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-default-800">Confidence</span>
+                      <ConfidenceBadge value={conf} />
+                    </div>
+                  )}
+                  {mapConf && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-default-800">Map confidence</span>
+                      <ConfidenceBadge value={mapConf} />
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -284,9 +268,10 @@ type ViewableFieldProps = {
   annotation: FieldAnnotation;
   value: string;
   items?: unknown[];
+  confidence?: string;
 };
 
-function ViewableField({ annotation, value, items }: ViewableFieldProps) {
+function ViewableField({ annotation, value, items, confidence }: ViewableFieldProps) {
   if (annotation.inputType === 'preformatted') {
     const isEmpty = !value || value === 'null' || value === '';
     return (
@@ -335,6 +320,12 @@ function ViewableField({ annotation, value, items }: ViewableFieldProps) {
           value
         )}
       </span>
+      {confidence && (
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <span className="text-xs text-default-800 shrink-0">Confidence</span>
+          <ConfidenceBadge value={confidence} />
+        </div>
+      )}
       {annotation.description && (
         <span className="text-xs text-default-800">
           {annotation.description}
@@ -421,6 +412,7 @@ function ObjectListField({
   items?: unknown[];
 }) {
   const list = Array.isArray(items) ? items : [];
+  const isOntology = annotation.inputType === 'list-ontology';
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -434,14 +426,73 @@ function ObjectListField({
         <span className="text-xs text-default-800 italic">none</span>
       ) : (
         <div className="flex flex-col gap-1.5">
-          {list.map((item, index) => (
-            <div
-              key={index}
-              className="text-xs bg-default-50 border border-default-200 rounded px-3 py-2 font-mono text-default-800"
-            >
-              {formatObjectItem(item)}
-            </div>
-          ))}
+          {list.map((item, index) => {
+            if (isOntology) {
+              const record = item as Record<string, unknown>;
+              const label = String(
+                record['ontology_label'] ?? record['value'] ?? ''
+              );
+              const iri = record['iri'] ? String(record['iri']) : null;
+              const ontology = record['ontology']
+                ? String(record['ontology'])
+                : null;
+              const source = record['source'] ? String(record['source']) : null;
+              const conf = record['confidence']
+                ? String(record['confidence'])
+                : '';
+              const mapConf = record['mapping_confidence']
+                ? String(record['mapping_confidence'])
+                : '';
+              return (
+                <div
+                  key={index}
+                  className="bg-default-100 border border-default-200 rounded px-3 py-2 flex flex-col gap-1.5"
+                >
+                  <span className="text-xs font-medium text-default-800">
+                    {label}
+                  </span>
+                  {iri && (
+                    <span className="text-xs text-default-800 font-mono break-all">
+                      iri: {iri}
+                    </span>
+                  )}
+                  {ontology && (
+                    <span className="text-xs text-default-800">ontology: {ontology}</span>
+                  )}
+                  {source && (
+                    <span className="text-xs text-default-800">source: {source}</span>
+                  )}
+                  <div className="flex items-center gap-4 pt-0.5">
+                    {conf && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-default-800">
+                          Confidence
+                        </span>
+                        <ConfidenceBadge value={conf} />
+                      </div>
+                    )}
+                    {mapConf && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-default-800">
+                          Map confidence
+                        </span>
+                        <ConfidenceBadge value={mapConf} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+            // list-object: authors, contacts, publications, funding, etc.
+            return (
+              <div
+                key={index}
+                className="text-xs bg-default-50 border border-default-200 rounded px-3 py-2 font-mono text-default-800"
+              >
+                {formatObjectItem(item)}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

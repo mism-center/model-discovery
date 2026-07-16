@@ -87,6 +87,20 @@ export function extractFormValues(parsedMeta: ParsedMetadataYaml): FormValues {
         item.confidence == null ? '' : String(item.confidence);
       values[`${fieldKey}[${i}].mapping_confidence`] =
         item.mapping_confidence ?? '';
+      values[`${fieldKey}[${i}].value`] =
+        item.value == null ? '' : String(item.value);
+      values[`${fieldKey}[${i}].iri`] =
+        item.iri == null ? '' : String(item.iri);
+      values[`${fieldKey}[${i}].ontology_label`] =
+        item.ontology_label != null
+          ? String(item.ontology_label)
+          : item.value != null
+          ? String(item.value)
+          : '';
+      values[`${fieldKey}[${i}].ontology`] =
+        item.ontology == null ? '' : String(item.ontology);
+      values[`${fieldKey}[${i}].source`] =
+        item.source == null ? '' : String(item.source);
     }
   }
 
@@ -249,12 +263,22 @@ function applyOntologyListItems(
   return list.map((item, i) => {
     const confidence = values[`${fieldKey}[${i}].confidence`];
     const mappingConfidence = values[`${fieldKey}[${i}].mapping_confidence`];
+    const value = values[`${fieldKey}[${i}].value`];
+    const iri = values[`${fieldKey}[${i}].iri`];
+    const ontologyLabel = values[`${fieldKey}[${i}].ontology_label`];
+    const ontology = values[`${fieldKey}[${i}].ontology`];
+    const source = values[`${fieldKey}[${i}].source`];
     return {
       ...item,
       ...(confidence === undefined ? {} : { confidence: confidence || null }),
       ...(mappingConfidence === undefined
         ? {}
         : { mapping_confidence: mappingConfidence || null }),
+      ...(value === undefined ? {} : { value: value || null }),
+      ...(iri === undefined ? {} : { iri: iri || null }),
+      ...(ontologyLabel === undefined ? {} : { ontology_label: ontologyLabel || null }),
+      ...(ontology === undefined ? {} : { ontology: ontology || null }),
+      ...(source === undefined ? {} : { source: source || undefined }),
     };
   });
 }

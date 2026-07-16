@@ -119,8 +119,8 @@ export type FieldAnnotation = {
   placeholder?: string;
   /** Whether this is a REQUIRED field per schema — drives visual indicator */
   required?: boolean;
-  /** Whether the underlying YAML field carries a confidence value that should be editable */
-  hasConfidence?: boolean;
+  /** When true, stays read-only even when the section Edit checkbox is on */
+  forceReadOnly?: boolean;
   /** When true, the field is excluded from the form entirely */
   hidden?: boolean;
 };

@@ -426,6 +426,7 @@ export default function TusTest() {
   const [outputFiles, setOutputFiles] = useState<ResourceFileItem[] | null>(
     null
   );
+  const [showRerunWarning, setShowRerunWarning] = useState(false);
 
   useEffect(() => {
     const instance = createUppy(() => modelNameRef.current);
@@ -556,6 +557,11 @@ export default function TusTest() {
     setRawFiles(metaResult?.files ?? []);
     setMetadataRegistryId(metaResult?.registryId ?? '');
     setOutputFiles(files);
+  }
+
+  function handleRerun() {
+    setShowRerunWarning(false);
+    void handleGitHubImport();
   }
 
   async function handleGitHubImport() {
@@ -819,6 +825,49 @@ export default function TusTest() {
                     Model ID:{' '}
                     <code className="font-mono">{registeredModelId}</code>
                   </span>
+                )}
+                {annotationStatus === 'pending_review' && !showRerunWarning && (
+                  <Button
+                    size="sm"
+                    color="success"
+                    variant="flat"
+                    className="self-start mt-1 text-foreground"
+                    onPress={() => setShowRerunWarning(true)}
+                  >
+                    Re-annotate
+                  </Button>
+                )}
+                {showRerunWarning && (
+                  <Card
+                    shadow="none"
+                    className="border border-warning-300 bg-warning-50 mt-1"
+                  >
+                    <CardBody className="flex flex-col gap-2">
+                      <span className="text-sm font-medium text-warning-800">
+                        Re-annotate this model?
+                      </span>
+                      <span className="text-xs text-default-700">
+                        Any unsaved edits to the metadata will be lost. This
+                        will re-run the full annotation pipeline.
+                      </span>
+                      <div className="flex gap-2 mt-1">
+                        <Button
+                          size="sm"
+                          color="warning"
+                          onPress={handleRerun}
+                        >
+                          Yes, re-annotate
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          onPress={() => setShowRerunWarning(false)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </CardBody>
+                  </Card>
                 )}
                 {rawFiles.length > 0 && (
                   <div className="mt-2">
