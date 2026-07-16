@@ -91,12 +91,9 @@ export function extractFormValues(parsedMeta: ParsedMetadataYaml): FormValues {
         item.value == null ? '' : String(item.value);
       values[`${fieldKey}[${i}].iri`] =
         item.iri == null ? '' : String(item.iri);
-      values[`${fieldKey}[${i}].ontology_label`] =
-        item.ontology_label != null
-          ? String(item.ontology_label)
-          : item.value != null
-            ? String(item.value)
-            : '';
+      values[`${fieldKey}[${i}].ontology_label`] = String(
+        item.ontology_label ?? item.value ?? ''
+      );
       values[`${fieldKey}[${i}].ontology`] =
         item.ontology == null ? '' : String(item.ontology);
       values[`${fieldKey}[${i}].source`] =
