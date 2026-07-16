@@ -142,7 +142,7 @@ function OutputResourceFiles({ resource }: { resource: ResourceSummaryItem }) {
                   </span>
                   <ArrowDownTrayIcon
                     aria-hidden="true"
-                    className="size-3.5 text-default-500 group-hover:text-primary transition-colors"
+                    className="size-3.5 text-default-600 group-hover:text-primary transition-colors"
                   />
                 </span>
               </a>
