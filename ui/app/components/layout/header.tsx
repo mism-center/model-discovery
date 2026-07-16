@@ -23,6 +23,7 @@ import {
 } from 'react-router';
 import cn from 'classnames';
 import {
+  ArrowRightStartOnRectangleIcon,
   BoltIcon,
   ChevronDownIcon,
   MagnifyingGlassIcon,
@@ -123,74 +124,129 @@ function displayName(user: CurrentUser): string {
   return user.name || user.preferred_username || user.email || user.sub;
 }
 
+function initials(user: CurrentUser): string {
+  const name = user.name?.trim();
+  if (name) {
+    const parts = name.split(/\s+/);
+    const first = parts[0][0] ?? '';
+    const last = parts.length > 1 ? (parts.at(-1)?.[0] ?? '') : '';
+    return (first + last).toUpperCase();
+  }
+  return displayName(user).slice(0, 2).toUpperCase();
+}
+
+function UserAvatar({
+  user,
+  className,
+}: {
+  user: CurrentUser;
+  className?: string;
+}) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'flex items-center justify-center rounded-full select-none',
+        'bg-secondary font-medium text-white',
+        className
+      )}
+    >
+      {initials(user)}
+    </span>
+  );
+}
+
 function HeaderAuth() {
   const { user, isLoading } = useUser();
 
   if (isLoading && user === null) {
-    return <Skeleton className="rounded-md h-8 w-20" />;
+    return <Skeleton className="rounded-full h-8 w-8 bg-white/20" />;
   }
 
   if (!user) {
     return (
-      <Button
-        size="sm"
-        variant="flat"
+      <button
         className={cn(
-          'h-8 px-3 py-2 rounded-md shrink-0',
-          'bg-white border border-white/25 text-primary',
-          'hover:bg-white/90 opacity-100! transition-colors duration-200',
-          'text-[13px] font-bold'
+          'text-slate-300 hover:text-white transition-colors',
+          'text-[0.9375rem] px-1 py-1.5 font-medium tracking-tight shrink-0'
         )}
-        onPress={() => signIn()}
+        onClick={() => signIn()}
       >
         Sign in
-      </Button>
+      </button>
     );
   }
 
   const name = displayName(user);
 
   return (
-    <Dropdown placement="bottom-end" radius="sm">
+    <Dropdown
+      placement="bottom-end"
+      classNames={{
+        content: cn(
+          'min-w-60 p-1.5 rounded-xl',
+          'bg-white/95 backdrop-blur-md border border-default-300',
+          'shadow-xl shadow-primary-900/15'
+        ),
+      }}
+    >
       <DropdownTrigger>
         <Button
-          size="sm"
-          variant="flat"
-          endContent={<ChevronDownIcon className="size-4 -mr-1" />}
-          className={cn(
-            'h-8 px-3 py-2 rounded-md shrink-0',
-            'bg-white/10 border border-white/20 text-white',
-            'hover:bg-white/15 opacity-100! transition-colors duration-200',
-            'text-[13px] font-semibold'
-          )}
+          isIconOnly
+          disableRipple
+          aria-label="Account menu"
+          className="group size-8 min-w-0 rounded-full shrink-0 bg-transparent opacity-100! scale-100!"
         >
-          {name}
+          <UserAvatar
+            user={user}
+            className={cn(
+              'size-8 text-xs transition-colors duration-200',
+              'group-data-[hover=true]:bg-secondary-600'
+            )}
+          />
         </Button>
       </DropdownTrigger>
-      <DropdownMenu aria-label="Account menu" className="min-w-56">
+      <DropdownMenu
+        aria-label="Account menu"
+        className="p-0 gap-1"
+        itemClasses={{ base: 'rounded-lg' }}
+      >
         <DropdownItem
           key="identity"
           isReadOnly
-          showDivider
-          className="opacity-100! cursor-default data-[hover=true]:bg-transparent"
+          className={cn(
+            'opacity-100! cursor-default p-2.5 mb-1',
+            'bg-default-100/75 data-[hover=true]:bg-default-100/75'
+          )}
           textValue={user.email ?? name}
         >
-          <div className="text-[11px] uppercase tracking-wide text-default-700">
-            Signed in as
-          </div>
-          <div className="text-sm font-semibold text-default-900 truncate">
-            {user.email ?? name}
+          <div className="flex items-center gap-2.5">
+            <UserAvatar user={user} className="size-9 text-[13px] shrink-0" />
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-default-900 truncate">
+                {name}
+              </div>
+              {user.email && user.email !== name && (
+                <div className="text-xs text-default-700 truncate">
+                  {user.email}
+                </div>
+              )}
+            </div>
           </div>
         </DropdownItem>
         <DropdownItem
           key="signout"
-          color="danger"
-          className="text-danger font-medium"
+          startContent={<ArrowRightStartOnRectangleIcon className="size-4" />}
+          className={cn(
+            'px-2.5 py-2',
+            'data-[hover=true]:bg-default-300',
+            'data-[pressed=true]:bg-default'
+          )}
           onPress={() => {
             void signOut();
           }}
         >
-          Sign out
+          <span className="text-[13px] font-medium">Sign out</span>
         </DropdownItem>
       </DropdownMenu>
     </Dropdown>
