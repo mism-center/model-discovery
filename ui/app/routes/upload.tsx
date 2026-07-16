@@ -428,7 +428,6 @@ export default function TusTest() {
   const [outputFiles, setOutputFiles] = useState<ResourceFileItem[] | null>(
     null
   );
-  const [showOutputFiles, setShowOutputFiles] = useState(false);
 
   useEffect(() => {
     const instance = createUppy(() => modelNameRef.current);
@@ -551,7 +550,6 @@ export default function TusTest() {
     setMetadataSaveState('idle');
     setMetadataSaveError('');
     setOutputFiles(null);
-    setShowOutputFiles(false);
     setFailedStep('idle');
     setRegisteredModelId(resourceId);
     setWorkflowStep('complete');
@@ -576,7 +574,6 @@ export default function TusTest() {
     setAnnotationStatus('');
     setRawFiles([]);
     setOutputFiles(null);
-    setShowOutputFiles(false);
     setFailedStep('idle');
 
     // Track current step locally so the catch block can report it accurately,
@@ -814,13 +811,13 @@ export default function TusTest() {
           {workflowStep === 'complete' && (
             <Card shadow="sm" className="border-success-200 bg-success-50">
               <CardBody className="flex flex-col gap-1">
-                <span className="text-sm font-medium text-foreground">
+                <span className="text-lg font-medium text-foreground">
                   Annotation complete
                 </span>
                 {annotationStatus && (
                   <span className="text-xs text-default-800">
                     Status:{' '}
-                    <code className="font-mono">{annotationStatus}</code>
+                    <code className="font-mono font-bold text-default-900">{annotationStatus}</code>
                   </span>
                 )}
                 {registeredModelId && (
@@ -829,68 +826,29 @@ export default function TusTest() {
                     <code className="font-mono">{registeredModelId}</code>
                   </span>
                 )}
-                {importedBranch && (
-                  <span className="text-xs text-default-800">
-                    Branch: <code className="font-mono">{importedBranch}</code>
-                  </span>
-                )}
-                {runId && (
-                  <span className="text-xs text-default-800">
-                    Run ID: <code className="font-mono">{runId}</code>
-                  </span>
-                )}
                 {rawFiles.length > 0 && (
                   <div className="mt-2">
                     <MetadataFormViewer
                       modelId={metadataRegistryId}
                       rawFiles={rawFiles}
-                      onSaved={() => setMetadataSaveState('saved')}
+                      onSaved={() => {
+                        setMetadataSaveState('saved');
+                        setAnnotationStatus('approved');
+                      }}
                       onSaveError={(msg) => {
                         setMetadataSaveState('error');
                         setMetadataSaveError(msg);
                       }}
+                      annotationFiles={(outputFiles ?? []).map((f) => ({
+                        path: f.path,
+                        name: f.name,
+                        url: `${apiOrigin()}/api/v1/resources/${encodeURIComponent(registeredModelId)}/download?${new URLSearchParams({ file: f.path }).toString()}`,
+                      }))}
                     />
                     {metadataSaveState === 'error' && (
                       <span className="text-xs text-danger-600 mt-1">
                         {metadataSaveError}
                       </span>
-                    )}
-                  </div>
-                )}
-                {outputFiles && outputFiles.length > 0 && (
-                  <div className="mt-2 flex flex-col gap-1">
-                    <Button
-                      size="sm"
-                      variant="light"
-                      className="w-fit px-0 text-xs font-medium text-foreground gap-1"
-                      onPress={() => setShowOutputFiles((v) => !v)}
-                    >
-                      {showOutputFiles ? '▾' : '▸'} Annotation outputs (
-                      {outputFiles.length})
-                    </Button>
-                    {showOutputFiles && (
-                      <ul className="flex flex-col gap-1 mt-1">
-                        {outputFiles.map((file) => (
-                          <li
-                            key={file.path}
-                            className="flex items-center justify-between gap-4"
-                          >
-                            <span className="text-xs font-mono text-default-800 truncate">
-                              {file.path}
-                            </span>
-                            <Button
-                              as="a"
-                              size="sm"
-                              variant="flat"
-                              className="text-foreground"
-                              href={`${apiOrigin()}/api/v1/resources/${encodeURIComponent(registeredModelId)}/download?${new URLSearchParams({ file: file.path }).toString()}`}
-                              download={file.name}
-                            >
-                              Download
-                            </Button>
-                          </li>
-                        ))}
-                      </ul>
                     )}
                   </div>
                 )}

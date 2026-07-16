@@ -22,11 +22,14 @@ import { MetadataField } from './metadata-field';
 
 type RawFile = { filename: string; content: string };
 
+type AnnotationFile = { path: string; name: string; url: string };
+
 type MetadataFormViewerProps = {
   modelId: string;
   rawFiles: RawFile[];
   onSaved: () => void;
   onSaveError: (message: string) => void;
+  annotationFiles?: AnnotationFile[];
 };
 
 // inputTypes that become editable when forceEditable=true (mirrors FORCE_EDITABLE_TYPES
@@ -47,6 +50,7 @@ export function MetadataFormViewer({
   rawFiles,
   onSaved,
   onSaveError,
+  annotationFiles,
 }: MetadataFormViewerProps) {
   const { parsedMeta, metaContent } = useMemo(() => {
     const metaFile = rawFiles.find((f) => f.filename === 'metadata.yaml');
@@ -120,10 +124,14 @@ export function MetadataFormViewer({
         aria-label="Metadata sections"
         size="sm"
         variant="underlined"
-        classNames={{ tab: 'text-default-800' }}
+        classNames={{
+          tab: 'data-[hover-unselected=true]:!opacity-100',
+          tabContent: 'text-default-800 group-data-[selected=true]:text-foreground group-data-[hover-unselected=true]:font-bold',
+          panel: 'pt-0',
+        }}
       >
         <Tab key="metadata" title="Metadata">
-          <div className="flex flex-col gap-4 pt-2">
+          <div className="flex flex-col gap-4">
             {(
               [
                 {
@@ -208,10 +216,43 @@ export function MetadataFormViewer({
           </div>
         </Tab>
 
-        <Tab key="raw" title="Raw YAML">
-          <div className="flex flex-col gap-3 pt-2">
+        <Tab key="annotation" title="Annotation Outputs">
+          <div className="flex flex-col gap-3">
+            {!annotationFiles || annotationFiles.length === 0 ? (
+              <span className="text-xs text-default-500 italic">
+                No annotation files
+              </span>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {annotationFiles.map((file) => (
+                  <li
+                    key={file.path}
+                    className="flex items-center justify-between gap-4"
+                  >
+                    <span className="text-xs font-mono text-default-800 truncate">
+                      {file.path}
+                    </span>
+                    <Button
+                      as="a"
+                      size="sm"
+                      variant="flat"
+                      className="text-foreground"
+                      href={file.url}
+                      download={file.name}
+                    >
+                      Download
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </Tab>
+
+        <Tab key="raw" title="Raw Metadata YAML">
+          <div className="flex flex-col gap-3">
             {metaContent ? (
-              <pre className="text-xs bg-default-100 rounded p-3 overflow-auto max-h-96 font-mono border border-default-200">
+              <pre className="text-xs text-default-800 bg-default-100 rounded p-3 overflow-auto max-h-96 font-mono border border-default-200">
                 {metaContent}
               </pre>
             ) : (
@@ -237,10 +278,10 @@ export function MetadataFormViewer({
           Approve
         </Button>
         {isDirty && saveState === 'idle' && (
-          <span className="text-xs text-default-500">Unsaved changes</span>
+          <span className="text-xs text-default-800">Unsaved changes</span>
         )}
         {saveState === 'saved' && (
-          <span className="text-xs text-success-700">Saved</span>
+          <span className="text-xs text-success-800">Saved</span>
         )}
       </div>
     </div>
@@ -291,30 +332,32 @@ function FieldSection({
   return (
     <Card shadow="none" className="border border-default-200">
       <CardHeader
-        className="pb-0 pt-3 px-4 cursor-pointer select-none"
+        className="pb-0 pt-1 px-4 cursor-pointer select-none"
         onClick={() => setIsCollapsed((v) => !v)}
       >
-        <div className="flex items-center justify-between w-full">
-          <div className="flex items-center gap-2">
-            <svg
-              className={`w-3 h-3 shrink-0 text-default-600 transition-transform duration-150 ${isCollapsed ? '' : 'rotate-90'}`}
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2.5}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M9 5l7 7-7 7"
-              />
-            </svg>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-default-800">
-              {title}
-            </h3>
-          </div>
+        <div className="flex items-center gap-2">
+          <svg
+            className={`w-3 h-3 shrink-0 text-default-600 transition-transform duration-150 ${isCollapsed ? '' : 'rotate-90'}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2.5}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M9 5l7 7-7 7"
+            />
+          </svg>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-default-800">
+            {title}
+          </h3>
+        </div>
+      </CardHeader>
+      {!isCollapsed && (
+        <CardBody className="flex flex-col gap-4 pt-3">
           {canEdit && !noEdit && (
-            <div onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-start">
               <Checkbox
                 size="sm"
                 isSelected={isEditing}
@@ -325,10 +368,6 @@ function FieldSection({
               </Checkbox>
             </div>
           )}
-        </div>
-      </CardHeader>
-      {!isCollapsed && (
-        <CardBody className="flex flex-col gap-4 pt-3">
           {visibleKeys.map((key) => {
             const annotation = ANNOTATION_TEMPLATE[key];
             if (!annotation) return null;

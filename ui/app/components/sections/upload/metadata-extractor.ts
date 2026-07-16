@@ -62,9 +62,7 @@ export function extractFormValues(parsedMeta: ParsedMetadataYaml): FormValues {
   values['model.biology.molecular_entities'] = ontologyListString(
     model.biology?.molecular_entities
   );
-  values['model.biology.proteins_genes'] = ontologyListString(
-    model.biology?.proteins_genes as OntologyLeaf[] | undefined
-  );
+  values['model.biology.proteins_genes'] = scalarListString(model.biology?.proteins_genes);
   values['model.biology.topic_category'] = ontologyListString(
     model.biology?.topic_category
   );
@@ -78,10 +76,6 @@ export function extractFormValues(parsedMeta: ParsedMetadataYaml): FormValues {
     ['model.biology.health_condition', model.biology?.health_condition],
     ['model.biology.biological_processes', model.biology?.biological_processes],
     ['model.biology.molecular_entities', model.biology?.molecular_entities],
-    [
-      'model.biology.proteins_genes',
-      model.biology?.proteins_genes as OntologyLeaf[] | undefined,
-    ],
     ['model.biology.topic_category', model.biology?.topic_category],
   ];
   for (const [fieldKey, list] of ontologyFields) {
@@ -223,11 +217,6 @@ export function applyFormValuesToMetadata(
     'model.biology.molecular_entities',
     values
   );
-  biology.proteins_genes = applyOntologyListItems(
-    biology.proteins_genes as OntologyLeaf[] | undefined,
-    'model.biology.proteins_genes',
-    values
-  ) as unknown[];
   biology.topic_category = applyOntologyListItems(
     biology.topic_category,
     'model.biology.topic_category',

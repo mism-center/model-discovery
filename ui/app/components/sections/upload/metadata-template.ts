@@ -158,8 +158,7 @@ export const ANNOTATION_TEMPLATE: AnnotationTemplate = {
   'model.biology.proteins_genes': {
     label: 'Proteins / Genes',
     visibility: 'viewable',
-    inputType: 'list-ontology',
-    hasConfidence: true,
+    inputType: 'list-object',
     hidden: false,
   },
   'model.biology.topic_category': {
