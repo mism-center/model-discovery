@@ -413,8 +413,6 @@ export default function TusTest() {
   const [workflowStep, setWorkflowStep] = useState<WorkflowStep>('idle');
   const [failedStep, setFailedStep] = useState<WorkflowStep>('idle');
   const [registeredModelId, setRegisteredModelId] = useState('');
-  const [importedBranch, setImportedBranch] = useState('');
-  const [runId, setRunId] = useState('');
   const [importError, setImportError] = useState('');
   const [annotationStatus, setAnnotationStatus] = useState('');
   const [rawFiles, setRawFiles] = useState<
@@ -542,8 +540,6 @@ export default function TusTest() {
     const resourceId = import.meta.env
       .VITE_DEBUG_ANNOTATION_RESOURCE_ID as string;
     setImportError('');
-    setRunId('');
-    setImportedBranch('');
     setAnnotationStatus('pending_review');
     setRawFiles([]);
     setMetadataRegistryId('');
@@ -568,9 +564,7 @@ export default function TusTest() {
     if (!name || !url) return;
 
     setImportError('');
-    setRunId('');
     setRegisteredModelId('');
-    setImportedBranch('');
     setAnnotationStatus('');
     setRawFiles([]);
     setOutputFiles(null);
@@ -590,14 +584,12 @@ export default function TusTest() {
       // Step 2: download tarball and extract files into iRODS.
       activeStep = 'importing';
       setWorkflowStep('importing');
-      const imported = await importFromGitHub(model.id, url);
-      setImportedBranch(imported.branch);
+      await importFromGitHub(model.id, url);
 
       // Step 3: launch annotation run.
       activeStep = 'annotating';
       setWorkflowStep('annotating');
-      const run = await initiateAnnotation(model.id);
-      setRunId(run.run_id);
+      await initiateAnnotation(model.id);
 
       setAnnotationStatus('annotating');
       setWorkflowStep('monitoring');
