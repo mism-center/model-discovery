@@ -817,7 +817,9 @@ export default function TusTest() {
                 {annotationStatus && (
                   <span className="text-xs text-default-800">
                     Status:{' '}
-                    <code className="font-mono font-bold text-default-900">{annotationStatus}</code>
+                    <code className="font-mono font-bold text-default-900">
+                      {annotationStatus}
+                    </code>
                   </span>
                 )}
                 {registeredModelId && (

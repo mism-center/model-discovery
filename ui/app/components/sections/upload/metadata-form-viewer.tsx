@@ -126,7 +126,8 @@ export function MetadataFormViewer({
         variant="underlined"
         classNames={{
           tab: 'data-[hover-unselected=true]:!opacity-100',
-          tabContent: 'text-default-800 group-data-[selected=true]:text-foreground group-data-[hover-unselected=true]:font-bold',
+          tabContent:
+            'text-default-800 group-data-[selected=true]:text-foreground group-data-[hover-unselected=true]:font-bold',
           panel: 'pt-0',
         }}
       >

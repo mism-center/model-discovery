@@ -62,7 +62,9 @@ export function extractFormValues(parsedMeta: ParsedMetadataYaml): FormValues {
   values['model.biology.molecular_entities'] = ontologyListString(
     model.biology?.molecular_entities
   );
-  values['model.biology.proteins_genes'] = scalarListString(model.biology?.proteins_genes);
+  values['model.biology.proteins_genes'] = scalarListString(
+    model.biology?.proteins_genes
+  );
   values['model.biology.topic_category'] = ontologyListString(
     model.biology?.topic_category
   );
