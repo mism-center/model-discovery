@@ -50,9 +50,9 @@ function FileTypeIcon({ path }: { path: string }) {
   const Icon =
     FILE_TYPE_ICONS.find((entry) => entry.extensions.includes(extension))
       ?.icon ?? DocumentIcon;
-  return (
-    <Icon aria-hidden="true" className="size-3.5 shrink-0 text-default-600" />
-  );
+  // Inherit color so the parent row's hover state (group-hover:text-primary)
+  // applies to the icon too.
+  return <Icon aria-hidden="true" className="size-3.5 shrink-0" />;
 }
 
 export function RunOutputFiles({ outputs }: RunOutputFilesProps) {
@@ -130,14 +130,14 @@ function OutputResourceFiles({ resource }: { resource: ResourceSummaryItem }) {
                 className="group flex items-center justify-between gap-3 text-xs px-1.5 py-1.5 rounded-md hover:bg-default-100 focus-visible:bg-default-100 outline-none"
               >
                 <span
-                  className="flex items-center gap-2 min-w-0 text-default-800"
+                  className="flex items-center gap-2 min-w-0 text-default-800 group-hover:text-primary transition-colors"
                   title={file.path}
                 >
                   <FileTypeIcon path={file.path} />
                   <span className="font-mono truncate">{file.path}</span>
                 </span>
                 <span className="flex items-center gap-2 shrink-0">
-                  <span className="text-default-600 tabular-nums">
+                  <span className="text-default-600 tabular-nums group-hover:text-primary transition-colors">
                     {formatBytes(file.size_bytes)}
                   </span>
                   <ArrowDownTrayIcon
