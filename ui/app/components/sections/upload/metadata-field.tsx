@@ -63,7 +63,14 @@ export function MetadataField({
       />
     );
   }
-  return <ViewableField annotation={annotation} value={value} items={items} confidence={confidence} />;
+  return (
+    <ViewableField
+      annotation={annotation}
+      value={value}
+      items={items}
+      confidence={confidence}
+    />
+  );
 }
 
 // ── Editable renderer ─────────────────────────────────────────────────────────
@@ -237,13 +244,17 @@ function EditableOntologyList({
                 <div className="flex items-center gap-4 pt-0.5">
                   {conf && (
                     <div className="flex items-center gap-1.5">
-                      <span className="text-xs text-default-800">Confidence</span>
+                      <span className="text-xs text-default-800">
+                        Confidence
+                      </span>
                       <ConfidenceBadge value={conf} />
                     </div>
                   )}
                   {mapConf && (
                     <div className="flex items-center gap-1.5">
-                      <span className="text-xs text-default-800">Map confidence</span>
+                      <span className="text-xs text-default-800">
+                        Map confidence
+                      </span>
                       <ConfidenceBadge value={mapConf} />
                     </div>
                   )}
@@ -271,7 +282,12 @@ type ViewableFieldProps = {
   confidence?: string;
 };
 
-function ViewableField({ annotation, value, items, confidence }: ViewableFieldProps) {
+function ViewableField({
+  annotation,
+  value,
+  items,
+  confidence,
+}: ViewableFieldProps) {
   if (annotation.inputType === 'preformatted') {
     const isEmpty = !value || value === 'null' || value === '';
     return (
@@ -457,10 +473,14 @@ function ObjectListField({
                     </span>
                   )}
                   {ontology && (
-                    <span className="text-xs text-default-800">ontology: {ontology}</span>
+                    <span className="text-xs text-default-800">
+                      ontology: {ontology}
+                    </span>
                   )}
                   {source && (
-                    <span className="text-xs text-default-800">source: {source}</span>
+                    <span className="text-xs text-default-800">
+                      source: {source}
+                    </span>
                   )}
                   <div className="flex items-center gap-4 pt-0.5">
                     {conf && (

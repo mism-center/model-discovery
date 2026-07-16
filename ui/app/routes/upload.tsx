@@ -851,11 +851,7 @@ export default function TusTest() {
                         will re-run the full annotation pipeline.
                       </span>
                       <div className="flex gap-2 mt-1">
-                        <Button
-                          size="sm"
-                          color="warning"
-                          onPress={handleRerun}
-                        >
+                        <Button size="sm" color="warning" onPress={handleRerun}>
                           Yes, re-annotate
                         </Button>
                         <Button

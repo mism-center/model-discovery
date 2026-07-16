@@ -95,8 +95,8 @@ export function extractFormValues(parsedMeta: ParsedMetadataYaml): FormValues {
         item.ontology_label != null
           ? String(item.ontology_label)
           : item.value != null
-          ? String(item.value)
-          : '';
+            ? String(item.value)
+            : '';
       values[`${fieldKey}[${i}].ontology`] =
         item.ontology == null ? '' : String(item.ontology);
       values[`${fieldKey}[${i}].source`] =
@@ -276,7 +276,9 @@ function applyOntologyListItems(
         : { mapping_confidence: mappingConfidence || null }),
       ...(value === undefined ? {} : { value: value || null }),
       ...(iri === undefined ? {} : { iri: iri || null }),
-      ...(ontologyLabel === undefined ? {} : { ontology_label: ontologyLabel || null }),
+      ...(ontologyLabel === undefined
+        ? {}
+        : { ontology_label: ontologyLabel || null }),
       ...(ontology === undefined ? {} : { ontology: ontology || null }),
       ...(source === undefined ? {} : { source: source || undefined }),
     };
