@@ -99,7 +99,7 @@ function OutputResourceFiles({ resource }: { resource: ResourceSummaryItem }) {
             className="flex items-center gap-1.5 shrink-0 text-xs font-semibold text-primary hover:underline outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded"
           >
             <ArchiveBoxArrowDownIcon aria-hidden="true" className="size-3.5" />
-            Download .zip
+            Download zip
           </a>
         )}
       </div>
@@ -142,7 +142,7 @@ function OutputResourceFiles({ resource }: { resource: ResourceSummaryItem }) {
                   </span>
                   <ArrowDownTrayIcon
                     aria-hidden="true"
-                    className="size-3.5 text-default-600 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity"
+                    className="size-3.5 text-default-500 group-hover:text-primary transition-colors"
                   />
                 </span>
               </a>
