@@ -185,6 +185,7 @@ export function MetadataFormViewer({
                 },
                 {
                   title: 'Provenance',
+                  noEdit: true,
                   fieldKeys: [
                     'provenance.annotated_at',
                     'provenance.annotated_by',
