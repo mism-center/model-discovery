@@ -6,6 +6,7 @@ import {
   CardBody,
   CardHeader,
   Checkbox,
+  Chip,
   Tab,
   Tabs,
 } from '@heroui/react';
@@ -321,6 +322,25 @@ function FieldSection({
 
   if (visibleKeys.length === 0) return null;
 
+  const needsAttention = useMemo(() => {
+    const allKeys = Object.keys(formValues);
+    for (const key of visibleKeys) {
+      const conf = formValues[`${key}.$confidence`];
+      if (conf && conf !== 'high') return true;
+      for (const fvKey of allKeys) {
+        if (
+          fvKey.startsWith(`${key}[`) &&
+          (fvKey.endsWith('].confidence') ||
+            fvKey.endsWith('].mapping_confidence'))
+        ) {
+          const val = formValues[fvKey];
+          if (val && val !== 'high') return true;
+        }
+      }
+    }
+    return false;
+  }, [visibleKeys, formValues]);
+
   // Only show the Edit checkbox when at least one field would actually change
   // rendering when forceEditable is toggled (viewable fields with editable inputTypes).
   const canEdit = visibleKeys.some((key) => {
@@ -334,7 +354,7 @@ function FieldSection({
   return (
     <Card shadow="none" className="border border-default-200">
       <CardHeader
-        className="pb-0 pt-1 px-4 cursor-pointer select-none"
+        className="py-3 px-4 cursor-pointer select-none"
         onClick={() => setIsCollapsed((v) => !v)}
       >
         <div className="flex items-center gap-2">
@@ -354,6 +374,11 @@ function FieldSection({
           <h3 className="text-xs font-semibold uppercase tracking-wider text-default-800">
             {title}
           </h3>
+          {needsAttention && (
+            <Chip size="sm" color="warning" variant="flat">
+              Needs attention
+            </Chip>
+          )}
         </div>
       </CardHeader>
       {!isCollapsed && (
