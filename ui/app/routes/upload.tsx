@@ -426,7 +426,6 @@ export default function TusTest() {
   const [outputFiles, setOutputFiles] = useState<ResourceFileItem[] | null>(
     null
   );
-  const [showRerunWarning, setShowRerunWarning] = useState(false);
 
   useEffect(() => {
     const instance = createUppy(() => modelNameRef.current);
@@ -557,11 +556,6 @@ export default function TusTest() {
     setRawFiles(metaResult?.files ?? []);
     setMetadataRegistryId(metaResult?.registryId ?? '');
     setOutputFiles(files);
-  }
-
-  function handleRerun() {
-    setShowRerunWarning(false);
-    void handleGitHubImport();
   }
 
   async function handleGitHubImport() {
