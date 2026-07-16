@@ -299,7 +299,7 @@ export default function MyRunsSection() {
             <div className="mb-6">
               <CompactBreadcrumbs className="mb-3">
                 <BreadcrumbItem href="/">Home</BreadcrumbItem>
-                <BreadcrumbItem>Run History</BreadcrumbItem>
+                <BreadcrumbItem>My Runs</BreadcrumbItem>
               </CompactBreadcrumbs>
               <h1 className="text-3xl font-headline font-extrabold text-primary tracking-tight">
                 Run History

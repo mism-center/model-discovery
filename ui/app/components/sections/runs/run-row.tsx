@@ -6,6 +6,8 @@ import {
   ArrowTopRightOnSquareIcon,
   CheckCircleIcon,
   ChevronDownIcon,
+  CircleStackIcon,
+  ExclamationTriangleIcon,
   NoSymbolIcon,
   StopIcon,
   XCircleIcon,
@@ -30,6 +32,27 @@ interface RunRowProps {
    * (full resource summary) and hydrated input/output resources.
    */
   item: UserRunItem;
+}
+
+/** Uppercase section/field label used throughout the expanded panel. */
+const PANEL_LABEL =
+  'text-[11px] font-bold uppercase tracking-wider text-default-600';
+
+function DetailField({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={cn('min-w-0', className)}>
+      <dt className={PANEL_LABEL}>{label}</dt>
+      <dd className="mt-1 text-[13px] text-default-900">{children}</dd>
+    </div>
+  );
 }
 
 function StatusIcon({ status }: { status: string }) {
@@ -81,7 +104,7 @@ export function RunRow({ item }: RunRowProps) {
       className={cn(
         'rounded-2xl border transition-colors duration-200',
         expanded
-          ? 'border-slate-200 bg-primary/2'
+          ? 'border-slate-200 bg-white shadow-sm'
           : 'border-transparent hover:bg-primary/4'
       )}
     >
@@ -97,8 +120,11 @@ export function RunRow({ item }: RunRowProps) {
           // On <sm the timestamp track collapses to 0 (that column is hidden).
           'grid w-full items-center gap-4 px-5 py-4 text-left',
           'grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_13rem_9rem]',
-          'rounded-2xl outline-none cursor-pointer',
-          'focus-visible:ring-2 focus-visible:ring-primary/50'
+          'outline-none cursor-pointer',
+          'focus-visible:ring-2 focus-visible:ring-primary/50',
+          expanded
+            ? 'rounded-t-2xl bg-primary/2 hover:bg-primary/4 transition-colors'
+            : 'rounded-2xl'
         )}
       >
         <div className="min-w-0">
@@ -163,77 +189,99 @@ export function RunRow({ item }: RunRowProps) {
 
       {/* Expanded detail panel */}
       {expanded && (
-        <div
-          id={panelId}
-          className="flex flex-col gap-5 px-5 pb-5 pt-1 border-t border-default-200/75"
-        >
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs pt-3">
-            <dt className="text-default-700">Model</dt>
-            <dd>
-              {item.model.name}
-              {run.model_version && (
-                <span className="ml-2 text-default-700">
-                  (v{run.model_version})
+        <div id={panelId} className="border-t border-default-200/75">
+          <div className="flex flex-col gap-6 px-5 py-5">
+            {/* Details — label-over-value metadata band */}
+            <dl className="grid grid-cols-2 gap-x-8 gap-y-4 lg:grid-cols-4">
+              <DetailField label="Created">
+                <span className="tabular-nums">
+                  {formatTimestamp(run.created_at)}
                 </span>
-              )}
-            </dd>
-
-            <dt className="text-default-700">Run ID</dt>
-            <dd className="font-mono wrap-break-word">{run.id}</dd>
-
-            <dt className="text-default-700">Created</dt>
-            <dd className="tabular-nums">{formatTimestamp(run.created_at)}</dd>
-
-            <dt className="text-default-700">Started</dt>
-            <dd className="tabular-nums">{formatTimestamp(run.started_at)}</dd>
-
-            {terminal && (
-              <>
-                <dt className="text-default-700">Completed</dt>
-                <dd>{formatTimestamp(run.completed_at)}</dd>
-              </>
-            )}
+              </DetailField>
+              <DetailField label="Started">
+                <span className="tabular-nums">
+                  {formatTimestamp(run.started_at)}
+                </span>
+              </DetailField>
+              <DetailField label="Completed">
+                <span className="tabular-nums">
+                  {formatTimestamp(run.completed_at)}
+                </span>
+              </DetailField>
+              <DetailField label="Duration">
+                <span className="tabular-nums">
+                  {terminal
+                    ? formatDuration(run.started_at, run.completed_at)
+                    : '—'}
+                </span>
+              </DetailField>
+              <DetailField label="Model version">
+                {run.model_version ? `v${run.model_version}` : '—'}
+              </DetailField>
+              <DetailField label="Run ID" className="col-span-2 lg:col-span-3">
+                <span className="font-mono text-xs select-all wrap-break-word">
+                  {run.id}
+                </span>
+              </DetailField>
+            </dl>
 
             {run.error_message && (
-              <>
-                <dt className="text-default-600">Error</dt>
-                <dd className="wrap-break-word text-danger">
-                  <code>{run.error_message}</code>
-                </dd>
-              </>
+              <div className="flex gap-3 rounded-lg border border-danger-100 bg-danger-50/60 px-3.5 py-3">
+                <ExclamationTriangleIcon
+                  aria-hidden="true"
+                  className="size-4 shrink-0 mt-0.5 text-danger-500"
+                />
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-danger-600 uppercase tracking-wider">
+                    Error
+                  </p>
+                  <code className="mt-1 block text-xs text-danger-700 wrap-break-word">
+                    {run.error_message}
+                  </code>
+                </div>
+              </div>
             )}
-          </dl>
 
-          {inputs.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-primary">
-                Inputs
-              </span>
-              <ul className="flex flex-wrap gap-2">
-                {inputs.map((resource) => (
-                  <li key={resource.id}>
-                    <Chip
-                      size="sm"
-                      variant="bordered"
-                      className="max-w-60 text-xs"
-                      title={resource.name}
-                    >
-                      <span className="truncate">{resource.name}</span>
-                    </Chip>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+            {inputs.length > 0 && (
+              <div className="flex flex-col gap-2.5">
+                <span className={PANEL_LABEL}>Inputs</span>
+                <ul className="flex flex-wrap gap-2">
+                  {inputs.map((resource) => (
+                    <li key={resource.id}>
+                      <Chip
+                        size="sm"
+                        variant="flat"
+                        className="max-w-60 h-7 bg-default-100 text-default-800"
+                        title={resource.name}
+                        startContent={
+                          <CircleStackIcon className="size-3.5 ml-0.5 text-default-600" />
+                        }
+                      >
+                        <span className="truncate text-xs font-medium">
+                          {resource.name}
+                        </span>
+                      </Chip>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
-          {terminal && <RunOutputFiles outputs={outputs} />}
+            {terminal && (
+              <div className="border-t border-default-200/75 pt-5">
+                <RunOutputFiles outputs={outputs} />
+              </div>
+            )}
+          </div>
 
-          <div className="flex justify-end gap-2 mt-1">
+          {/* Actions bin */}
+          <div className="flex items-center justify-end gap-2 px-5 py-3 rounded-b-2xl border-t border-default-200/75 bg-default-50">
             <Button
               as={Link}
               to={`/models/${item.model.id}`}
               size="sm"
-              className="font-semibold bg-default-300"
+              variant="bordered"
+              className="font-semibold border-default-300 bg-white text-default-800"
               startContent={<ArrowTopRightOnSquareIcon className="size-4" />}
             >
               View model
