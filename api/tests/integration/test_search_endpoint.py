@@ -2,14 +2,12 @@ from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
-from mism_registry.enums import ExecutionType, ResourceType, ResourceVersionStatus, RunStatus
+from mism_registry.enums import ExecutionType, ResourceType, ResourceVersionStatus
 from mism_registry.resource import Resource
-from mism_registry.run import Run
 from mism_registry.search import SearchResult
 
 from mismapi.auth.base import (
     AuthenticatedPrincipal,
-    optional_principal,
     require_principal,
 )
 from mismapi.core.deps import _get_registry_service
@@ -47,22 +45,9 @@ async def _allow_principal() -> AuthenticatedPrincipal:
     )
 
 
-async def _anonymous_principal() -> AuthenticatedPrincipal | None:
-    return None
-
-
-def _make_app_with_service(
-    service: RegistryService,
-    *,
-    principal: AuthenticatedPrincipal | None = None,
-) -> TestClient:
+def _make_app_with_service(service: RegistryService) -> TestClient:
     app = create_app()
     app.dependency_overrides[require_principal] = _allow_principal
-    # Search takes the optional principal; default to anonymous so field-shape
-    # tests don't trigger run-history embedding. Pass `principal` to exercise it.
-    app.dependency_overrides[optional_principal] = (
-        (lambda: principal) if principal is not None else _anonymous_principal
-    )
     app.dependency_overrides[_get_registry_service] = lambda: service
     return TestClient(app)
 
@@ -331,54 +316,3 @@ def test_list_models_response_includes_new_fields() -> None:
     assert "execution_ref" in item
     assert "io_spec" in item
     assert "metadata" in item
-
-
-def _make_run(
-    *,
-    id: str = "run-1",
-    model_id: str = "r-1",
-    triggered_by: str = "user-1",
-    created_at: datetime = datetime(2025, 1, 1, tzinfo=UTC),
-) -> Run:
-    return Run(
-        id=id,
-        model_id=model_id,
-        status=RunStatus.RUNNING,
-        input_resource_ids=["ds-1"],
-        triggered_by=triggered_by,
-        created_at=created_at,
-    )
-
-
-def test_search_owned_runs_empty_for_anonymous() -> None:
-    """Anonymous callers get no embedded run history and no run lookups."""
-    service = MagicMock(spec=RegistryService)
-    service.search.return_value = _make_search_result([_make_resource()])
-
-    client = _make_app_with_service(service)  # defaults to anonymous
-    response = client.post("/api/v1/search", json={})
-
-    assert response.status_code == 200
-    assert response.json()["results"][0]["owned_runs"] == []
-    service.find_model_runs.assert_not_called()
-
-
-def test_search_embeds_owned_runs_for_authenticated_user() -> None:
-    """Executable models carry the caller's runs, newest-first."""
-    service = MagicMock(spec=RegistryService)
-    service.search.return_value = _make_search_result([_make_resource(id="r-1")])
-    service.find_model_runs.return_value = [
-        _make_run(id="run-old", created_at=datetime(2025, 1, 1, tzinfo=UTC)),
-        _make_run(id="run-new", created_at=datetime(2025, 6, 1, tzinfo=UTC)),
-    ]
-
-    principal = AuthenticatedPrincipal(
-        subject="user-1", issuer="test", audience="mism-api", scopes=set()
-    )
-    client = _make_app_with_service(service, principal=principal)
-    response = client.post("/api/v1/search", json={})
-
-    assert response.status_code == 200
-    runs = response.json()["results"][0]["owned_runs"]
-    assert [r["id"] for r in runs] == ["run-new", "run-old"]
-    service.find_model_runs.assert_called_once_with(model_id="r-1", triggered_by="user-1")

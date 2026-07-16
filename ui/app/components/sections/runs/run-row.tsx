@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import cn from 'classnames';
 import { Button, Chip, Spinner, useDisclosure } from '@heroui/react';
 import {
@@ -32,6 +32,11 @@ interface RunRowProps {
    * (full resource summary) and hydrated input/output resources.
    */
   item: UserRunItem;
+  /**
+   * Start expanded and scroll into view on mount. Used to reveal a run the
+   * user just launched (deep-linked via `?run=<id>` from the launch toast).
+   */
+  defaultExpanded?: boolean;
 }
 
 /** Uppercase section/field label used throughout the expanded panel. */
@@ -70,9 +75,22 @@ function StatusIcon({ status }: { status: string }) {
   return <CheckCircleIcon className="size-3.5" />;
 }
 
-export function RunRow({ item }: RunRowProps) {
-  const [expanded, setExpanded] = useState(false);
+export function RunRow({ item, defaultExpanded = false }: RunRowProps) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  // Brief attention ring when deep-linked, so the user can see which run the
+  // "View" flow landed them on. Fades out after a couple seconds.
+  const [highlight, setHighlight] = useState(defaultExpanded);
   const panelId = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // When deep-linked (e.g. from the "View" toast after launching), bring the
+  // freshly-opened row into view and briefly ring it.
+  useEffect(() => {
+    if (!defaultExpanded) return;
+    rootRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const timer = setTimeout(() => setHighlight(false), 2500);
+    return () => clearTimeout(timer);
+  }, [defaultExpanded]);
 
   // Live run detail (status refresh + hydrated outputs). Seeded from the list
   // item so nothing fetches until the row is expanded; once expanded, the
@@ -101,11 +119,13 @@ export function RunRow({ item }: RunRowProps) {
 
   return (
     <div
+      ref={rootRef}
       className={cn(
-        'rounded-2xl border transition-colors duration-200',
+        'rounded-2xl border transition-all duration-500',
         expanded
-          ? 'border-slate-200 bg-white shadow-sm'
-          : 'border-transparent hover:bg-primary/4'
+          ? 'border-slate-200 bg-white shadow-xs'
+          : 'border-transparent hover:bg-primary/4',
+        highlight && 'ring-1 ring-primary/30'
       )}
     >
       {/* Collapsed header — the whole strip toggles the detail panel. */}

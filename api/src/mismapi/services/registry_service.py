@@ -533,18 +533,6 @@ class RegistryService:
         except RegistryValidationError as exc:
             raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
 
-    def find_model_runs(
-        self,
-        *,
-        model_id: str,
-        triggered_by: str | None = None,
-    ) -> list[Run]:
-        """Runs for a model, optionally scoped to the user who triggered them."""
-        runs = self._registry.find_runs(model_id=model_id)
-        if triggered_by is not None:
-            runs = [run for run in runs if run.triggered_by == triggered_by]
-        return runs
-
     def find_user_runs(
         self,
         *,

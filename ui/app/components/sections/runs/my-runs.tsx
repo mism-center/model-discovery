@@ -78,6 +78,7 @@ function MyRunsBody({
   runs,
   visibleRuns,
   filtered,
+  highlightRunId,
   clearFilters,
   refetch,
 }: {
@@ -89,6 +90,8 @@ function MyRunsBody({
   visibleRuns: UserRunItem[];
   /** Whether any filter (status/model/date/outputs/text) is active. */
   filtered: boolean;
+  /** Run to auto-expand + scroll to (deep-linked via `?run=`), if present. */
+  highlightRunId?: string;
   clearFilters: () => void;
   refetch: () => void;
 }) {
@@ -160,7 +163,10 @@ function MyRunsBody({
     <ul className="flex flex-col gap-2">
       {visibleRuns.map((item) => (
         <li key={item.run.id}>
-          <RunRow item={item} />
+          <RunRow
+            item={item}
+            defaultExpanded={item.run.id === highlightRunId}
+          />
         </li>
       ))}
     </ul>
@@ -169,6 +175,10 @@ function MyRunsBody({
 
 export default function MyRunsSection() {
   const [searchParams, setSearchParams] = useSearchParams();
+  // A run to reveal (auto-expand + scroll), deep-linked via `?run=<id>` — set
+  // by the "View" action on the launch toast. Purely presentational; does not
+  // filter the list.
+  const highlightRunId = searchParams.get('run') ?? undefined;
   // Stable per URL so the filter/count memos below actually cache between
   // renders (parseRunFilters builds a fresh object each call). `useSearchParams`
   // returns a stable `searchParams` reference per URL.
@@ -407,6 +417,7 @@ export default function MyRunsSection() {
               runs={runs}
               visibleRuns={visibleRuns}
               filtered={filtered}
+              highlightRunId={highlightRunId}
               clearFilters={clearFilters}
               refetch={refetch}
             />

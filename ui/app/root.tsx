@@ -9,7 +9,7 @@ import {
   useNavigate,
   useRouteLoaderData,
 } from 'react-router';
-import { HeroUIProvider } from '@heroui/react';
+import { HeroUIProvider, ToastProvider } from '@heroui/react';
 import {
   HydrationBoundary,
   QueryClientProvider,
@@ -75,6 +75,7 @@ function Providers({ children }: { children: React.ReactNode }) {
           navigate={navigate}
           useHref={useHref}
         >
+          <ToastProvider placement="bottom-right" toastOffset={12} />
           {children}
         </HeroUIProvider>
         {import.meta.env.DEV && (

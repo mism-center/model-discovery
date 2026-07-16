@@ -8,7 +8,6 @@ import {
   listModelRuns,
   listUserRuns,
   type ModelRunDetailsResponse,
-  type RunDetailItem,
   type RunDetailResponse,
   type RunStatus,
   type UserRunsResponse,
@@ -17,35 +16,12 @@ import {
 export const runKeys = {
   all: ['runs'] as const,
   byModel: (modelId: string) => [...runKeys.all, 'by-model', modelId] as const,
-  ownedByModel: (modelId: string) =>
-    [...runKeys.all, 'owned-by-model', modelId] as const,
   detail: (runId: string) => [...runKeys.all, 'detail', runId] as const,
   user: (status?: string) => [...runKeys.all, 'user', status ?? 'all'] as const,
 };
 
 /**
- * The current user's runs for a model, as bare run records.
- *
- * This mirrors the `owned_runs` embedded in each search result: the search
- * endpoint returns the caller's runs per executable model so the card can
- * render its run controls without a request. Cards seed this query with
- * `initialData: model.owned_runs`, so there's no fetch on first render — a
- * launch invalidates `runKeys.ownedByModel(modelId)` to pull the fresh run in.
- */
-export function ownedModelRunsQueryOptions(modelId: string) {
-  return queryOptions<RunDetailItem[]>({
-    queryKey: runKeys.ownedByModel(modelId),
-    queryFn: ({ signal }) =>
-      listModelRuns(modelId, { signal }).then((res) =>
-        (res.runs ?? []).map((item) => item.run)
-      ),
-  });
-}
-
-/**
- * All runs for a given model. Used to discover whether an active (non-terminal)
- * run exists on the search-result card. Disabled by default — cards opt in
- * lazily when the user opens the run controls.
+ * All runs for a given model (`GET /models/{id}/runs`).
  *
  * `client` lets SSR loaders pass a cookie-forwarding `serverApiClient` so run
  * history is fetched as the authenticated user; client-side callers omit it.

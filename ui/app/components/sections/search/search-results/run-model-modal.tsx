@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import {
+  addToast,
   Button,
+  closeToast,
   Input,
   Modal,
   ModalBody,
@@ -8,7 +10,9 @@ import {
   ModalFooter,
   ModalHeader,
 } from '@heroui/react';
+import { XMarkIcon } from '@heroicons/react/24/solid';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router';
 
 import {
   executeModelRun,
@@ -44,6 +48,7 @@ export function RunModelModal({
   initialInputResourceIds,
 }: RunModelModalProps) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const inputs = model.io_spec?.inputs ?? [];
 
   const buildInitialResourceIds = () =>
@@ -55,12 +60,54 @@ export function RunModelModal({
 
   const mutation = useMutation<ExecuteRunResponse, Error, ExecuteRunRequest>({
     mutationFn: (body) => executeModelRun(model.id, body),
-    onSuccess: () => {
+    onSuccess: (run) => {
       // Invalidate every run query so all views reflect the new run: the
-      // search card's owned-runs seed, the "My Runs" page list
-      // (`runKeys.user(...)`, any status variant), and any per-model list.
-      // Launching is rare, so the broad invalidation is cheap.
+      // "My Runs" page list (`runKeys.user(...)`, any status variant) and any
+      // per-model list. Launching is rare, so the broad invalidation is cheap.
       void queryClient.invalidateQueries({ queryKey: runKeys.all });
+      const viewRun = () => {
+        // Dismiss the toast immediately as we navigate to the run.
+        if (toastKey) closeToast(toastKey);
+        navigate(`/runs?run=${encodeURIComponent(run.id)}`);
+      };
+      // Dark pill toast with an inline action row: [ View run | ✕ ]. We hide
+      // HeroUI's default icon and floating close button and render the whole
+      // right-side cluster ourselves in `endContent`, so there's no
+      // color-tinted badge or absolute-positioned button to fight.
+      const toastKey = addToast({
+        title: 'Run started',
+        description: `${model.name} is now running.`,
+        // Slightly longer than the 6s default so there's time to hit "View".
+        timeout: 8000,
+        hideIcon: true,
+        hideCloseButton: true,
+        classNames: {
+          base: 'rounded-xl bg-primary border-0 px-4 py-3 gap-x-6 shadow-lg items-center',
+          wrapper: 'gap-y-0.5',
+          title: 'text-sm font-bold text-white',
+          description: 'text-xs text-white/80',
+        },
+        endContent: (
+          <div className="flex items-center gap-3 shrink-0">
+            <button
+              type="button"
+              onClick={viewRun}
+              className="text-sm font-semibold text-white underline underline-offset-2 hover:text-white/80 outline-none focus-visible:ring-2 focus-visible:ring-white/40 rounded"
+            >
+              View run
+            </button>
+            <span aria-hidden="true" className="h-5 w-px bg-white/25" />
+            <button
+              type="button"
+              aria-label="Dismiss"
+              onClick={() => toastKey && closeToast(toastKey)}
+              className="text-white/80 hover:text-white outline-none focus-visible:ring-2 focus-visible:ring-white/40 rounded"
+            >
+              <XMarkIcon className="size-5" />
+            </button>
+          </div>
+        ),
+      });
       mutation.reset();
       setResourceIds(buildInitialResourceIds());
       onClose();

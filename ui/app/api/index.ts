@@ -19,7 +19,6 @@ export {
   listModelRuns,
   getRun,
   cancelRun,
-  pickActiveRun,
   isTerminalStatus,
   TERMINAL_RUN_STATUSES,
   type ExecuteRunRequest,

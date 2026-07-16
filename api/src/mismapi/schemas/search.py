@@ -7,7 +7,6 @@ from mismapi.schemas.registry import (
     AuthorDTO,
     IOSpecDTO,
     PublicationDTO,
-    RunDetailItem,
 )
 
 # ── Existing list schemas (backward compat) ──────────────────────────
@@ -115,7 +114,6 @@ class SearchResultItem(BaseModel):
     created_at: datetime
     updated_at: datetime
     score: float | None = None
-    owned_runs: list[RunDetailItem] = Field(default_factory=list)
 
 
 class AggBucketDTO(BaseModel):
