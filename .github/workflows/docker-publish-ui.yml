@@ -8,6 +8,7 @@ on:
       - 'test/**'
       - 'feat*'
       - 'feat*/**'
+      - 'develop'
     paths:
       - 'ui/**'
       - '.github/workflows/docker-publish-ui.yml'
