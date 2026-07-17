@@ -1,24 +1,30 @@
-# Build and push Docker image to Docker Hub on pushes to test branches.
+# Build and push UI Docker image to Docker Hub on pushes to test branches that touch ui/.
 # Tags the image with the short commit SHA.
-name: Docker Build & Push
+name: Docker Build & Push (UI)
 
 on:
   push:
-    branches-ignore:
-      - "main"
+    branches:
+      - 'test/**'
+      - 'feat*'
+      - 'feat*/**'
+      - 'develop'
+    paths:
+      - 'ui/**'
+      - '.github/workflows/docker-publish-ui.yml'
 
 permissions:
   contents: read
 
 jobs:
   docker-build-push:
-    name: Build and push API image
+    name: Build and push UI image
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -37,13 +43,13 @@ jobs:
           echo "branch_tag=${BRANCH_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v6
         with:
-          context: api
+          context: ui
           push: true
           tags: |
-            mismplatform/model-discovery:${{ steps.meta.outputs.short_sha }}
-            mismplatform/model-discovery:${{ steps.meta.outputs.branch_tag }}
+            mismplatform/model-discovery-ui:${{ steps.meta.outputs.short_sha }}
+            mismplatform/model-discovery-ui:${{ steps.meta.outputs.branch_tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           labels: |

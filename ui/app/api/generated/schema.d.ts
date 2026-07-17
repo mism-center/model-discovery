@@ -107,7 +107,16 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    get?: never;
+    /**
+     * Get Model
+     * @description Fetch a single model by ID.
+     *
+     *     Includes ``registration_status`` so the UI can poll annotation progress
+     *     (DRAFT → ANNOTATING → PENDING_REVIEW / ANNOTATION_FAILED → APPROVED).
+     *     The execution-platform's background poller writes these transitions directly
+     *     to the shared registry; this endpoint reads the current value on demand.
+     */
+    get: operations['get_model_api_v1_models__model_id__get'];
     /** Update Model */
     put: operations['update_model_api_v1_models__model_id__put'];
     post?: never;
@@ -134,6 +143,54 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/models/{model_id}/metadata-package': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Model Metadata Package
+     * @description Parse the model's annotation ``metadata-package`` into a Resource preview.
+     *
+     *     Looks for ``<model_id>/<version>/metadata-package/`` on the storage mount and
+     *     maps its ``metadata.yaml`` + ``execution.yaml`` onto a Resource (values only,
+     *     not persisted). 404 if the package is absent, 400 if it can't be parsed.
+     */
+    get: operations['get_model_metadata_package_api_v1_models__model_id__metadata_package_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/models/{model_id}/metadata-package/raw': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Model Metadata Package Raw
+     * @description Return the model's raw metadata-package YAML files as review sections.
+     */
+    get: operations['get_model_metadata_package_raw_api_v1_models__model_id__metadata_package_raw_get'];
+    /**
+     * Update Model Metadata Package Raw
+     * @description Write edited raw YAML back to the metadata-package and return the result.
+     */
+    put: operations['update_model_metadata_package_raw_api_v1_models__model_id__metadata_package_raw_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/models/{model_id}/runs': {
     parameters: {
       query?: never;
@@ -154,6 +211,37 @@ export interface paths {
      * @description Create a run and immediately trigger execution on the Execution API.
      */
     post: operations['execute_run_api_v1_models__model_id__runs_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/models/{model_id}/github-import': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Extract a GitHub repository tarball into iRODS and trigger annotation
+     * @description Download a GitHub repository tarball and extract files into ``IRODS_MOUNT_PATH/{model_id}/``.
+     *
+     *     Steps:
+     *     1. Verify the calling user owns the model.
+     *     2. Parse the GitHub URL (strip ``.git``, extract owner/repo/branch).
+     *     3. Auto-detect the default branch when none is specified.
+     *     4. Stream the ``.tar.gz`` from ``api.github.com`` into memory, then
+     *        extract each file directly into the iRODS PVC directory.
+     *     5. Call ``mark_upload_complete`` to update ``location_uri`` and
+     *        ``upload_status`` in the registry.
+     *
+     *     Annotation is initiated separately via ``POST /models/{model_id}/runs``.
+     */
+    post: operations['import_from_github_api_v1_models__model_id__github_import_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -195,6 +283,31 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/me/runs': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List My Runs
+     * @description List every run the calling user has triggered, across all models.
+     *
+     *     Returns runs newest-first (by created_at), each hydrated with its model
+     *     summary and input/output resources. Requires authentication (401 for
+     *     anonymous callers). No Execution-service refresh is performed here — the UI
+     *     refreshes active runs when a row is expanded.
+     */
+    get: operations['list_my_runs_api_v1_me_runs_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/runs/{run_id}': {
     parameters: {
       query?: never;
@@ -216,7 +329,15 @@ export interface paths {
      */
     get: operations['get_run_api_v1_runs__run_id__get'];
     put?: never;
-    post?: never;
+    /**
+     * Post Run
+     * @description Submit an annotation job to the Execution service for the given resource.
+     *
+     *     All job configuration (image, resources, prompt) comes from server-side
+     *     settings. The LLM API key is injected by the execution-platform from its
+     *     own environment — it is never passed through this request.
+     */
+    post: operations['post_run_api_v1_runs__run_id__post'];
     /**
      * Cancel Run
      * @description Cancel a run by proxying DELETE to the Execution service.
@@ -337,6 +458,18 @@ export interface components {
       /** Buckets */
       buckets: components['schemas']['AggBucketDTO'][];
     };
+    /** AnnotateRunResponse */
+    AnnotateRunResponse: {
+      /** Run Id */
+      run_id: string;
+      /**
+       * Execution Status
+       * @default {}
+       */
+      execution_status: {
+        [key: string]: unknown;
+      };
+    };
     /** AuthorDTO */
     AuthorDTO: {
       /** Name */
@@ -392,11 +525,6 @@ export interface components {
         [key: string]: unknown;
       };
       /**
-       * Triggered By
-       * @default
-       */
-      triggered_by: string;
-      /**
        * Notes
        * @default
        */
@@ -446,12 +574,44 @@ export interface components {
     ExecutionType:
       | 'docker'
       | 'conda'
+      | 'pip'
       | 'python'
       | 'r'
       | 'binary'
       | 'huggingface'
       | 'notebook'
+      | 'singularity'
+      | 'nextflow'
+      | 'snakemake'
+      | 'jupyter'
+      | 'native'
       | 'other';
+    /**
+     * GitHubImportRequest
+     * @description Request body for importing a GitHub repository.
+     */
+    GitHubImportRequest: {
+      /** Github Url */
+      github_url: string;
+      /** Branch */
+      branch?: string | null;
+    };
+    /**
+     * GitHubImportResponse
+     * @description Response returned once the repository has been extracted into iRODS.
+     */
+    GitHubImportResponse: {
+      /** Model Id */
+      model_id: string;
+      /** Branch */
+      branch: string;
+      /** Files Extracted */
+      files_extracted: number;
+      /** Size Bytes */
+      size_bytes: number;
+      /** Location Uri */
+      location_uri: string;
+    };
     /** HTTPValidationError */
     HTTPValidationError: {
       /** Detail */
@@ -498,6 +658,40 @@ export interface components {
     LogoutResponse: {
       /** End Session Url */
       end_session_url?: string | null;
+    };
+    /**
+     * MetadataPackageFile
+     * @description One raw YAML file of a metadata-package, as a review section.
+     */
+    MetadataPackageFile: {
+      /**
+       * Filename
+       * @description metadata.yaml or execution.yaml
+       */
+      filename: string;
+      /**
+       * Content
+       * @description Raw file text.
+       */
+      content: string;
+    };
+    /**
+     * MetadataPackageRawResponse
+     * @description The metadata-package's raw YAML files, one section per file.
+     */
+    MetadataPackageRawResponse: {
+      /** Model Id */
+      model_id: string;
+      /** Files */
+      files?: components['schemas']['MetadataPackageFile'][];
+    };
+    /**
+     * MetadataPackageUpdateRequest
+     * @description Edited raw YAML files to write back to the metadata-package.
+     */
+    MetadataPackageUpdateRequest: {
+      /** Files */
+      files: components['schemas']['MetadataPackageFile'][];
     };
     /** ModelListItem */
     ModelListItem: {
@@ -886,6 +1080,8 @@ export interface components {
       version: string;
       /** Status */
       status: string;
+      /** Registration Status */
+      registration_status: string;
       /**
        * Owner
        * @default
@@ -1458,6 +1654,31 @@ export interface components {
       /** Token */
       token: string;
     };
+    /**
+     * UserRunItem
+     * @description A single run in the cross-model "My Runs" list.
+     *
+     *     Like ``ModelRunDetailItem`` but adds the run's ``model`` summary, since this
+     *     is a global list where each row can belong to a different model.
+     */
+    UserRunItem: {
+      model: components['schemas']['ResourceSummaryItem'];
+      run: components['schemas']['RunDetailItem'];
+      /** Input Resources */
+      input_resources?: components['schemas']['ResourceSummaryItem'][];
+      /** Output Resources */
+      output_resources?: components['schemas']['ResourceSummaryItem'][];
+    };
+    /**
+     * UserRunsResponse
+     * @description All runs triggered by the calling user, newest-first, hydrated.
+     */
+    UserRunsResponse: {
+      /** Runs */
+      runs?: components['schemas']['UserRunItem'][];
+      /** Total */
+      total: number;
+    };
     /** ValidationError */
     ValidationError: {
       /** Location */
@@ -1470,6 +1691,13 @@ export interface components {
       input?: unknown;
       /** Context */
       ctx?: Record<string, never>;
+    };
+    /** ErrorResponse */
+    ErrorResponse: {
+      error: {
+        code: string;
+        detail: string;
+      };
     };
   };
   responses: never;
@@ -1562,6 +1790,15 @@ export interface operations {
           'application/json': components['schemas']['CurrentUser'];
         };
       };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
     };
   };
   logout_api_auth_logout_post: {
@@ -1648,6 +1885,46 @@ export interface operations {
           'application/json': components['schemas']['RegisterModelResponse'];
         };
       };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_model_api_v1_models__model_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        model_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RegisterModelResponse'];
+        };
+      };
       /** @description Validation Error */
       422: {
         headers: {
@@ -1683,6 +1960,15 @@ export interface operations {
           'application/json': components['schemas']['RegisterModelResponse'];
         };
       };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
       /** @description Validation Error */
       422: {
         headers: {
@@ -1712,6 +1998,121 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['UploadInitiatedResponse'];
+        };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_model_metadata_package_api_v1_models__model_id__metadata_package_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        model_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  get_model_metadata_package_raw_api_v1_models__model_id__metadata_package_raw_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        model_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MetadataPackageRawResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  update_model_metadata_package_raw_api_v1_models__model_id__metadata_package_raw_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        model_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['MetadataPackageUpdateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MetadataPackageRawResponse'];
+        };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
         };
       };
       /** @description Validation Error */
@@ -1781,6 +2182,59 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ExecuteRunResponse'];
+        };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  import_from_github_api_v1_models__model_id__github_import_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        model_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['GitHubImportRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['GitHubImportResponse'];
+        };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
         };
       };
       /** @description Validation Error */
@@ -1858,6 +2312,15 @@ export interface operations {
           'application/json': components['schemas']['RegisterDatasetResponse'];
         };
       };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
       /** @description Validation Error */
       422: {
         headers: {
@@ -1893,6 +2356,56 @@ export interface operations {
           'application/json': components['schemas']['RegisterDatasetResponse'];
         };
       };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  list_my_runs_api_v1_me_runs_get: {
+    parameters: {
+      query?: {
+        /** @description Optional filter — only include runs with this status. */
+        status?: components['schemas']['RunStatus'] | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UserRunsResponse'];
+        };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
       /** @description Validation Error */
       422: {
         headers: {
@@ -1925,6 +2438,37 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['RunDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  post_run_api_v1_runs__run_id__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AnnotateRunResponse'];
         };
       };
       /** @description Validation Error */
@@ -2022,6 +2566,15 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['UploadAcceptedResponse'];
+        };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
         };
       };
       /** @description Validation Error */

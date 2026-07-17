@@ -6,7 +6,10 @@ from mism_registry.enums import ExecutionType, ResourceType, ResourceVersionStat
 from mism_registry.resource import Resource
 from mism_registry.search import SearchResult
 
-from mismapi.auth.base import AuthenticatedPrincipal, require_principal
+from mismapi.auth.base import (
+    AuthenticatedPrincipal,
+    require_principal,
+)
 from mismapi.core.deps import _get_registry_service
 from mismapi.main import create_app
 from mismapi.services.registry_service import RegistryService

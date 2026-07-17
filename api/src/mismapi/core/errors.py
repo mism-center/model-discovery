@@ -1,5 +1,6 @@
 import logging
 from collections.abc import Sequence
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -11,6 +12,27 @@ logger = logging.getLogger(__name__)
 REQUEST_VALIDATION_DETAIL_TEMPLATE = "Request validation failed for field '{field}'."
 UNKNOWN_VALIDATION_FIELD = "unknown field"
 UNPROCESSABLE_VALIDATION_ERROR_TYPES = {"enum", "literal_error"}
+
+# Reusable OpenAPI component describing the JSON body every APIError produces
+# (see ``api_error_handler`` below): ``{"error": {"code": ..., "detail": ...}}``.
+# Registered once under ``components.schemas`` so responses can $ref it instead
+# of inlining the shape.
+ERROR_RESPONSE_SCHEMA_NAME = "ErrorResponse"
+ERROR_RESPONSE_SCHEMA: dict[str, Any] = {
+    "title": ERROR_RESPONSE_SCHEMA_NAME,
+    "type": "object",
+    "properties": {
+        "error": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string"},
+                "detail": {"type": "string"},
+            },
+            "required": ["code", "detail"],
+        },
+    },
+    "required": ["error"],
+}
 
 
 class APIError(Exception):
@@ -127,3 +149,84 @@ def register_exception_handlers(app: FastAPI) -> None:
                 },
             },
         )
+
+
+def _route_has_dependency(route: Any, target: Any) -> bool:
+    """True if ``route``'s flattened dependency tree calls ``target``.
+
+    FastAPI records every dependency (including transitive ones) on a route's
+    ``dependant``. We walk it so a route that depends on ``require_principal``
+    — directly or via ``AuthenticatedPrincipalDep`` — is detected without the
+    route having to opt in.
+    """
+    dependant = getattr(route, "dependant", None)
+    if dependant is None:
+        return False
+
+    seen: set[int] = set()
+    stack = [dependant]
+    while stack:
+        current = stack.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if getattr(current, "call", None) is target:
+            return True
+        stack.extend(getattr(current, "dependencies", []))
+    return False
+
+
+def install_openapi_customizations(app: FastAPI) -> None:
+    """Make auth-required routes self-document their 401 in the OpenAPI schema.
+
+    Rather than every authenticated path operation repeating ``responses={401:
+    ...}``, we inject the 401 automatically for any route whose dependency tree
+    includes ``require_principal``. New authenticated endpoints inherit the
+    documented 401 for free — the requirement (a principal) and its documented
+    failure (401) stay in lockstep.
+    """
+    # Imported here to avoid a circular import: mismapi.auth.base imports from
+    # mismapi.core.* at module load.
+    from fastapi.openapi.utils import get_openapi
+
+    from mismapi.auth.base import require_principal
+
+    error_ref = f"#/components/schemas/{ERROR_RESPONSE_SCHEMA_NAME}"
+    unauthorized_response = {
+        "description": "Authentication is required and was missing or invalid.",
+        "content": {"application/json": {"schema": {"$ref": error_ref}}},
+    }
+
+    def custom_openapi() -> dict[str, Any]:
+        if app.openapi_schema:
+            return app.openapi_schema
+
+        schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            description=app.description,
+            routes=app.routes,
+        )
+        schema.setdefault("components", {}).setdefault("schemas", {})[
+            ERROR_RESPONSE_SCHEMA_NAME
+        ] = ERROR_RESPONSE_SCHEMA
+
+        paths = schema.get("paths", {})
+        for route in app.routes:
+            if not _route_has_dependency(route, require_principal):
+                continue
+            path_item = paths.get(
+                getattr(route, "path_format", None) or getattr(route, "path", None)
+            )
+            if not path_item:
+                continue
+            for method in (m.lower() for m in getattr(route, "methods", set())):
+                operation = path_item.get(method)
+                if operation is None:
+                    continue
+                operation.setdefault("responses", {}).setdefault("401", unauthorized_response)
+
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = custom_openapi  # type: ignore[method-assign]

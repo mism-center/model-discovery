@@ -120,7 +120,6 @@ async def list_models(
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> ModelListResponse:
-
     resources = service.list_models(
         name_contains=name,
         owner=owner,
@@ -157,7 +156,6 @@ async def create_model(
     service: RegistryServiceDep,
     principal: AuthenticatedPrincipalDep,
 ) -> RegisterModelResponse:
-
     resource = service.create_model(
         principal,
         name=payload.name,
@@ -195,7 +193,6 @@ async def update_model(
     service: RegistryServiceDep,
     principal: AuthenticatedPrincipalDep,
 ) -> RegisterModelResponse:
-
     resource = service.update_model(
         principal,
         model_id=model_id,
@@ -239,7 +236,6 @@ async def initiate_model_file_upload(
     service: RegistryServiceDep,
     principal: AuthenticatedPrincipalDep,
 ) -> UploadInitiatedResponse:
-
     resource = service.get_resource_and_assert_ownership(principal, resource_id=model_id)
     allowed_path = upload_dir(model_id, resource.version)
     token = await upload_session_store.mint_upload_token(
@@ -324,7 +320,7 @@ async def execute_run(
         model_id=model_id,
         input_resource_ids=payload.input_resource_ids,
         parameters=payload.parameters,
-        triggered_by=payload.triggered_by,
+        triggered_by=principal.subject,
         notes=payload.notes,
     )
 

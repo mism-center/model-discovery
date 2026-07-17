@@ -8,10 +8,11 @@ import {
 } from '@heroicons/react/16/solid';
 import { DocumentIcon } from '@heroicons/react/24/solid';
 import { QuotationMarkIcon } from '@sidekickicons/react/16/solid';
-import { Link } from 'react-router';
+// import { Link } from 'react-router';
 
 import type { SearchResultItem } from '~/api';
 import { AuthorListTooltip } from './author-list-tooltip';
+import { RunControls } from './run-controls';
 
 /**
  * Format an ISO timestamp / date string as `Mon Year` (e.g. `Jan 2024`).
@@ -41,10 +42,11 @@ interface SearchResultProps {
 }
 
 export function SearchResult({ result }: SearchResultProps) {
-  const isDataset = result.resource_type === 'dataset';
-  const linkPath = isDataset
-    ? `/datasets/${result.id}/`
-    : `/models/${result.id}/`;
+  // Details-page navigation is disabled while the details route is unimplemented.
+  // const isDataset = result.resource_type === 'dataset';
+  // const linkPath = isDataset
+  //   ? `/datasets/${result.id}/`
+  //   : `/models/${result.id}/`;
 
   const formatTags = result.format_tags ?? [];
   const authors = result.authors ?? [];
@@ -56,15 +58,13 @@ export function SearchResult({ result }: SearchResultProps) {
   const displayDate = result.date_published ?? result.created_at;
 
   return (
-    <Link
-      to={linkPath}
+    <div
       className={cn(
         'group relative p-6 rounded-2xl',
         'flex items-stretch justify-between gap-6',
         'transition-all duration-200',
         'bg-transparent hover:bg-primary/4',
-        'hover:shadow-sm hover:shadow-primary/5 hover:-translate-y-px',
-        'active:scale-[0.995]'
+        'hover:shadow-sm hover:shadow-primary/5 hover:-translate-y-px'
       )}
     >
       {/* Left content */}
@@ -194,7 +194,6 @@ export function SearchResult({ result }: SearchResultProps) {
             'bg-transparent rounded-lg hover:opacity-100! active:opacity-90!',
             'text-primary hover:bg-primary hover:text-white'
           )}
-          onClick={(e) => e.preventDefault()}
           onPress={() =>
             console.log('bookmark', result.resource_type, result.id)
           }
@@ -202,15 +201,18 @@ export function SearchResult({ result }: SearchResultProps) {
           <BookmarkIcon className="size-5" />
         </Button>
 
+        {/* View details — disabled until the details page is implemented.
+            Replaced in this slot by <RunControls /> below.
         <Button
           size="sm"
           color="primary"
           className="px-5 py-2.5 rounded-lg text-sm font-bold"
-          // Entire card is already a link, so this button is purely visual.
         >
           View details
         </Button>
+        */}
+        {executable && <RunControls model={result} />}
       </div>
-    </Link>
+    </div>
   );
 }

@@ -1,22 +1,14 @@
-import {
-  Accordion,
-  AccordionItem,
-  Button,
-  Checkbox,
-  CheckboxGroup,
-  DatePicker,
-  Input,
-  Skeleton,
-  Switch,
-} from '@heroui/react';
+import { Accordion, AccordionItem, DatePicker, Skeleton } from '@heroui/react';
 import { parseDate } from '@internationalized/date';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import cn from 'classnames';
-import { matchSorter } from 'match-sorter';
-import { useDebounce } from 'use-debounce';
-import { MagnifyingGlassIcon } from '@heroicons/react/16/solid';
 
 import type { AggResult } from '~/api';
+import {
+  FacetTitle,
+  ToggleFacetHeading,
+  TermsCheckboxGroup,
+} from '~/components/common/facets';
 import { useSearch } from '~/search/context/search-context';
 import {
   facetsForResourceType,
@@ -102,7 +94,7 @@ export function SearchSidebar() {
               aria-label={facet.label}
               title={
                 <FacetTitle
-                  config={facet}
+                  label={facet.label}
                   isActive={Boolean(value)}
                   onClear={() => clearFacet(facet.id)}
                 />
@@ -147,109 +139,6 @@ export function SearchSidebar() {
 // Sub-components
 // ============================================================================
 
-interface FacetTitleProps {
-  config: FacetConfig;
-  isActive: boolean;
-  onClear: () => void;
-}
-
-function FacetTitle({ config, isActive, onClear }: FacetTitleProps) {
-  return (
-    <div className="flex justify-between items-center">
-      <div className="flex items-center gap-2 font-headline">
-        <span>{config.label}</span>
-      </div>
-      <Button
-        as="span"
-        onPress={onClear}
-        variant="light"
-        className={cn(
-          'min-w-0 h-6 w-12 text-[13px] font-medium text-slate-700',
-          !isActive && 'hidden'
-        )}
-      >
-        Clear
-      </Button>
-    </div>
-  );
-}
-
-interface FacetSearchInputProps {
-  placeholder: string;
-  debounce?: number;
-  onChange: (value: string) => void;
-}
-
-function FacetSearchInput({
-  placeholder,
-  onChange,
-  debounce = 100,
-}: FacetSearchInputProps) {
-  const [search, setSearch] = useState('');
-  const [debouncedSearch] = useDebounce(search, debounce);
-
-  useEffect(() => {
-    onChange(debouncedSearch);
-  }, [debouncedSearch, onChange]);
-
-  return (
-    <Input
-      classNames={{
-        input: 'text-[13px]',
-        inputWrapper: cn(
-          'min-h-8 h-8 mb-2',
-          'bg-white! border border-default-300 shadow-none rounded-md',
-          'hover:border-default-500',
-          'focus-within:border-default-600! focus-within:ring-2 focus-within:ring-default-200',
-          'transition-all duration-200'
-        ),
-      }}
-      radius="none"
-      value={search}
-      onValueChange={setSearch}
-      placeholder={placeholder}
-      startContent={
-        <MagnifyingGlassIcon className="size-4 text-slate-400 mr-1" />
-      }
-    />
-  );
-}
-
-interface ToggleFacetHeadingProps {
-  label: string;
-  isSelected: boolean;
-  onChange: (checked: boolean) => void;
-}
-
-function ToggleFacetHeading({
-  label,
-  isSelected,
-  onChange,
-}: ToggleFacetHeadingProps) {
-  return (
-    <Switch
-      size="sm"
-      color="primary"
-      isSelected={isSelected}
-      onValueChange={onChange}
-      classNames={{
-        base: cn(
-          'flex-row-reverse w-[calc(100%+24px)] max-w-none justify-between',
-          'rounded-lg -mx-3 -my-4 p-3 py-4',
-          'hover:bg-default-100',
-          'transition-all duration-200 pointer-events-auto'
-        ),
-        label:
-          'text-[14px] font-headline text-slate-700 flex items-center gap-2 ml-0',
-      }}
-    >
-      <div className="flex items-center gap-2">
-        <span>{label}</span>
-      </div>
-    </Switch>
-  );
-}
-
 interface TermsFacetProps {
   groupIndex: number;
   config: FacetConfig;
@@ -265,18 +154,12 @@ function TermsFacet({
   value,
   onChange,
 }: TermsFacetProps) {
-  const [filter, setFilter] = useState('');
-
   const selected = value?.kind === 'terms' ? value.values : [];
   // The API may not include the requested facet in `aggs` yet (e.g. before
   // the first response lands). Treat that as a loading state rather than
   // "no options".
   const loading = aggregation === undefined;
   const buckets = aggregation?.buckets ?? [];
-
-  const filteredBuckets = matchSorter(buckets, filter, {
-    keys: [(b) => b.key],
-  });
 
   if (loading) {
     return (
@@ -297,53 +180,17 @@ function TermsFacet({
     );
   }
 
-  if (buckets.length === 0) {
-    return (
-      <span className="text-sm text-default-900">No options available.</span>
-    );
-  }
-
   return (
-    <div>
-      <FacetSearchInput
-        placeholder={`Filter ${config.label.toLowerCase()}...`}
-        onChange={setFilter}
-      />
-      <CheckboxGroup value={selected} onChange={onChange} className="p-0.75">
-        {filteredBuckets.map((bucket) => (
-          <Checkbox
-            key={bucket.key}
-            value={bucket.key}
-            color="primary"
-            size="sm"
-            classNames={{
-              wrapper:
-                'rounded-xs before:rounded-xs after:rounded-xs before:border-1 before:bg-white',
-              label: 'ml-0 w-full flex text-[14px] text-default-900',
-              base: cn(
-                'group py-[6px] -m-[3px] max-w-none rounded-md',
-                'transition-colors duration-200',
-                'hover:bg-default-100'
-              ),
-            }}
-          >
-            <span className="grow">
-              {bucket.key.charAt(0).toUpperCase() + bucket.key.slice(1)}
-            </span>
-            <span
-              className={cn(
-                'flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium',
-                selected.includes(bucket.key)
-                  ? 'text-white bg-primary'
-                  : 'text-primary bg-primary-100/75'
-              )}
-            >
-              {bucket.count}
-            </span>
-          </Checkbox>
-        ))}
-      </CheckboxGroup>
-    </div>
+    <TermsCheckboxGroup
+      buckets={buckets.map((b) => ({
+        key: b.key,
+        label: b.key.charAt(0).toUpperCase() + b.key.slice(1),
+        count: b.count,
+      }))}
+      selected={selected}
+      onChange={onChange}
+      filterPlaceholder={`Filter ${config.label.toLowerCase()}...`}
+    />
   );
 }
 

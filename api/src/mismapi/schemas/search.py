@@ -3,7 +3,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from mismapi.schemas.registry import AuthorDTO, IOSpecDTO, PublicationDTO
+from mismapi.schemas.registry import (
+    AuthorDTO,
+    IOSpecDTO,
+    PublicationDTO,
+)
 
 # ── Existing list schemas (backward compat) ──────────────────────────
 
