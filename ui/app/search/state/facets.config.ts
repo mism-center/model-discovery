@@ -24,9 +24,24 @@ export interface FacetConfig {
    * Optional placeholder / helper hint shown when the facet is empty.
    */
   placeholder?: string;
+  /**
+   * When true, this facet is a UI-only control that never compiles into an
+   * API filter or aggregation request. The value is still stored in URL
+   * params via the normal facet codec, but request-builder.ts skips it.
+   */
+  uiOnly?: boolean;
 }
 
 export const FACETS: readonly FacetConfig[] = [
+  {
+    id: 'model_status',
+    field: 'model_status',
+    label: 'Model Status',
+    widget: 'terms',
+    termsOp: 'in',
+    resourceTypes: ['model'],
+    uiOnly: true,
+  },
   {
     id: 'model_scales',
     field: 'model_scales',

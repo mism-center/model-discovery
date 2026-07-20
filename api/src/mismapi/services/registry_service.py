@@ -1,5 +1,6 @@
 import dataclasses
 import logging
+import shutil
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -131,6 +132,29 @@ class RegistryService:
             return self._registry.get_resource(model_id)
         except ResourceNotFoundError as exc:
             raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+    def delete_model(
+        self,
+        principal: AuthenticatedPrincipal,
+        model_id: str,
+    ) -> None:
+        """Delete a model: remove the DB record and wipe its on-disk directory."""
+        resource = self.get_resource_and_assert_ownership(principal, resource_id=model_id)
+
+        mount = get_settings().irods_mount_path
+        try:
+            directory = resolve_location_uri(resource.location_uri, mount)
+            if directory.is_dir():
+                shutil.rmtree(directory)
+        except Exception:
+            logger.warning(
+                "Could not delete files for model %s at %s",
+                model_id,
+                resource.location_uri,
+            )
+
+        self._registry.delete_resource(model_id)
+        self._session.commit()
 
     def list_annotating_models(self) -> list[Resource]:
         """Return all MODEL resources currently in ANNOTATING state.
@@ -601,9 +625,10 @@ class RegistryService:
         tags: list[str] | None = None,
         organisms: list[str] | None = None,
         scales: list[str] | None = None,
+        registration_status: str | None = None,
     ) -> list[Resource]:
         # FUTURE: batch fga check for visibility filtering
-        return find_resources(
+        resources = find_resources(
             self._registry,
             resource_type=ResourceType.MODEL,
             name_contains=name_contains,
@@ -612,6 +637,9 @@ class RegistryService:
             organisms=organisms,
             scales=scales,
         )
+        if registration_status is not None:
+            resources = [r for r in resources if r.registration_status.value == registration_status]
+        return resources
 
     # ── Search ────────────────────────────────────────────────────────
 

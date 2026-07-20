@@ -120,7 +120,8 @@ export interface paths {
     /** Update Model */
     put: operations['update_model_api_v1_models__model_id__put'];
     post?: never;
-    delete?: never;
+    /** Delete Model */
+    delete: operations['delete_model_api_v1_models__model_id__delete'];
     options?: never;
     head?: never;
     patch?: never;
@@ -770,6 +771,11 @@ export interface components {
        */
       execution_ref: string;
       io_spec?: components['schemas']['IOSpecDTO'] | null;
+      /**
+       * Registration Status
+       * @default
+       */
+      registration_status: string;
       /** Metadata */
       metadata?: {
         [key: string]: unknown;
@@ -1834,6 +1840,8 @@ export interface operations {
         organisms?: string[] | null;
         /** @description Model scales (any must match) */
         scales?: string[] | null;
+        /** @description Exact match on registration status */
+        registration_status?: string | null;
         limit?: number;
         offset?: number;
       };
@@ -1976,6 +1984,44 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  delete_model_api_v1_models__model_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        model_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
+      /** @description Validation Error */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
         };
       };
     };

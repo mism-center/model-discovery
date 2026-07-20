@@ -611,7 +611,7 @@ export default function TusTest() {
     <main className="container mx-auto p-6 flex flex-col gap-6 max-w-4xl">
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold">Model Upload</h1>
-        <p className="text-sm text-default-500">
+        <p className="text-sm text-foreground">
           Register a model from a GitHub repository or upload a file directly
           via TUS.
         </p>
