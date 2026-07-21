@@ -22,6 +22,8 @@ const FORCE_EDITABLE_TYPES = new Set([
   'boolean',
   'list-scalar',
   'list-ontology',
+  'list-entry-point',
+  'list-container',
 ]);
 
 export function MetadataField({
@@ -43,6 +45,30 @@ export function MetadataField({
   if (isEditable && annotation.inputType === 'list-ontology') {
     return (
       <EditableOntologyList
+        annotation={annotation}
+        items={items ?? []}
+        fieldKey={fieldKey}
+        onChange={onChange}
+        getFormValue={getFormValue}
+      />
+    );
+  }
+
+  if (isEditable && annotation.inputType === 'list-entry-point') {
+    return (
+      <EditableEntryPointList
+        annotation={annotation}
+        items={items ?? []}
+        fieldKey={fieldKey}
+        onChange={onChange}
+        getFormValue={getFormValue}
+      />
+    );
+  }
+
+  if (isEditable && annotation.inputType === 'list-container') {
+    return (
+      <EditableContainerList
         annotation={annotation}
         items={items ?? []}
         fieldKey={fieldKey}
@@ -200,7 +226,7 @@ function EditableOntologyList({
             return (
               <div
                 key={index}
-                className="bg-default-100 border border-default-200 rounded px-3 py-2 flex flex-col gap-2"
+                className="bg-white border border-default-200 rounded px-3 py-2 flex flex-col gap-2"
               >
                 <Input
                   size="sm"
@@ -273,6 +299,196 @@ function EditableOntologyList({
   );
 }
 
+// ── Editable entry-point list ─────────────────────────────────────────────────
+
+function EditableEntryPointList({
+  annotation,
+  items,
+  fieldKey,
+  onChange,
+  getFormValue,
+}: {
+  annotation: FieldAnnotation;
+  items: unknown[];
+  fieldKey: string;
+  onChange: (key: string, newValue: string) => void;
+  getFormValue?: (key: string) => string;
+}) {
+  const gv = (key: string) => getFormValue?.(key) ?? '';
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs text-default-800 font-medium">
+        {annotation.label}
+        {items.length > 0 && (
+          <span className="ml-1.5 text-default-800">({items.length})</span>
+        )}
+      </span>
+      {items.length === 0 ? (
+        <span className="text-xs text-default-800 italic">none</span>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {items.map((_, index) => {
+            const conf = gv(`${fieldKey}[${index}].confidence`);
+            const source = gv(`${fieldKey}[${index}].source`);
+            return (
+              <div
+                key={index}
+                className="bg-white border border-default-200 rounded px-3 py-2 flex flex-col gap-2"
+              >
+                <Input
+                  size="sm"
+                  label="command"
+                  value={gv(`${fieldKey}[${index}].command`)}
+                  onValueChange={(v) =>
+                    onChange(`${fieldKey}[${index}].command`, v)
+                  }
+                  classNames={{
+                    label: 'text-xs text-default-800',
+                    input: 'font-mono text-xs',
+                  }}
+                />
+                <Textarea
+                  size="sm"
+                  label="purpose"
+                  value={gv(`${fieldKey}[${index}].purpose`)}
+                  minRows={2}
+                  onValueChange={(v) =>
+                    onChange(`${fieldKey}[${index}].purpose`, v)
+                  }
+                  classNames={{ label: 'text-xs text-default-800' }}
+                />
+                <Input
+                  size="sm"
+                  label="default output location"
+                  value={gv(`${fieldKey}[${index}].default_output_location`)}
+                  onValueChange={(v) =>
+                    onChange(`${fieldKey}[${index}].default_output_location`, v)
+                  }
+                  classNames={{
+                    label: 'text-xs text-default-800',
+                    input: 'font-mono text-xs',
+                  }}
+                />
+                <div className="flex items-center gap-4 pt-0.5 flex-wrap">
+                  {conf && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-default-800">
+                        Confidence
+                      </span>
+                      <ConfidenceBadge value={conf} />
+                    </div>
+                  )}
+                  {source && (
+                    <span className="text-xs text-default-500 font-mono truncate">
+                      source: {source}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {annotation.description && (
+        <span className="text-xs text-default-800">
+          {annotation.description}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ── Editable container list ───────────────────────────────────────────────────
+
+function EditableContainerList({
+  annotation,
+  items,
+  fieldKey,
+  onChange,
+  getFormValue,
+}: {
+  annotation: FieldAnnotation;
+  items: unknown[];
+  fieldKey: string;
+  onChange: (key: string, newValue: string) => void;
+  getFormValue?: (key: string) => string;
+}) {
+  const gv = (key: string) => getFormValue?.(key) ?? '';
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs text-default-800 font-medium">
+        {annotation.label}
+        {items.length > 0 && (
+          <span className="ml-1.5 text-default-800">({items.length})</span>
+        )}
+      </span>
+      {items.length === 0 ? (
+        <span className="text-xs text-default-800 italic">none</span>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {items.map((_, index) => (
+            <div
+              key={index}
+              className="bg-white border border-default-200 rounded px-3 py-2 flex flex-col gap-2"
+            >
+              <Input
+                size="sm"
+                label="kind"
+                value={gv(`${fieldKey}[${index}].kind`)}
+                onValueChange={(v) => onChange(`${fieldKey}[${index}].kind`, v)}
+                classNames={{ label: 'text-xs text-default-800' }}
+                description="docker | singularity"
+              />
+              <Input
+                size="sm"
+                label="file"
+                value={gv(`${fieldKey}[${index}].file`)}
+                onValueChange={(v) => onChange(`${fieldKey}[${index}].file`, v)}
+                classNames={{
+                  label: 'text-xs text-default-800',
+                  input: 'font-mono text-xs',
+                }}
+                description="e.g. Dockerfile, container.def"
+              />
+              <Input
+                size="sm"
+                label="image name"
+                value={gv(`${fieldKey}[${index}].image_name`)}
+                onValueChange={(v) =>
+                  onChange(`${fieldKey}[${index}].image_name`, v)
+                }
+                classNames={{
+                  label: 'text-xs text-default-800',
+                  input: 'font-mono text-xs',
+                }}
+              />
+              <Input
+                size="sm"
+                label="source"
+                value={gv(`${fieldKey}[${index}].source`)}
+                onValueChange={(v) =>
+                  onChange(`${fieldKey}[${index}].source`, v)
+                }
+                classNames={{
+                  label: 'text-xs text-default-800',
+                  input: 'font-mono text-xs',
+                }}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+      {annotation.description && (
+        <span className="text-xs text-default-800">
+          {annotation.description}
+        </span>
+      )}
+    </div>
+  );
+}
+
 // ── Viewable renderer ─────────────────────────────────────────────────────────
 
 type ViewableFieldProps = {
@@ -308,7 +524,9 @@ function ViewableField({
 
   if (
     annotation.inputType === 'list-ontology' ||
-    annotation.inputType === 'list-object'
+    annotation.inputType === 'list-object' ||
+    annotation.inputType === 'list-entry-point' ||
+    annotation.inputType === 'list-container'
   ) {
     return <ObjectListField annotation={annotation} items={items} />;
   }
@@ -525,6 +743,17 @@ function formatObjectItem(item: unknown): string {
   const priority = [
     'ontology_label',
     'name',
+    // entry_points fields
+    'command',
+    'purpose',
+    'default_output_location',
+    // dependency fields
+    'version_constraint',
+    // container fields
+    'kind',
+    'file',
+    'image_name',
+    // generic / shared
     'field_path',
     'path',
     'value',
