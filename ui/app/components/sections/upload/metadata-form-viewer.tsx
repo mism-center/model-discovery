@@ -54,6 +54,7 @@ const VIEWABLE_FORCE_EDITABLE_TYPES = new Set([
   'list-ontology',
   'list-entry-point',
   'list-container',
+  'list-dep',
 ]);
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -295,6 +296,8 @@ export function MetadataFormViewer({
                     'execution.status',
                     'execution.language.name',
                     'execution.language.version_constraint',
+                    'execution.language.iri',
+                    'execution.language.ontology',
                     'execution.environment_kind',
                     'execution.notes',
                   ],
@@ -331,7 +334,7 @@ export function MetadataFormViewer({
                 },
                 {
                   title: 'Tests',
-                  noEdit: false,
+                  noEdit: true,
                   fieldKeys: [
                     'execution.tests.framework',
                     'execution.tests.invocation',
@@ -356,6 +359,8 @@ export function MetadataFormViewer({
                   noEdit: false,
                   fieldKeys: [
                     'io.experiment_protocol.description',
+                    'io.experiment_protocol.timestep',
+                    'io.experiment_protocol.duration',
                     'io.experiment_protocol.observables',
                   ],
                 },
@@ -609,6 +614,7 @@ function FieldSection({
                 items={resolvedItems}
                 forceEditable={isEditing}
                 getFormValue={(k) => formValues[k] ?? ''}
+                formValues={formValues}
               />
             );
           })}

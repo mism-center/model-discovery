@@ -1,5 +1,5 @@
-import { Input, Textarea, Chip } from '@heroui/react';
-import type { FieldAnnotation } from './metadata-types';
+import { Button, Input, Textarea, Chip } from '@heroui/react';
+import type { FieldAnnotation, FormValues } from './metadata-types';
 
 type MetadataFieldProps = {
   fieldKey: string;
@@ -11,8 +11,10 @@ type MetadataFieldProps = {
   items?: unknown[];
   /** When true, viewable fields that support editing are rendered as inputs */
   forceEditable?: boolean;
-  /** Read current form value by key — used by EditableOntologyList for per-item editing */
+  /** Read current form value by key — used by editable list components for per-item editing */
   getFormValue?: (key: string) => string;
+  /** Full form values map — used to count items added via the UI beyond the original YAML */
+  formValues?: FormValues;
 };
 
 const FORCE_EDITABLE_TYPES = new Set([
@@ -24,6 +26,7 @@ const FORCE_EDITABLE_TYPES = new Set([
   'list-ontology',
   'list-entry-point',
   'list-container',
+  'list-dep',
 ]);
 
 export function MetadataField({
@@ -35,12 +38,28 @@ export function MetadataField({
   items,
   forceEditable,
   getFormValue,
+  formValues,
 }: MetadataFieldProps) {
   const isEditable =
     annotation.visibility === 'editable' ||
     (forceEditable === true &&
       annotation.forceReadOnly !== true &&
       FORCE_EDITABLE_TYPES.has(annotation.inputType));
+
+  // ── Helpers for add-item lists ──────────────────────────────────────────────
+  // Count how many items exist in formValues for this field by probing indexed keys.
+  const countItems = (primarySubfield: string): number => {
+    if (!formValues) return items?.length ?? 0;
+    let i = 0;
+    while (`${fieldKey}[${i}].${primarySubfield}` in formValues) i++;
+    return i;
+  };
+
+  // Returns a handler that appends one empty item to the list in form state.
+  const makeAddItemHandler = (subfields: string[]) => () => {
+    const i = countItems(subfields[0]);
+    for (const sf of subfields) onChange(`${fieldKey}[${i}].${sf}`, '');
+  };
 
   if (isEditable && annotation.inputType === 'list-ontology') {
     return (
@@ -55,25 +74,49 @@ export function MetadataField({
   }
 
   if (isEditable && annotation.inputType === 'list-entry-point') {
+    const itemCount = countItems('command');
     return (
       <EditableEntryPointList
         annotation={annotation}
-        items={items ?? []}
+        itemCount={itemCount}
         fieldKey={fieldKey}
         onChange={onChange}
         getFormValue={getFormValue}
+        onAddItem={makeAddItemHandler([
+          'command',
+          'purpose',
+          'default_output_location',
+          'confidence',
+          'source',
+        ])}
       />
     );
   }
 
   if (isEditable && annotation.inputType === 'list-container') {
+    const itemCount = countItems('kind');
     return (
       <EditableContainerList
         annotation={annotation}
-        items={items ?? []}
+        itemCount={itemCount}
         fieldKey={fieldKey}
         onChange={onChange}
         getFormValue={getFormValue}
+        onAddItem={makeAddItemHandler(['kind', 'file', 'image_name', 'source'])}
+      />
+    );
+  }
+
+  if (isEditable && annotation.inputType === 'list-dep') {
+    const itemCount = countItems('name');
+    return (
+      <EditableDependencyList
+        annotation={annotation}
+        itemCount={itemCount}
+        fieldKey={fieldKey}
+        onChange={onChange}
+        getFormValue={getFormValue}
+        onAddItem={makeAddItemHandler(['name', 'version_constraint', 'source'])}
       />
     );
   }
@@ -229,43 +272,39 @@ function EditableOntologyList({
                 className="bg-white border border-default-200 rounded px-3 py-2 flex flex-col gap-2"
               >
                 <Input
-                  size="sm"
                   label="label"
                   value={gv(`${fieldKey}[${index}].ontology_label`)}
                   onValueChange={(v) =>
                     onChange(`${fieldKey}[${index}].ontology_label`, v)
                   }
-                  classNames={{ label: 'text-xs text-default-800' }}
+                  classNames={{ label: 'text-xs text-default-800 font-medium' }}
                 />
                 <Input
-                  size="sm"
                   label="iri"
                   value={gv(`${fieldKey}[${index}].iri`)}
                   onValueChange={(v) =>
                     onChange(`${fieldKey}[${index}].iri`, v)
                   }
                   classNames={{
-                    label: 'text-xs text-default-800',
-                    input: 'font-mono text-xs',
+                    label: 'text-xs text-default-800 font-medium',
+                    input: 'font-mono',
                   }}
                 />
                 <Input
-                  size="sm"
                   label="ontology"
                   value={gv(`${fieldKey}[${index}].ontology`)}
                   onValueChange={(v) =>
                     onChange(`${fieldKey}[${index}].ontology`, v)
                   }
-                  classNames={{ label: 'text-xs text-default-800' }}
+                  classNames={{ label: 'text-xs text-default-800 font-medium' }}
                 />
                 <Input
-                  size="sm"
                   label="source"
                   value={gv(`${fieldKey}[${index}].source`)}
                   onValueChange={(v) =>
                     onChange(`${fieldKey}[${index}].source`, v)
                   }
-                  classNames={{ label: 'text-xs text-default-800' }}
+                  classNames={{ label: 'text-xs text-default-800 font-medium' }}
                 />
                 <div className="flex items-center gap-4 pt-0.5">
                   {conf && (
@@ -303,16 +342,18 @@ function EditableOntologyList({
 
 function EditableEntryPointList({
   annotation,
-  items,
+  itemCount,
   fieldKey,
   onChange,
   getFormValue,
+  onAddItem,
 }: {
   annotation: FieldAnnotation;
-  items: unknown[];
+  itemCount: number;
   fieldKey: string;
   onChange: (key: string, newValue: string) => void;
   getFormValue?: (key: string) => string;
+  onAddItem: () => void;
 }) {
   const gv = (key: string) => getFormValue?.(key) ?? '';
 
@@ -320,76 +361,76 @@ function EditableEntryPointList({
     <div className="flex flex-col gap-1.5">
       <span className="text-xs text-default-800 font-medium">
         {annotation.label}
-        {items.length > 0 && (
-          <span className="ml-1.5 text-default-800">({items.length})</span>
+        {itemCount > 0 && (
+          <span className="ml-1.5 text-default-800">({itemCount})</span>
         )}
       </span>
-      {items.length === 0 ? (
-        <span className="text-xs text-default-800 italic">none</span>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {items.map((_, index) => {
-            const conf = gv(`${fieldKey}[${index}].confidence`);
-            const source = gv(`${fieldKey}[${index}].source`);
-            return (
-              <div
-                key={index}
-                className="bg-white border border-default-200 rounded px-3 py-2 flex flex-col gap-2"
-              >
-                <Input
-                  size="sm"
-                  label="command"
-                  value={gv(`${fieldKey}[${index}].command`)}
-                  onValueChange={(v) =>
-                    onChange(`${fieldKey}[${index}].command`, v)
-                  }
-                  classNames={{
-                    label: 'text-xs text-default-800',
-                    input: 'font-mono text-xs',
-                  }}
-                />
-                <Textarea
-                  size="sm"
-                  label="purpose"
-                  value={gv(`${fieldKey}[${index}].purpose`)}
-                  minRows={2}
-                  onValueChange={(v) =>
-                    onChange(`${fieldKey}[${index}].purpose`, v)
-                  }
-                  classNames={{ label: 'text-xs text-default-800' }}
-                />
-                <Input
-                  size="sm"
-                  label="default output location"
-                  value={gv(`${fieldKey}[${index}].default_output_location`)}
-                  onValueChange={(v) =>
-                    onChange(`${fieldKey}[${index}].default_output_location`, v)
-                  }
-                  classNames={{
-                    label: 'text-xs text-default-800',
-                    input: 'font-mono text-xs',
-                  }}
-                />
-                <div className="flex items-center gap-4 pt-0.5 flex-wrap">
-                  {conf && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs text-default-800">
-                        Confidence
-                      </span>
-                      <ConfidenceBadge value={conf} />
-                    </div>
-                  )}
-                  {source && (
-                    <span className="text-xs text-default-500 font-mono truncate">
-                      source: {source}
-                    </span>
-                  )}
-                </div>
+      <div className="flex flex-col gap-3">
+        {Array.from({ length: itemCount }, (_, index) => {
+          const conf = gv(`${fieldKey}[${index}].confidence`);
+          const source = gv(`${fieldKey}[${index}].source`);
+          return (
+            <div
+              key={index}
+              className="bg-white border border-default-200 rounded px-3 py-2 flex flex-col gap-2"
+            >
+              <Input
+                label="command"
+                value={gv(`${fieldKey}[${index}].command`)}
+                onValueChange={(v) =>
+                  onChange(`${fieldKey}[${index}].command`, v)
+                }
+                classNames={{
+                  label: 'text-xs text-default-800 font-medium',
+                  input: 'font-mono',
+                }}
+              />
+              <Textarea
+                label="purpose"
+                value={gv(`${fieldKey}[${index}].purpose`)}
+                minRows={2}
+                onValueChange={(v) =>
+                  onChange(`${fieldKey}[${index}].purpose`, v)
+                }
+                classNames={{ label: 'text-xs text-default-800 font-medium' }}
+              />
+              <Input
+                label="default output location"
+                value={gv(`${fieldKey}[${index}].default_output_location`)}
+                onValueChange={(v) =>
+                  onChange(`${fieldKey}[${index}].default_output_location`, v)
+                }
+                classNames={{
+                  label: 'text-xs text-default-800 font-medium',
+                  input: 'font-mono',
+                }}
+              />
+              <div className="flex items-center gap-4 pt-0.5 flex-wrap">
+                {conf && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-default-800">Confidence</span>
+                    <ConfidenceBadge value={conf} />
+                  </div>
+                )}
+                {source && (
+                  <span className="text-xs text-default-500 font-mono truncate">
+                    source: {source}
+                  </span>
+                )}
               </div>
-            );
-          })}
-        </div>
-      )}
+            </div>
+          );
+        })}
+      </div>
+      <Button
+        size="sm"
+        color="success"
+        variant="flat"
+        className="self-start mt-1 text-xs"
+        onPress={onAddItem}
+      >
+        + Add Entry Point
+      </Button>
       {annotation.description && (
         <span className="text-xs text-default-800">
           {annotation.description}
@@ -403,16 +444,18 @@ function EditableEntryPointList({
 
 function EditableContainerList({
   annotation,
-  items,
+  itemCount,
   fieldKey,
   onChange,
   getFormValue,
+  onAddItem,
 }: {
   annotation: FieldAnnotation;
-  items: unknown[];
+  itemCount: number;
   fieldKey: string;
   onChange: (key: string, newValue: string) => void;
   getFormValue?: (key: string) => string;
+  onAddItem: () => void;
 }) {
   const gv = (key: string) => getFormValue?.(key) ?? '';
 
@@ -420,66 +463,149 @@ function EditableContainerList({
     <div className="flex flex-col gap-1.5">
       <span className="text-xs text-default-800 font-medium">
         {annotation.label}
-        {items.length > 0 && (
-          <span className="ml-1.5 text-default-800">({items.length})</span>
+        {itemCount > 0 && (
+          <span className="ml-1.5 text-default-800">({itemCount})</span>
         )}
       </span>
-      {items.length === 0 ? (
-        <span className="text-xs text-default-800 italic">none</span>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {items.map((_, index) => (
-            <div
-              key={index}
-              className="bg-white border border-default-200 rounded px-3 py-2 flex flex-col gap-2"
-            >
-              <Input
-                size="sm"
-                label="kind"
-                value={gv(`${fieldKey}[${index}].kind`)}
-                onValueChange={(v) => onChange(`${fieldKey}[${index}].kind`, v)}
-                classNames={{ label: 'text-xs text-default-800' }}
-                description="docker | singularity"
-              />
-              <Input
-                size="sm"
-                label="file"
-                value={gv(`${fieldKey}[${index}].file`)}
-                onValueChange={(v) => onChange(`${fieldKey}[${index}].file`, v)}
-                classNames={{
-                  label: 'text-xs text-default-800',
-                  input: 'font-mono text-xs',
-                }}
-                description="e.g. Dockerfile, container.def"
-              />
-              <Input
-                size="sm"
-                label="image name"
-                value={gv(`${fieldKey}[${index}].image_name`)}
-                onValueChange={(v) =>
-                  onChange(`${fieldKey}[${index}].image_name`, v)
-                }
-                classNames={{
-                  label: 'text-xs text-default-800',
-                  input: 'font-mono text-xs',
-                }}
-              />
-              <Input
-                size="sm"
-                label="source"
-                value={gv(`${fieldKey}[${index}].source`)}
-                onValueChange={(v) =>
-                  onChange(`${fieldKey}[${index}].source`, v)
-                }
-                classNames={{
-                  label: 'text-xs text-default-800',
-                  input: 'font-mono text-xs',
-                }}
-              />
-            </div>
-          ))}
-        </div>
+      <div className="flex flex-col gap-3">
+        {Array.from({ length: itemCount }, (_, index) => (
+          <div
+            key={index}
+            className="bg-white border border-default-200 rounded px-3 py-2 flex flex-col gap-2"
+          >
+            <Input
+              label="kind"
+              value={gv(`${fieldKey}[${index}].kind`)}
+              onValueChange={(v) => onChange(`${fieldKey}[${index}].kind`, v)}
+              classNames={{ label: 'text-xs text-default-800 font-medium' }}
+              description="docker | singularity"
+            />
+            <Input
+              label="file"
+              value={gv(`${fieldKey}[${index}].file`)}
+              onValueChange={(v) => onChange(`${fieldKey}[${index}].file`, v)}
+              classNames={{
+                label: 'text-xs text-default-800 font-medium',
+                input: 'font-mono',
+              }}
+              description="e.g. Dockerfile, container.def"
+            />
+            <Input
+              label="image name"
+              value={gv(`${fieldKey}[${index}].image_name`)}
+              onValueChange={(v) =>
+                onChange(`${fieldKey}[${index}].image_name`, v)
+              }
+              classNames={{
+                label: 'text-xs text-default-800 font-medium',
+                input: 'font-mono',
+              }}
+            />
+            <Input
+              label="source"
+              value={gv(`${fieldKey}[${index}].source`)}
+              onValueChange={(v) => onChange(`${fieldKey}[${index}].source`, v)}
+              classNames={{
+                label: 'text-xs text-default-800 font-medium',
+                input: 'font-mono',
+              }}
+            />
+          </div>
+        ))}
+      </div>
+      <Button
+        size="sm"
+        color="success"
+        variant="flat"
+        className="self-start mt-1 text-xs"
+        onPress={onAddItem}
+      >
+        + Add Container
+      </Button>
+      {annotation.description && (
+        <span className="text-xs text-default-800">
+          {annotation.description}
+        </span>
       )}
+    </div>
+  );
+}
+
+// ── Editable dependency list ──────────────────────────────────────────────────
+
+function EditableDependencyList({
+  annotation,
+  itemCount,
+  fieldKey,
+  onChange,
+  getFormValue,
+  onAddItem,
+}: {
+  annotation: FieldAnnotation;
+  itemCount: number;
+  fieldKey: string;
+  onChange: (key: string, newValue: string) => void;
+  getFormValue?: (key: string) => string;
+  onAddItem: () => void;
+}) {
+  const gv = (key: string) => getFormValue?.(key) ?? '';
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs text-default-800 font-medium">
+        {annotation.label}
+        {itemCount > 0 && (
+          <span className="ml-1.5 text-default-800">({itemCount})</span>
+        )}
+      </span>
+      <div className="flex flex-col gap-3">
+        {Array.from({ length: itemCount }, (_, index) => (
+          <div
+            key={index}
+            className="bg-white border border-default-200 rounded px-3 py-2 flex flex-col gap-2"
+          >
+            <Input
+              label="name"
+              value={gv(`${fieldKey}[${index}].name`)}
+              onValueChange={(v) => onChange(`${fieldKey}[${index}].name`, v)}
+              classNames={{
+                label: 'text-xs text-default-800 font-medium',
+                input: 'font-mono',
+              }}
+            />
+            <Input
+              label="version constraint"
+              value={gv(`${fieldKey}[${index}].version_constraint`)}
+              onValueChange={(v) =>
+                onChange(`${fieldKey}[${index}].version_constraint`, v)
+              }
+              classNames={{
+                label: 'text-xs text-default-800 font-medium',
+                input: 'font-mono',
+              }}
+              description="e.g. >=1.2,<2.0"
+            />
+            <Input
+              label="source"
+              value={gv(`${fieldKey}[${index}].source`)}
+              onValueChange={(v) => onChange(`${fieldKey}[${index}].source`, v)}
+              classNames={{
+                label: 'text-xs text-default-800 font-medium',
+                input: 'font-mono',
+              }}
+            />
+          </div>
+        ))}
+      </div>
+      <Button
+        size="sm"
+        color="success"
+        variant="flat"
+        className="self-start mt-1 text-xs"
+        onPress={onAddItem}
+      >
+        + Add Dependency
+      </Button>
       {annotation.description && (
         <span className="text-xs text-default-800">
           {annotation.description}
@@ -526,7 +652,8 @@ function ViewableField({
     annotation.inputType === 'list-ontology' ||
     annotation.inputType === 'list-object' ||
     annotation.inputType === 'list-entry-point' ||
-    annotation.inputType === 'list-container'
+    annotation.inputType === 'list-container' ||
+    annotation.inputType === 'list-dep'
   ) {
     return <ObjectListField annotation={annotation} items={items} />;
   }

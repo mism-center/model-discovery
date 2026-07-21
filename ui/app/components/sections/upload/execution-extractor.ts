@@ -25,6 +25,8 @@ export function extractExecutionFormValues(
   // Accept both version_constraint (new) and version (old)
   values['execution.language.version_constraint'] =
     lang.version_constraint ?? lang.version ?? '';
+  values['execution.language.iri'] = lang.iri ?? '';
+  values['execution.language.ontology'] = lang.ontology ?? '';
 
   // ── Environment kind ──
   values['execution.environment_kind'] = schemaLeafOrString(
@@ -53,21 +55,20 @@ export function extractExecutionFormValues(
     values[`execution.entry_points[${i}].source`] = ep.source ?? '';
   }
 
-  // ── Dependencies (list-object) ──
-  values['execution.dependencies.runtime'] = (exec.dependencies?.runtime ?? [])
-    .map((d) => d.name ?? '')
-    .filter(Boolean)
-    .join(', ');
-  values['execution.dependencies.optional'] = (
-    exec.dependencies?.optional ?? []
-  )
-    .map((d) => d.name ?? '')
-    .filter(Boolean)
-    .join(', ');
-  values['execution.dependencies.system'] = (exec.dependencies?.system ?? [])
-    .map((d) => d.name ?? '')
-    .filter(Boolean)
-    .join(', ');
+  // ── Dependencies (list-dep — per-item name/version_constraint/source) ──
+  for (const kind of ['runtime', 'optional', 'system'] as const) {
+    const deps = exec.dependencies?.[kind] ?? [];
+    values[`execution.dependencies.${kind}`] = deps
+      .map((d) => d.name ?? '')
+      .filter(Boolean)
+      .join(', ');
+    for (const [i, d] of deps.entries()) {
+      values[`execution.dependencies.${kind}[${i}].name`] = d.name ?? '';
+      values[`execution.dependencies.${kind}[${i}].version_constraint`] =
+        d.version_constraint ?? '';
+      values[`execution.dependencies.${kind}[${i}].source`] = d.source ?? '';
+    }
+  }
 
   // ── Containers (list-container) ──
   values['execution.containers'] = (exec.containers ?? [])
@@ -169,6 +170,15 @@ export function extractExecutionFormValues(
   // ── Protocol ──
   values['io.experiment_protocol.description'] =
     io.experiment_protocol?.description ?? '';
+  // timestep and duration: display as "value unit" compound strings
+  const ts = io.experiment_protocol?.timestep;
+  values['io.experiment_protocol.timestep'] = ts
+    ? [ts.value, ts.unit].filter(Boolean).join(' ')
+    : '';
+  const dur = io.experiment_protocol?.duration;
+  values['io.experiment_protocol.duration'] = dur
+    ? [dur.value, dur.unit].filter(Boolean).join(' ')
+    : '';
   values['io.experiment_protocol.observables'] = (
     io.experiment_protocol?.observables ?? []
   ).join(', ');
@@ -276,40 +286,86 @@ export function applyFormValuesToExecution(
     ...(invocation === undefined ? {} : { invocation: invocation || null }),
   };
 
-  // ── containers (per-item) ──
-  if (Array.isArray(exec.containers)) {
-    exec.containers = exec.containers.map((c, i) => {
-      const kind = values[`execution.containers[${i}].kind`];
-      const file = values[`execution.containers[${i}].file`];
-      const image_name = values[`execution.containers[${i}].image_name`];
-      const source = values[`execution.containers[${i}].source`];
+  // ── containers (per-item, form-value-count-based to support added items) ──
+  const containerCount = countFormItems(values, 'execution.containers', 'kind');
+  if (containerCount > 0 || Array.isArray(exec.containers)) {
+    exec.containers = Array.from({ length: containerCount }, (_, i) => {
+      const existing = (exec.containers ?? [])[i] ?? {};
       return {
-        ...c,
-        ...(kind === undefined ? {} : { kind: kind || null }),
-        ...(file === undefined ? {} : { file: file || null }),
-        ...(image_name === undefined ? {} : { image_name: image_name || null }),
-        ...(source === undefined ? {} : { source: source || undefined }),
+        ...existing,
+        kind:
+          values[`execution.containers[${i}].kind`] ?? existing.kind ?? null,
+        file:
+          values[`execution.containers[${i}].file`] ?? existing.file ?? null,
+        image_name:
+          values[`execution.containers[${i}].image_name`] ??
+          existing.image_name ??
+          null,
+        source:
+          values[`execution.containers[${i}].source`] ??
+          existing.source ??
+          undefined,
       };
     });
   }
 
-  // ── entry points (per-item) ──
-  if (Array.isArray(exec.entry_points)) {
-    exec.entry_points = exec.entry_points.map((ep, i) => {
-      const command = values[`execution.entry_points[${i}].command`];
-      const purpose = values[`execution.entry_points[${i}].purpose`];
-      const loc =
-        values[`execution.entry_points[${i}].default_output_location`];
-      const confidence = values[`execution.entry_points[${i}].confidence`];
+  // ── entry points (per-item, form-value-count-based to support added items) ──
+  const epCount = countFormItems(values, 'execution.entry_points', 'command');
+  if (epCount > 0 || Array.isArray(exec.entry_points)) {
+    exec.entry_points = Array.from({ length: epCount }, (_, i) => {
+      const existing = (exec.entry_points ?? [])[i] ?? {};
       return {
-        ...ep,
-        ...(command === undefined ? {} : { command: command || null }),
-        ...(purpose === undefined ? {} : { purpose: purpose || null }),
-        ...(loc === undefined ? {} : { default_output_location: loc || null }),
-        ...(confidence === undefined ? {} : { confidence: confidence || null }),
+        ...existing,
+        command:
+          values[`execution.entry_points[${i}].command`] ??
+          existing.command ??
+          null,
+        purpose:
+          values[`execution.entry_points[${i}].purpose`] ??
+          existing.purpose ??
+          null,
+        default_output_location:
+          values[`execution.entry_points[${i}].default_output_location`] ??
+          existing.default_output_location ??
+          null,
+        confidence:
+          values[`execution.entry_points[${i}].confidence`] ??
+          existing.confidence ??
+          null,
       };
     });
   }
+
+  // ── dependencies (per-item, form-value-count-based) ──
+  const deps = { ...exec.dependencies };
+  for (const kind of ['runtime', 'optional', 'system'] as const) {
+    const count = countFormItems(
+      values,
+      `execution.dependencies.${kind}`,
+      'name'
+    );
+    if (count > 0 || Array.isArray(deps[kind])) {
+      deps[kind] = Array.from({ length: count }, (_, i) => {
+        const existing = (deps[kind] ?? [])[i] ?? {};
+        return {
+          ...existing,
+          name:
+            values[`execution.dependencies.${kind}[${i}].name`] ??
+            existing.name ??
+            null,
+          version_constraint:
+            values[`execution.dependencies.${kind}[${i}].version_constraint`] ??
+            existing.version_constraint ??
+            null,
+          source:
+            values[`execution.dependencies.${kind}[${i}].source`] ??
+            existing.source ??
+            undefined,
+        };
+      });
+    }
+  }
+  exec.dependencies = deps as typeof exec.dependencies;
 
   // ── io.experiment_protocol ──
   const io = { ...original.io };
@@ -365,4 +421,19 @@ function schemaLeafConfidence(
       : String(field.confidence);
   }
   return '';
+}
+
+/**
+ * Counts how many items exist in formValues for a given list field key,
+ * using the presence of `${fieldKey}[i].${primarySubfield}` as the probe.
+ * This lets write-back handle items added via the UI (beyond the original YAML).
+ */
+function countFormItems(
+  values: FormValues,
+  fieldKey: string,
+  primarySubfield: string
+): number {
+  let i = 0;
+  while (`${fieldKey}[${i}].${primarySubfield}` in values) i++;
+  return i;
 }
