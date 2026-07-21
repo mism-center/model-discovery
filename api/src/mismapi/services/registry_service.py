@@ -153,7 +153,7 @@ class RegistryService:
                 resource.location_uri,
             )
 
-        self._registry.delete_resource(model_id)  # type: ignore[attr-defined]  # added in local metadata-schema; remove once default-draft is synced
+        self._registry.delete_resource(model_id)
         self._session.commit()
 
     def list_annotating_models(self) -> list[Resource]:
