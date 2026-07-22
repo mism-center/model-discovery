@@ -6,7 +6,10 @@ from mism_registry.enums import ExecutionType, ResourceType, ResourceVersionStat
 from mism_registry.resource import Resource
 from mism_registry.search import SearchResult
 
-from mismapi.auth.base import AuthenticatedPrincipal, require_principal
+from mismapi.auth.base import (
+    AuthenticatedPrincipal,
+    require_principal,
+)
 from mismapi.core.deps import _get_registry_service
 from mismapi.main import create_app
 from mismapi.services.registry_service import RegistryService
@@ -72,6 +75,7 @@ def test_list_models_returns_results() -> None:
         tags=None,
         organisms=None,
         scales=None,
+        registration_status=None,
     )
 
 
@@ -103,6 +107,7 @@ def test_list_models_passes_filters() -> None:
         tags=["csv", "public"],
         organisms=None,
         scales=None,
+        registration_status=None,
     )
     service.list_models.assert_called_once_with(**filter_kwargs)
 
@@ -129,6 +134,7 @@ def test_list_models_pagination() -> None:
         tags=None,
         organisms=None,
         scales=None,
+        registration_status=None,
     )
 
 

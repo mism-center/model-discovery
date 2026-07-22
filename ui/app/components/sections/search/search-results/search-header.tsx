@@ -1,12 +1,6 @@
-import {
-  BreadcrumbItem,
-  Breadcrumbs,
-  Select,
-  SelectItem,
-  Tab,
-  Tabs,
-} from '@heroui/react';
+import { BreadcrumbItem, Select, SelectItem, Tab, Tabs } from '@heroui/react';
 import cn from 'classnames';
+import { CompactBreadcrumbs } from '~/components/layout/breadcrumbs';
 import { useSearch } from '~/search/context/search-context';
 import type { ResourceType, SortField } from '~/search/state/types';
 
@@ -29,18 +23,10 @@ export function SearchResultsHeader() {
       <div className="flex justify-between items-end mb-8">
         <div>
           {isCompact && (
-            <Breadcrumbs
-              itemClasses={{
-                item: cn(
-                  'text-[13px]',
-                  'data-[current=true]:text-primary data-[current=true]:font-medium'
-                ),
-              }}
-              className="mb-2"
-            >
+            <CompactBreadcrumbs className="mb-3">
               <BreadcrumbItem href="/">Home</BreadcrumbItem>
               <BreadcrumbItem>Search</BreadcrumbItem>
-            </Breadcrumbs>
+            </CompactBreadcrumbs>
           )}
           <h1 className="text-3xl font-headline font-extrabold text-primary tracking-tight">
             {isCompact ? 'Search Results' : 'Featured Submissions'}

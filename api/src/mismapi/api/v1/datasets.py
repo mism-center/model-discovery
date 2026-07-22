@@ -91,7 +91,6 @@ async def create_dataset(
     service: RegistryServiceDep,
     principal: AuthenticatedPrincipalDep,
 ) -> RegisterDatasetResponse:
-
     resource = service.create_dataset(
         principal,
         name=payload.name,
@@ -126,7 +125,6 @@ async def update_dataset(
     service: RegistryServiceDep,
     principal: AuthenticatedPrincipalDep,
 ) -> RegisterDatasetResponse:
-
     resource = service.update_dataset(
         principal,
         dataset_id=dataset_id,
@@ -170,7 +168,6 @@ async def list_datasets(
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> ModelListResponse:
-
     resources = service.list_datasets(
         name_contains=name,
         owner=owner,

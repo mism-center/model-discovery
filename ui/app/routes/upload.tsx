@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import type { components } from '~/api/generated/schema';
+import { MetadataFormViewer } from '~/components/sections/upload/metadata-form-viewer';
 import { browserApiBaseUrl, resolveTusdPlaceholderUrl } from '~/utils/env';
 import '@uppy/core/css/style.min.css';
 import '@uppy/dashboard/css/style.min.css';
@@ -188,9 +189,10 @@ async function fetchModelStatus(modelId: string): Promise<string | null> {
   return data.registration_status ?? null;
 }
 
-async function fetchAnnotationMetadata(
-  modelId: string
-): Promise<{ content: string; registryId: string } | null> {
+async function fetchAnnotationPackage(modelId: string): Promise<{
+  files: { filename: string; content: string }[];
+  registryId: string;
+} | null> {
   const res = await fetch(
     `${apiOrigin()}/api/v1/models/${encodeURIComponent(modelId)}/metadata-package/raw`,
     { credentials: 'include' }
@@ -199,9 +201,7 @@ async function fetchAnnotationMetadata(
   const data = (await res.json()) as {
     files?: { filename: string; content: string }[];
   };
-  const content =
-    data.files?.find((f) => f.filename === 'metadata.yaml')?.content ?? '';
-  return { content, registryId: modelId };
+  return { files: data.files ?? [], registryId: modelId };
 }
 
 type ResourceFileItem = components['schemas']['ResourceFileItem'];
@@ -413,11 +413,11 @@ export default function TusTest() {
   const [workflowStep, setWorkflowStep] = useState<WorkflowStep>('idle');
   const [failedStep, setFailedStep] = useState<WorkflowStep>('idle');
   const [registeredModelId, setRegisteredModelId] = useState('');
-  const [importedBranch, setImportedBranch] = useState('');
-  const [runId, setRunId] = useState('');
   const [importError, setImportError] = useState('');
   const [annotationStatus, setAnnotationStatus] = useState('');
-  const [metadataYaml, setMetadataYaml] = useState<string | null>(null);
+  const [rawFiles, setRawFiles] = useState<
+    { filename: string; content: string }[]
+  >([]);
   const [metadataRegistryId, setMetadataRegistryId] = useState('');
   const [metadataSaveState, setMetadataSaveState] = useState<
     'idle' | 'saving' | 'saved' | 'error'
@@ -426,7 +426,6 @@ export default function TusTest() {
   const [outputFiles, setOutputFiles] = useState<ResourceFileItem[] | null>(
     null
   );
-  const [showOutputFiles, setShowOutputFiles] = useState(false);
 
   useEffect(() => {
     const instance = createUppy(() => modelNameRef.current);
@@ -521,10 +520,10 @@ export default function TusTest() {
             setWorkflowStep('error');
           } else {
             const [metaResult, files] = await Promise.all([
-              fetchAnnotationMetadata(registeredModelId),
+              fetchAnnotationPackage(registeredModelId),
               fetchAnnotationOutputFiles(registeredModelId),
             ]);
-            setMetadataYaml(metaResult?.content ?? null);
+            setRawFiles(metaResult?.files ?? []);
             setMetadataRegistryId(metaResult?.registryId ?? '');
             setMetadataSaveState('idle');
             setOutputFiles(files);
@@ -541,49 +540,22 @@ export default function TusTest() {
     const resourceId = import.meta.env
       .VITE_DEBUG_ANNOTATION_RESOURCE_ID as string;
     setImportError('');
-    setRunId('');
-    setImportedBranch('');
     setAnnotationStatus('pending_review');
-    setMetadataYaml(null);
+    setRawFiles([]);
     setMetadataRegistryId('');
     setMetadataSaveState('idle');
     setMetadataSaveError('');
     setOutputFiles(null);
-    setShowOutputFiles(false);
     setFailedStep('idle');
     setRegisteredModelId(resourceId);
     setWorkflowStep('complete');
     const [metaResult, files] = await Promise.all([
-      fetchAnnotationMetadata(resourceId),
+      fetchAnnotationPackage(resourceId),
       fetchAnnotationOutputFiles(resourceId),
     ]);
-    setMetadataYaml(metaResult?.content ?? null);
+    setRawFiles(metaResult?.files ?? []);
     setMetadataRegistryId(metaResult?.registryId ?? '');
     setOutputFiles(files);
-  }
-
-  async function uploadAnnotationMetadata() {
-    if (!metadataYaml || !metadataRegistryId) return;
-    setMetadataSaveState('saving');
-    setMetadataSaveError('');
-    const res = await fetch(
-      `${apiOrigin()}/api/v1/models/${encodeURIComponent(metadataRegistryId)}/metadata-package/raw`,
-      {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          files: [{ filename: 'metadata.yaml', content: metadataYaml }],
-        }),
-      }
-    );
-    if (!res.ok) {
-      const detail = await readApiErrorDetail(res, 'Save failed');
-      setMetadataSaveState('error');
-      setMetadataSaveError(detail);
-      return;
-    }
-    setMetadataSaveState('saved');
   }
 
   async function handleGitHubImport() {
@@ -592,13 +564,10 @@ export default function TusTest() {
     if (!name || !url) return;
 
     setImportError('');
-    setRunId('');
     setRegisteredModelId('');
-    setImportedBranch('');
     setAnnotationStatus('');
-    setMetadataYaml(null);
+    setRawFiles([]);
     setOutputFiles(null);
-    setShowOutputFiles(false);
     setFailedStep('idle');
 
     // Track current step locally so the catch block can report it accurately,
@@ -615,14 +584,12 @@ export default function TusTest() {
       // Step 2: download tarball and extract files into iRODS.
       activeStep = 'importing';
       setWorkflowStep('importing');
-      const imported = await importFromGitHub(model.id, url);
-      setImportedBranch(imported.branch);
+      await importFromGitHub(model.id, url);
 
       // Step 3: launch annotation run.
       activeStep = 'annotating';
       setWorkflowStep('annotating');
-      const run = await initiateAnnotation(model.id);
-      setRunId(run.run_id);
+      await initiateAnnotation(model.id);
 
       setAnnotationStatus('annotating');
       setWorkflowStep('monitoring');
@@ -644,7 +611,7 @@ export default function TusTest() {
     <main className="container mx-auto p-6 flex flex-col gap-6 max-w-4xl">
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold">Model Upload</h1>
-        <p className="text-sm text-default-500">
+        <p className="text-sm text-foreground">
           Register a model from a GitHub repository or upload a file directly
           via TUS.
         </p>
@@ -836,13 +803,15 @@ export default function TusTest() {
           {workflowStep === 'complete' && (
             <Card shadow="sm" className="border-success-200 bg-success-50">
               <CardBody className="flex flex-col gap-1">
-                <span className="text-sm font-medium text-foreground">
+                <span className="text-lg font-medium text-foreground">
                   Annotation complete
                 </span>
                 {annotationStatus && (
                   <span className="text-xs text-default-800">
                     Status:{' '}
-                    <code className="font-mono">{annotationStatus}</code>
+                    <code className="font-mono font-bold text-default-900">
+                      {annotationStatus}
+                    </code>
                   </span>
                 )}
                 {registeredModelId && (
@@ -851,88 +820,30 @@ export default function TusTest() {
                     <code className="font-mono">{registeredModelId}</code>
                   </span>
                 )}
-                {importedBranch && (
-                  <span className="text-xs text-default-800">
-                    Branch: <code className="font-mono">{importedBranch}</code>
-                  </span>
-                )}
-                {runId && (
-                  <span className="text-xs text-default-800">
-                    Run ID: <code className="font-mono">{runId}</code>
-                  </span>
-                )}
-                {metadataYaml !== null && (
-                  <div className="mt-2 flex flex-col gap-1">
-                    <span className="text-xs font-medium text-default-800">
-                      metadata.yaml
-                    </span>
-                    <textarea
-                      className="text-xs bg-default-100 rounded p-3 overflow-auto max-h-64 font-mono border border-default-200 resize-y w-full"
-                      rows={12}
-                      value={metadataYaml}
-                      onChange={(e) => {
-                        setMetadataYaml(e.target.value);
-                        setMetadataSaveState('idle');
-                        setMetadataSaveError('');
+                {/* Re-annotate button hidden temporarily */}
+                {rawFiles.length > 0 && (
+                  <div className="mt-2">
+                    <MetadataFormViewer
+                      modelId={metadataRegistryId}
+                      rawFiles={rawFiles}
+                      onSaved={() => {
+                        setMetadataSaveState('saved');
+                        setAnnotationStatus('approved');
                       }}
+                      onSaveError={(msg) => {
+                        setMetadataSaveState('error');
+                        setMetadataSaveError(msg);
+                      }}
+                      annotationFiles={(outputFiles ?? []).map((f) => ({
+                        path: f.path,
+                        name: f.name,
+                        url: `${apiOrigin()}/api/v1/resources/${encodeURIComponent(registeredModelId)}/download?${new URLSearchParams({ file: f.path }).toString()}`,
+                      }))}
                     />
-                    <div className="flex items-center gap-2 mt-1">
-                      <Button
-                        size="sm"
-                        color="success"
-                        variant="flat"
-                        className="text-foreground"
-                        isLoading={metadataSaveState === 'saving'}
-                        isDisabled={metadataSaveState === 'saving'}
-                        onPress={() => void uploadAnnotationMetadata()}
-                      >
-                        Approve
-                      </Button>
-                      {metadataSaveState === 'saved' && (
-                        <span className="text-xs text-success-700">Saved</span>
-                      )}
-                      {metadataSaveState === 'error' && (
-                        <span className="text-xs text-danger-600">
-                          {metadataSaveError}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-                {outputFiles && outputFiles.length > 0 && (
-                  <div className="mt-2 flex flex-col gap-1">
-                    <Button
-                      size="sm"
-                      variant="light"
-                      className="w-fit px-0 text-xs font-medium text-foreground gap-1"
-                      onPress={() => setShowOutputFiles((v) => !v)}
-                    >
-                      {showOutputFiles ? '▾' : '▸'} Annotation outputs (
-                      {outputFiles.length})
-                    </Button>
-                    {showOutputFiles && (
-                      <ul className="flex flex-col gap-1 mt-1">
-                        {outputFiles.map((file) => (
-                          <li
-                            key={file.path}
-                            className="flex items-center justify-between gap-4"
-                          >
-                            <span className="text-xs font-mono text-default-800 truncate">
-                              {file.path}
-                            </span>
-                            <Button
-                              as="a"
-                              size="sm"
-                              variant="flat"
-                              className="text-foreground"
-                              href={`${apiOrigin()}/api/v1/resources/${encodeURIComponent(registeredModelId)}/download?${new URLSearchParams({ file: file.path }).toString()}`}
-                              download={file.name}
-                            >
-                              Download
-                            </Button>
-                          </li>
-                        ))}
-                      </ul>
+                    {metadataSaveState === 'error' && (
+                      <span className="text-xs text-danger-600 mt-1">
+                        {metadataSaveError}
+                      </span>
                     )}
                   </div>
                 )}

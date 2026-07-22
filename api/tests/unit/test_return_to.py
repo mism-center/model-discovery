@@ -7,6 +7,11 @@ def test_known_key_without_query_maps_to_path() -> None:
     assert resolve_return_to("search", None) == "/search"
 
 
+def test_runs_key_maps_to_path() -> None:
+    # Auth-gated /runs route round-trips back after login.
+    assert resolve_return_to("runs", None) == "/runs"
+
+
 def test_known_key_reattaches_query() -> None:
     result = resolve_return_to("search", "q=foo&filter=bar")
     parsed = urlparse(result)

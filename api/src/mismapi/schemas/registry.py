@@ -362,7 +362,6 @@ class CreateRunRequest(BaseModel):
     entrypoint_index: int | None = None
     arguments: dict[str, Any] = Field(default_factory=dict)
     parameters: dict[str, Any] = Field(default_factory=dict)
-    triggered_by: str = ""
     notes: str = ""
 
 
@@ -382,7 +381,6 @@ class ExecuteRunRequest(BaseModel):
     entrypoint_index: int | None = None
     arguments: dict[str, Any] = Field(default_factory=dict)
     parameters: dict[str, Any] = Field(default_factory=dict)
-    triggered_by: str = ""
     notes: str = ""
     mode: Literal["batch", "interactive"] = "batch"
 
@@ -483,6 +481,33 @@ class ModelRunDetailsResponse(BaseModel):
 
     model: ResourceSummaryItem
     runs: list[ModelRunDetailItem] = Field(default_factory=list)
+    total: int
+
+    model_config = {"protected_namespaces": ()}
+
+
+# ── User run history (UI: "My Runs" page) ────────────────────────────
+
+
+class UserRunItem(BaseModel):
+    """A single run in the cross-model "My Runs" list.
+
+    Like ``ModelRunDetailItem`` but adds the run's ``model`` summary, since this
+    is a global list where each row can belong to a different model.
+    """
+
+    model: ResourceSummaryItem
+    run: RunDetailItem
+    input_resources: list[ResourceSummaryItem] = Field(default_factory=list)
+    output_resources: list[ResourceSummaryItem] = Field(default_factory=list)
+
+    model_config = {"protected_namespaces": ()}
+
+
+class UserRunsResponse(BaseModel):
+    """All runs triggered by the calling user, newest-first, hydrated."""
+
+    runs: list[UserRunItem] = Field(default_factory=list)
     total: int
 
     model_config = {"protected_namespaces": ()}

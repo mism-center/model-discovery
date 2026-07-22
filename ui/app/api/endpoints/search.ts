@@ -12,8 +12,6 @@ export type SearchSort = components['schemas']['SearchSortDTO'];
 export type SearchResultItem = components['schemas']['SearchResultItem'];
 export type AggResult = components['schemas']['AggResultDTO'];
 export type AggBucket = components['schemas']['AggBucketDTO'];
-export type Author = components['schemas']['AuthorDTO'];
-export type Publication = components['schemas']['PublicationDTO'];
 
 /**
  * Full-text + faceted search across models and datasets.

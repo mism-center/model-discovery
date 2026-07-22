@@ -10,6 +10,30 @@ export {
   type SearchResultItem,
   type AggResult,
   type AggBucket,
-  type Author,
-  type Publication,
 } from './endpoints/search';
+
+export { type Author, type Publication } from './types';
+
+export {
+  executeModelRun,
+  listModelRuns,
+  getRun,
+  cancelRun,
+  isTerminalStatus,
+  TERMINAL_RUN_STATUSES,
+  type ExecuteRunRequest,
+  type ExecuteRunResponse,
+  type ModelRunDetailsResponse,
+  type ModelRunDetailItem,
+  type RunDetailResponse,
+  type RunDetailItem,
+  type RunStatus,
+  type ResourceSummaryItem,
+} from './endpoints/runs';
+
+export {
+  listResourceFiles,
+  resourceDownloadUrl,
+  type ResourceFileItem,
+  type ResourceFilesResponse,
+} from './endpoints/resources';

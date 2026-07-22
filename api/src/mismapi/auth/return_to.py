@@ -19,6 +19,7 @@ DEFAULT_LANDING_PATH = "/"
 
 ROUTE_PATHS: dict[str, str] = {
     "search": "/search",
+    "runs": "/runs",
 }
 
 

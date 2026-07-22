@@ -46,6 +46,7 @@ __all__ = [
     "AuthValidator",
     "bearer_token_from_request_header",
     "build_auth_validator",
+    "optional_principal",
     "require_principal",
 ]
 
@@ -152,3 +153,28 @@ async def _principal_from_session_cookie(
 
 
 AuthenticatedPrincipalDep = Annotated[AuthenticatedPrincipal, Depends(require_principal)]
+
+
+async def optional_principal(
+    request: Request,
+    settings: SettingsDep,
+    session_store: SessionStoreDep,
+    validator: AuthValidatorDep,
+    session_refresher: SessionRefresherDep,
+    credentials: HTTPAuthorizationCredentials | None = bearer_dependency,
+) -> AuthenticatedPrincipal | None:
+    """Like `require_principal`, but yields `None` for anonymous callers."""
+    try:
+        return await require_principal(
+            request,
+            settings,
+            session_store,
+            validator,
+            session_refresher,
+            credentials,
+        )
+    except APIError:
+        return None
+
+
+OptionalPrincipalDep = Annotated[AuthenticatedPrincipal | None, Depends(optional_principal)]

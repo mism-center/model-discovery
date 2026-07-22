@@ -71,6 +71,7 @@ def _model_list_item(r: Resource) -> ModelListItem:
         size_bytes=r.size_bytes,
         external_ids=dict(r.external_ids),
         license=r.license,
+        registration_status=r.registration_status.value,
         metadata=dict(r.metadata),
         created_at=r.created_at,
         updated_at=r.updated_at,
@@ -121,16 +122,19 @@ async def list_models(
     tags: list[str] | None = Query(default=None, description="Format tags (all must match)"),
     organisms: list[str] | None = Query(default=None, description="Organisms (any must match)"),
     scales: list[str] | None = Query(default=None, description="Model scales (any must match)"),
+    registration_status: str | None = Query(
+        default=None, description="Exact match on registration status"
+    ),
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> ModelListResponse:
-
     resources = service.list_models(
         name_contains=name,
         owner=owner,
         tags=tags,
         organisms=organisms,
         scales=scales,
+        registration_status=registration_status,
     )
 
     total = len(resources)
@@ -161,7 +165,6 @@ async def create_model(
     service: RegistryServiceDep,
     principal: AuthenticatedPrincipalDep,
 ) -> RegisterModelResponse:
-
     resource = service.create_model(
         principal,
         name=payload.name,
@@ -199,7 +202,6 @@ async def update_model(
     service: RegistryServiceDep,
     principal: AuthenticatedPrincipalDep,
 ) -> RegisterModelResponse:
-
     resource = service.update_model(
         principal,
         model_id=model_id,
@@ -235,6 +237,16 @@ async def update_model(
     return _model_response(resource)
 
 
+@router.delete("/models/{model_id}", status_code=204)
+async def delete_model(
+    model_id: str,
+    service: RegistryServiceDep,
+    principal: AuthenticatedPrincipalDep,
+) -> None:
+    """Permanently delete a model and its on-disk annotation files."""
+    service.delete_model(principal, model_id)
+
+
 @router.post("/models/{model_id}/upload", response_model=UploadInitiatedResponse)
 async def initiate_model_file_upload(
     model_id: str,
@@ -243,7 +255,6 @@ async def initiate_model_file_upload(
     service: RegistryServiceDep,
     principal: AuthenticatedPrincipalDep,
 ) -> UploadInitiatedResponse:
-
     resource = service.get_resource_and_assert_ownership(principal, resource_id=model_id)
     allowed_path = upload_dir(model_id, resource.version)
     token = await upload_session_store.mint_upload_token(
@@ -330,7 +341,7 @@ async def execute_run(
         entrypoint_index=payload.entrypoint_index,
         arguments=payload.arguments,
         parameters=payload.parameters,
-        triggered_by=payload.triggered_by,
+        triggered_by=principal.subject,
         notes=payload.notes,
     )
 

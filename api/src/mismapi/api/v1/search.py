@@ -4,7 +4,11 @@ from fastapi import APIRouter
 from mism_registry.search import FieldFilter, SearchQuery
 
 from mismapi.core.deps import RegistryServiceDep
-from mismapi.schemas.registry import author_to_dto, io_spec_to_dto, pub_to_dto
+from mismapi.schemas.registry import (
+    author_to_dto,
+    io_spec_to_dto,
+    pub_to_dto,
+)
 from mismapi.schemas.search import (
     AggBucketDTO,
     AggResultDTO,
