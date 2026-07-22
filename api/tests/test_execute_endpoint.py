@@ -66,7 +66,6 @@ def test_execute_run_batch_success() -> None:
         "/api/v1/models/model-1/runs",
         json={
             "input_resource_ids": ["ds-1"],
-            "parameters": {"condition": "both"},
             "notes": "test run",
         },
     )

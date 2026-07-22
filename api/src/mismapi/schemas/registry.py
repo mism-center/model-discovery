@@ -361,7 +361,6 @@ class CreateRunRequest(BaseModel):
     # lives in the registry: the caller never supplies a raw command.
     entrypoint_index: int | None = None
     arguments: dict[str, Any] = Field(default_factory=dict)
-    parameters: dict[str, Any] = Field(default_factory=dict)
     notes: str = ""
 
 
@@ -380,7 +379,6 @@ class ExecuteRunRequest(BaseModel):
     input_resource_ids: list[str] = Field(default_factory=list)
     entrypoint_index: int | None = None
     arguments: dict[str, Any] = Field(default_factory=dict)
-    parameters: dict[str, Any] = Field(default_factory=dict)
     notes: str = ""
     mode: Literal["batch", "interactive"] = "batch"
 

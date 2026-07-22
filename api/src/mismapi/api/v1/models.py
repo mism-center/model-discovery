@@ -57,6 +57,8 @@ def _model_list_item(r: Resource) -> ModelListItem:
         execution_type=r.execution_type.value if r.execution_type else None,
         execution_ref=r.execution_ref,
         io_spec=io_spec_to_dto(r.io_spec) if r.io_spec else None,
+        entry_points=[entry_point_to_dto(e) for e in r.entry_points],
+        containers=[container_to_dto(c) for c in r.containers],
         format_tags=list(r.format_tags),
         authors=[author_to_dto(a) for a in r.authors],
         organization=r.organization,
@@ -340,7 +342,6 @@ async def execute_run(
         input_resource_ids=payload.input_resource_ids,
         entrypoint_index=payload.entrypoint_index,
         arguments=payload.arguments,
-        parameters=payload.parameters,
         triggered_by=principal.subject,
         notes=payload.notes,
     )
