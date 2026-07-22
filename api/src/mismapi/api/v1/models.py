@@ -69,6 +69,7 @@ def _model_list_item(r: Resource) -> ModelListItem:
         size_bytes=r.size_bytes,
         external_ids=dict(r.external_ids),
         license=r.license,
+        registration_status=r.registration_status.value,
         metadata=dict(r.metadata),
         created_at=r.created_at,
         updated_at=r.updated_at,
@@ -117,6 +118,9 @@ async def list_models(
     tags: list[str] | None = Query(default=None, description="Format tags (all must match)"),
     organisms: list[str] | None = Query(default=None, description="Organisms (any must match)"),
     scales: list[str] | None = Query(default=None, description="Model scales (any must match)"),
+    registration_status: str | None = Query(
+        default=None, description="Exact match on registration status"
+    ),
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> ModelListResponse:
@@ -126,6 +130,7 @@ async def list_models(
         tags=tags,
         organisms=organisms,
         scales=scales,
+        registration_status=registration_status,
     )
 
     total = len(resources)
@@ -226,6 +231,16 @@ async def update_model(
     )
 
     return _model_response(resource)
+
+
+@router.delete("/models/{model_id}", status_code=204)
+async def delete_model(
+    model_id: str,
+    service: RegistryServiceDep,
+    principal: AuthenticatedPrincipalDep,
+) -> None:
+    """Permanently delete a model and its on-disk annotation files."""
+    service.delete_model(principal, model_id)
 
 
 @router.post("/models/{model_id}/upload", response_model=UploadInitiatedResponse)

@@ -26,13 +26,14 @@ export function buildSearchRequest(state: SearchState): SearchRequest {
   ];
 
   for (const facet of visibleFacets) {
+    if (facet.uiOnly) continue;
     const value = state.facets[facet.id];
     if (!value) continue;
     filters.push(...compileFacetFilter(facet, value));
   }
 
   const aggs = visibleFacets
-    .filter((facet) => facet.widget !== 'range')
+    .filter((facet) => facet.widget !== 'range' && !facet.uiOnly)
     .map((facet) => facet.field);
 
   const request: SearchRequest = {

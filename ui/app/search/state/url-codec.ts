@@ -54,6 +54,12 @@ export function searchStateFromParams(params: URLSearchParams): SearchState {
     if (value) facets[facet.id] = value;
   }
 
+  // Default model_status to 'executable' when on the models tab and nothing
+  // has been explicitly selected yet.
+  if (resourceType === 'model' && !facets['model_status']) {
+    facets['model_status'] = { kind: 'terms', values: ['executable'] };
+  }
+
   return {
     query,
     resourceType,

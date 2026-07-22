@@ -102,6 +102,9 @@ export type FieldInputType =
   | 'list-scalar' // list of scalar leaves → comma-joined chips
   | 'list-object' // list of complex objects → mini cards
   | 'list-ontology' // list of OntologyLeaf → chips with label
+  | 'list-entry-point' // list of EntryPointEntry → per-item editable cards (command, purpose, default_output_location)
+  | 'list-container' // list of ContainerEntry → per-item editable cards (kind, file, image_name)
+  | 'list-dep' // list of DependencyEntry → per-item editable cards (name, version_constraint, source)
   | 'object-scalar' // single {value, source, confidence} envelope → text of `.value`
   | 'static' // read-only provenance / system field
   | 'preformatted'; // complex nested object → <pre> JSON block

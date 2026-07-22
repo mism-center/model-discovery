@@ -42,6 +42,8 @@ class ModelListItem(BaseModel):
     # Execution
     execution_ref: str = ""
     io_spec: IOSpecDTO | None = None
+    # Registration workflow
+    registration_status: str = ""
     # System
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
