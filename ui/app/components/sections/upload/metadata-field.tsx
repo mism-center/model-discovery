@@ -525,10 +525,7 @@ function EditableEntryPointList({
                   className="self-start text-xs"
                   onPress={() => {
                     const j = argCount;
-                    onChange(
-                      `${fieldKey}[${index}].arguments[${j}].name`,
-                      ''
-                    );
+                    onChange(`${fieldKey}[${index}].arguments[${j}].name`, '');
                     onChange(
                       `${fieldKey}[${index}].arguments[${j}].description`,
                       ''

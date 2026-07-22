@@ -65,9 +65,7 @@ export function extractExecutionFormValues(
           : String(arg.default);
       values[`execution.entry_points[${i}].arguments[${j}].data_type`] =
         arg.data_type ?? '';
-      values[
-        `execution.entry_points[${i}].arguments[${j}].user_can_override`
-      ] =
+      values[`execution.entry_points[${i}].arguments[${j}].user_can_override`] =
         arg.user_can_override === null || arg.user_can_override === undefined
           ? ''
           : String(arg.user_can_override);
@@ -369,46 +367,57 @@ export function applyFormValuesToExecution(
               existingArg.data_type ??
               '';
             const rawDefault =
-              values[
-                `execution.entry_points[${i}].arguments[${j}].default`
-              ];
+              values[`execution.entry_points[${i}].arguments[${j}].default`];
             let parsedDefault: unknown = existingArg.default;
             if (rawDefault !== undefined) {
-              if (dataType === 'bool') {
-                parsedDefault =
-                  rawDefault === 'true'
-                    ? true
-                    : rawDefault === 'false'
-                      ? false
-                      : null;
-              } else if (dataType === 'int') {
-                const n = parseInt(rawDefault, 10);
-                parsedDefault = isNaN(n) ? null : n;
-              } else if (dataType === 'float') {
-                const n = parseFloat(rawDefault);
-                parsedDefault = isNaN(n) ? null : n;
-              } else {
-                parsedDefault = rawDefault || null;
+              switch (dataType) {
+                case 'bool': {
+                  if (rawDefault === 'true') parsedDefault = true;
+                  else if (rawDefault === 'false') parsedDefault = false;
+                  else parsedDefault = null;
+                  break;
+                }
+                case 'int': {
+                  const n = Number.parseInt(rawDefault, 10);
+                  parsedDefault = Number.isNaN(n) ? null : n;
+                  break;
+                }
+                case 'float': {
+                  const n = Number.parseFloat(rawDefault);
+                  parsedDefault = Number.isNaN(n) ? null : n;
+                  break;
+                }
+                default: {
+                  parsedDefault = rawDefault || null;
+                }
               }
             }
             const rawUco =
               values[
                 `execution.entry_points[${i}].arguments[${j}].user_can_override`
               ];
-            const parsedUco: boolean | null | undefined =
-              rawUco === 'true'
-                ? true
-                : rawUco === 'false'
-                  ? false
-                  : rawUco === undefined
-                    ? existingArg.user_can_override
-                    : null;
+            let parsedUco: boolean | null | undefined;
+            switch (rawUco) {
+              case 'true': {
+                parsedUco = true;
+                break;
+              }
+              case 'false': {
+                parsedUco = false;
+                break;
+              }
+              case undefined: {
+                parsedUco = existingArg.user_can_override;
+                break;
+              }
+              default: {
+                parsedUco = null;
+              }
+            }
             return {
               ...existingArg,
               name:
-                values[
-                  `execution.entry_points[${i}].arguments[${j}].name`
-                ] ??
+                values[`execution.entry_points[${i}].arguments[${j}].name`] ??
                 existingArg.name ??
                 null,
               description:
