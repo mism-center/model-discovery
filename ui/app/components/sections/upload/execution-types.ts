@@ -5,6 +5,16 @@
 
 import type { OntologyLeaf, SchemaLeaf } from './metadata-types';
 
+export type ArgumentEntry = {
+  name?: string | null;
+  description?: string | null;
+  default?: unknown;
+  enums?: unknown[] | null;
+  data_type?: string | null;
+  position?: number | null;
+  user_can_override?: boolean | null;
+};
+
 export type EntryPointEntry = {
   /** Shell command used to invoke the model. REQUIRED per schema. */
   command?: string | null;
@@ -14,7 +24,7 @@ export type EntryPointEntry = {
   default_output_location?: string | null;
   /** Legacy field from older schema revisions — kept for backward compat. */
   name?: string | null;
-  arguments?: { name?: string; description?: string; default?: unknown }[];
+  arguments?: ArgumentEntry[];
   source?: string;
   confidence?: string | null;
 };
