@@ -493,6 +493,23 @@ function EditableEntryPointList({
                           }}
                           description="bool | int | float | str"
                         />
+                        <Input
+                          label="position"
+                          value={gv(
+                            `${fieldKey}[${index}].arguments[${j}].position`
+                          )}
+                          onValueChange={(v) =>
+                            onChange(
+                              `${fieldKey}[${index}].arguments[${j}].position`,
+                              v
+                            )
+                          }
+                          classNames={{
+                            label: 'text-xs text-default-800 font-medium',
+                            input: 'font-mono',
+                          }}
+                          description="Argument order (0-based)"
+                        />
                         <div className="flex flex-col gap-1">
                           <span className="text-xs text-default-800 font-medium">
                             user can override
@@ -540,6 +557,10 @@ function EditableEntryPointList({
                     );
                     onChange(
                       `${fieldKey}[${index}].arguments[${j}].user_can_override`,
+                      ''
+                    );
+                    onChange(
+                      `${fieldKey}[${index}].arguments[${j}].position`,
                       ''
                     );
                   }}

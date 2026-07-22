@@ -69,6 +69,10 @@ export function extractExecutionFormValues(
         arg.user_can_override === null || arg.user_can_override === undefined
           ? ''
           : String(arg.user_can_override);
+      values[`execution.entry_points[${i}].arguments[${j}].position`] =
+        arg.position === null || arg.position === undefined
+          ? ''
+          : String(arg.position);
     }
   }
 
@@ -429,6 +433,24 @@ export function applyFormValuesToExecution(
               default: parsedDefault,
               data_type: dataType || null,
               user_can_override: parsedUco,
+              position: (() => {
+                const rawPosition =
+                  values[
+                    `execution.entry_points[${i}].arguments[${j}].position`
+                  ];
+                switch (rawPosition) {
+                  case undefined: {
+                    return existingArg.position;
+                  }
+                  case '': {
+                    return null;
+                  }
+                  default: {
+                    const n = Number.parseInt(rawPosition, 10);
+                    return Number.isNaN(n) ? null : n;
+                  }
+                }
+              })(),
             };
           });
         })(),
