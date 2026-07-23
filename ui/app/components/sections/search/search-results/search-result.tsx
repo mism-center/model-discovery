@@ -15,7 +15,7 @@ import { AuthorListTooltip } from './author-list-tooltip';
 import { RunControls } from './run-controls';
 
 /**
- * Format an ISO timestamp / date string as `Mon Year` (e.g. `Jan 2024`).
+ * Format an ISO timestamp / date string as `Mon D, Year, H:MM AM/PM` (e.g. `Jan 22, 2024, 3:14 PM`).
  */
 function formatDate(iso: string) {
   const date = new Date(iso);
@@ -23,7 +23,10 @@ function formatDate(iso: string) {
   if (Number.isNaN(date.valueOf())) return iso;
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
+    day: 'numeric',
     year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
   }).format(date);
 }
 
