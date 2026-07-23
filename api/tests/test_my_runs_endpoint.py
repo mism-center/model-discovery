@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 from mism_registry import ResourceNotFoundError
@@ -10,7 +10,8 @@ from mism_registry.run import Run
 from sqlalchemy.orm import Session
 
 from mismapi.auth.base import AuthenticatedPrincipal, require_principal
-from mismapi.core.deps import _get_registry_service
+from mismapi.clients.execution_client import ExecutionClient
+from mismapi.core.deps import _get_execution_client, _get_registry_service
 from mismapi.core.errors import APIError
 from mismapi.main import create_app
 from mismapi.services.registry_service import RegistryService
@@ -99,12 +100,15 @@ def _build_service(*, runs: list[Run], resources: list[Resource]) -> RegistrySer
         model_id: str | None = None,
         input_resource_id: str | None = None,
         status: RunStatus | None = None,
+        triggered_by: str | None = None,
     ) -> list[Run]:
         result = list(runs)
         if model_id is not None:
             result = [r for r in result if r.model_id == model_id]
         if status is not None:
             result = [r for r in result if r.status == status]
+        if triggered_by is not None:
+            result = [r for r in result if r.triggered_by == triggered_by]
         return result
 
     def _get_resource(rid: str) -> Resource:
@@ -118,12 +122,32 @@ def _build_service(*, runs: list[Run], resources: list[Resource]) -> RegistrySer
     return RegistryService(registry=registry, session=MagicMock(spec=Session))
 
 
-def _make_app(service: RegistryService, *, authenticated: bool = True) -> TestClient:
+def _make_execution_client() -> ExecutionClient:
+    """Stub execution client whose status poll is an async no-op.
+
+    The endpoint calls ``get_status`` on it for each active run to trigger the
+    lazy DAL refresh; here we just record the calls so tests can assert which
+    runs were reconciled.
+    """
+    client = MagicMock(spec=ExecutionClient)
+    client.get_status = AsyncMock(return_value={"status": "ok"})
+    return client
+
+
+def _make_app(
+    service: RegistryService,
+    *,
+    authenticated: bool = True,
+    execution_client: ExecutionClient | None = None,
+) -> TestClient:
     app = create_app(settings=minimal_oidc_settings())
     app.dependency_overrides[require_principal] = (
         _allow_principal if authenticated else _deny_principal
     )
     app.dependency_overrides[_get_registry_service] = lambda: service
+    app.dependency_overrides[_get_execution_client] = (
+        lambda: execution_client or _make_execution_client()
+    )
     return TestClient(app)
 
 
@@ -206,6 +230,75 @@ def test_my_runs_filters_by_status() -> None:
     assert payload["total"] == 1
     assert payload["runs"][0]["run"]["id"] == "run-running"
     assert payload["runs"][0]["run"]["status"] == RunStatus.RUNNING.value
+
+
+def test_my_runs_refreshes_only_active_runs() -> None:
+    """Non-terminal runs are reconciled with the Execution service; terminal
+    ones (their status can't change) are left alone."""
+    model_a = _make_model("m-a")
+    running = _make_run(
+        id="run-running",
+        model_id="m-a",
+        triggered_by="user-1",
+        status=RunStatus.RUNNING,
+        created_at=datetime(2025, 2, 1, tzinfo=UTC),
+    )
+    registered = _make_run(
+        id="run-registered",
+        model_id="m-a",
+        triggered_by="user-1",
+        status=RunStatus.REGISTERED,
+        created_at=datetime(2025, 2, 2, tzinfo=UTC),
+    )
+    completed = _make_run(
+        id="run-completed",
+        model_id="m-a",
+        triggered_by="user-1",
+        status=RunStatus.COMPLETED,
+        created_at=datetime(2025, 3, 1, tzinfo=UTC),
+    )
+
+    service = _build_service(
+        runs=[running, registered, completed], resources=[model_a]
+    )
+    execution_client = _make_execution_client()
+    client = _make_app(service, execution_client=execution_client)
+
+    response = client.get("/api/v1/me/runs")
+
+    assert response.status_code == 200
+    refreshed = {call.args[0] for call in execution_client.get_status.await_args_list}
+    assert refreshed == {"run-running", "run-registered"}
+
+
+def test_my_runs_survives_execution_refresh_failure() -> None:
+    """A failed status poll for one run is swallowed — the history still lists."""
+    model_a = _make_model("m-a")
+    running = _make_run(
+        id="run-running",
+        model_id="m-a",
+        triggered_by="user-1",
+        status=RunStatus.RUNNING,
+        created_at=datetime(2025, 2, 1, tzinfo=UTC),
+    )
+
+    service = _build_service(runs=[running], resources=[model_a])
+    execution_client = _make_execution_client()
+    execution_client.get_status = AsyncMock(
+        side_effect=APIError(
+            status_code=502,
+            code="execution_status_failed",
+            detail="unreachable",
+        )
+    )
+    client = _make_app(service, execution_client=execution_client)
+
+    response = client.get("/api/v1/me/runs")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["runs"][0]["run"]["id"] == "run-running"
 
 
 def test_my_runs_skips_run_with_missing_model() -> None:

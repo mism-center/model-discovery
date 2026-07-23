@@ -32,6 +32,13 @@ export {
 } from './endpoints/runs';
 
 export {
+  getModel,
+  type RegisterModelResponse,
+  type EntryPointDTO,
+  type ArgumentDTO,
+} from './endpoints/models';
+
+export {
   listResourceFiles,
   resourceDownloadUrl,
   type ResourceFileItem,

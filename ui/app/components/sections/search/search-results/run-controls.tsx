@@ -40,11 +40,10 @@ export function RunControls({ model }: RunControlsProps) {
       >
         Run model
       </Button>
-      <RunModelModal
-        model={model}
-        isOpen={launchModal.isOpen}
-        onClose={launchModal.onClose}
-      />
+      {/* Mount only while open so each launch starts from fresh form state. */}
+      {launchModal.isOpen && (
+        <RunModelModal model={model} isOpen onClose={launchModal.onClose} />
+      )}
     </>
   );
 }
