@@ -2,7 +2,17 @@ from datetime import date, datetime
 from typing import Any, Literal
 
 from mism_registry import ExecutionType
-from mism_registry.types import Author, IOSlot, IOSpec, Publication
+from mism_registry.types import (
+    Author,
+    Compute,
+    Container,
+    Dependency,
+    EntryPoint,
+    IOSlot,
+    IOSpec,
+    Publication,
+    TestSpec,
+)
 from pydantic import BaseModel, Field, field_validator
 
 from mismapi.core.file_storage import validate_location_uri
@@ -35,6 +45,45 @@ class IOSpecDTO(BaseModel):
     inputs: list[IOSlotDTO] = Field(default_factory=list)
     outputs: list[IOSlotDTO] = Field(default_factory=list)
     parameters_schema: dict[str, Any] | None = None
+
+
+class DependencyDTO(BaseModel):
+    name: str
+    version_constraint: str = ""
+    kind: str = "runtime"
+    group: str = ""
+
+
+class ContainerDTO(BaseModel):
+    kind: str
+    file: str = ""
+    image_name: str = ""
+
+
+class ComputeDTO(BaseModel):
+    cpu_cores: int | None = None
+    memory_gb: float | None = None
+    gpu_required: bool | None = None
+    parallelism: str = ""
+    typical_runtime: float | None = None
+    typical_runtime_unit: str = ""
+
+
+class ArgumentDTO(BaseModel):
+    name: str
+    description: str = ""
+    default: Any = None
+
+
+class EntryPointDTO(BaseModel):
+    command: str
+    purpose: str = ""
+    arguments: list[ArgumentDTO] = Field(default_factory=list)
+
+
+class TestSpecDTO(BaseModel):
+    framework: str = ""
+    invocation: str = ""
 
 
 # ── DTO ↔ dataclass converters ───────────────────────────────────────
@@ -80,6 +129,46 @@ def io_spec_to_dto(spec: IOSpec) -> IOSpecDTO:
         outputs=[io_slot_to_dto(s) for s in spec.outputs],
         parameters_schema=spec.parameters_schema,
     )
+
+
+# Read-only converters (details response); no *_from_dto counterparts because
+# these fields are written through the metadata-package path, not the API.
+
+
+def dependency_to_dto(d: Dependency) -> DependencyDTO:
+    return DependencyDTO(
+        name=d.name, version_constraint=d.version_constraint, kind=d.kind, group=d.group
+    )
+
+
+def container_to_dto(c: Container) -> ContainerDTO:
+    return ContainerDTO(kind=c.kind, file=c.file, image_name=c.image_name)
+
+
+def compute_to_dto(c: Compute) -> ComputeDTO:
+    return ComputeDTO(
+        cpu_cores=c.cpu_cores,
+        memory_gb=c.memory_gb,
+        gpu_required=c.gpu_required,
+        parallelism=c.parallelism,
+        typical_runtime=c.typical_runtime,
+        typical_runtime_unit=c.typical_runtime_unit,
+    )
+
+
+def entry_point_to_dto(e: EntryPoint) -> EntryPointDTO:
+    return EntryPointDTO(
+        command=e.command,
+        purpose=e.purpose,
+        arguments=[
+            ArgumentDTO(name=a.name, description=a.description, default=a.default)
+            for a in e.arguments
+        ],
+    )
+
+
+def test_spec_to_dto(t: TestSpec) -> TestSpecDTO:
+    return TestSpecDTO(framework=t.framework, invocation=t.invocation)
 
 
 # ── Shared field mixin (used in request & response bodies) ───────────
@@ -170,6 +259,40 @@ class RegisterModelResponse(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
+
+
+class ModelDetailResponse(RegisterModelResponse):
+    """Full detail view of a model (GET /models/{id} only).
+
+    Extends the registration response with the characterization fields
+    populated by the metadata-package workflow (schema.md Sections A/B).
+    Create/update endpoints keep returning ``RegisterModelResponse``.
+    """
+
+    # Model characterization (schema.md Section A)
+    short_description: str = ""
+    model_class: list[str] = Field(default_factory=list)
+    formalism: list[str] = Field(default_factory=list)
+    determinism: str = "unknown"
+    time_dynamics: str = "unknown"
+    spatial: str = "unknown"
+    multiscale: bool | None = None
+    # Biology
+    infectious_agents: list[str] = Field(default_factory=list)
+    health_conditions: list[str] = Field(default_factory=list)
+    biological_processes: list[str] = Field(default_factory=list)
+    molecular_entities: list[str] = Field(default_factory=list)
+    proteins_genes: list[str] = Field(default_factory=list)
+    # Execution characterization (schema.md Section B)
+    execution_status: str = ""
+    language_name: str = ""
+    language_version: str = ""
+    execution_notes: str = ""
+    dependencies: list[DependencyDTO] = Field(default_factory=list)
+    containers: list[ContainerDTO] = Field(default_factory=list)
+    compute: ComputeDTO | None = None
+    entry_points: list[EntryPointDTO] = Field(default_factory=list)
+    tests: TestSpecDTO | None = None
 
 
 class UpdateModelRequest(_AttributionFields, _ScientificFields, _IntegrityFields):

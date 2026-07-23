@@ -18,13 +18,13 @@ import {
   executeModelRun,
   type ExecuteRunRequest,
   type ExecuteRunResponse,
-  type SearchResultItem,
 } from '~/api';
+import type { RunnableModel } from '~/api/endpoints/runs';
 import { runKeys } from '~/api/query/runs';
 import { ApiErrorDisplay } from '~/components/common/api-error-display';
 
 interface RunModelModalProps {
-  model: SearchResultItem;
+  model: RunnableModel;
   isOpen: boolean;
   onClose: () => void;
   /**

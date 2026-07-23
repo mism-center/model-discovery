@@ -115,6 +115,9 @@ export interface paths {
      *     (DRAFT → ANNOTATING → PENDING_REVIEW / ANNOTATION_FAILED → APPROVED).
      *     The execution-platform's background poller writes these transitions directly
      *     to the shared registry; this endpoint reads the current value on demand.
+     *
+     *     Returns the full detail view, including the characterization fields
+     *     populated by the metadata-package workflow.
      */
     get: operations['get_model_api_v1_models__model_id__get'];
     /** Update Model */
@@ -470,6 +473,18 @@ export interface components {
         [key: string]: unknown;
       };
     };
+    /** ArgumentDTO */
+    ArgumentDTO: {
+      /** Name */
+      name: string;
+      /**
+       * Description
+       * @default
+       */
+      description: string;
+      /** Default */
+      default?: unknown;
+    };
     /** AuthorDTO */
     AuthorDTO: {
       /** Name */
@@ -495,6 +510,42 @@ export interface components {
       /** File */
       file: string;
     };
+    /** ComputeDTO */
+    ComputeDTO: {
+      /** Cpu Cores */
+      cpu_cores?: number | null;
+      /** Memory Gb */
+      memory_gb?: number | null;
+      /** Gpu Required */
+      gpu_required?: boolean | null;
+      /**
+       * Parallelism
+       * @default
+       */
+      parallelism: string;
+      /** Typical Runtime */
+      typical_runtime?: number | null;
+      /**
+       * Typical Runtime Unit
+       * @default
+       */
+      typical_runtime_unit: string;
+    };
+    /** ContainerDTO */
+    ContainerDTO: {
+      /** Kind */
+      kind: string;
+      /**
+       * File
+       * @default
+       */
+      file: string;
+      /**
+       * Image Name
+       * @default
+       */
+      image_name: string;
+    };
     /**
      * CurrentUser
      * @description Authenticated user view returned by ``GET /api/auth/me``.
@@ -512,6 +563,38 @@ export interface components {
       name?: string | null;
       /** Preferred Username */
       preferred_username?: string | null;
+    };
+    /** DependencyDTO */
+    DependencyDTO: {
+      /** Name */
+      name: string;
+      /**
+       * Version Constraint
+       * @default
+       */
+      version_constraint: string;
+      /**
+       * Kind
+       * @default runtime
+       */
+      kind: string;
+      /**
+       * Group
+       * @default
+       */
+      group: string;
+    };
+    /** EntryPointDTO */
+    EntryPointDTO: {
+      /** Command */
+      command: string;
+      /**
+       * Purpose
+       * @default
+       */
+      purpose: string;
+      /** Arguments */
+      arguments?: components['schemas']['ArgumentDTO'][];
     };
     /**
      * ExecuteRunRequest
@@ -692,6 +775,171 @@ export interface components {
     MetadataPackageUpdateRequest: {
       /** Files */
       files: components['schemas']['MetadataPackageFile'][];
+    };
+    /**
+     * ModelDetailResponse
+     * @description Full detail view of a model (GET /models/{id} only).
+     *
+     *     Extends the registration response with the characterization fields
+     *     populated by the metadata-package workflow (schema.md Sections A/B).
+     *     Create/update endpoints keep returning ``RegisterModelResponse``.
+     */
+    ModelDetailResponse: {
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+      /** Resource Type */
+      resource_type: string;
+      /** Location Uri */
+      location_uri: string;
+      /**
+       * Description
+       * @default
+       */
+      description: string;
+      /**
+       * Version
+       * @default
+       */
+      version: string;
+      /** Status */
+      status: string;
+      /** Registration Status */
+      registration_status: string;
+      /**
+       * Owner
+       * @default
+       */
+      owner: string;
+      /** Execution Type */
+      execution_type?: string | null;
+      /**
+       * Execution Ref
+       * @default
+       */
+      execution_ref: string;
+      io_spec?: components['schemas']['IOSpecDTO'] | null;
+      /** Format Tags */
+      format_tags?: string[];
+      /** Authors */
+      authors?: components['schemas']['AuthorDTO'][];
+      /**
+       * Organization
+       * @default
+       */
+      organization: string;
+      /**
+       * Contact Email
+       * @default
+       */
+      contact_email: string;
+      /** Publications */
+      publications?: components['schemas']['PublicationDTO'][];
+      /** Funding */
+      funding?: string[];
+      /** Model Scales */
+      model_scales?: string[];
+      /** Organisms */
+      organisms?: string[];
+      /** Domains */
+      domains?: string[];
+      /** Date Published */
+      date_published?: string | null;
+      /**
+       * Digest Sha256
+       * @default
+       */
+      digest_sha256: string;
+      /** Size Bytes */
+      size_bytes?: number | null;
+      /** External Ids */
+      external_ids?: {
+        [key: string]: string;
+      };
+      /**
+       * License
+       * @default
+       */
+      license: string;
+      /** Metadata */
+      metadata?: {
+        [key: string]: unknown;
+      };
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /**
+       * Short Description
+       * @default
+       */
+      short_description: string;
+      /** Model Class */
+      model_class?: string[];
+      /** Formalism */
+      formalism?: string[];
+      /**
+       * Determinism
+       * @default unknown
+       */
+      determinism: string;
+      /**
+       * Time Dynamics
+       * @default unknown
+       */
+      time_dynamics: string;
+      /**
+       * Spatial
+       * @default unknown
+       */
+      spatial: string;
+      /** Multiscale */
+      multiscale?: boolean | null;
+      /** Infectious Agents */
+      infectious_agents?: string[];
+      /** Health Conditions */
+      health_conditions?: string[];
+      /** Biological Processes */
+      biological_processes?: string[];
+      /** Molecular Entities */
+      molecular_entities?: string[];
+      /** Proteins Genes */
+      proteins_genes?: string[];
+      /**
+       * Execution Status
+       * @default
+       */
+      execution_status: string;
+      /**
+       * Language Name
+       * @default
+       */
+      language_name: string;
+      /**
+       * Language Version
+       * @default
+       */
+      language_version: string;
+      /**
+       * Execution Notes
+       * @default
+       */
+      execution_notes: string;
+      /** Dependencies */
+      dependencies?: components['schemas']['DependencyDTO'][];
+      /** Containers */
+      containers?: components['schemas']['ContainerDTO'][];
+      compute?: components['schemas']['ComputeDTO'] | null;
+      /** Entry Points */
+      entry_points?: components['schemas']['EntryPointDTO'][];
+      tests?: components['schemas']['TestSpecDTO'] | null;
     };
     /** ModelListItem */
     ModelListItem: {
@@ -1525,6 +1773,19 @@ export interface components {
        */
       order: 'asc' | 'desc';
     };
+    /** TestSpecDTO */
+    TestSpecDTO: {
+      /**
+       * Framework
+       * @default
+       */
+      framework: string;
+      /**
+       * Invocation
+       * @default
+       */
+      invocation: string;
+    };
     /** UpdateDatasetRequest */
     UpdateDatasetRequest: {
       /** Digest Sha256 */
@@ -1922,7 +2183,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['RegisterModelResponse'];
+          'application/json': components['schemas']['ModelDetailResponse'];
         };
       };
       /** @description Validation Error */

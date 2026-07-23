@@ -37,3 +37,14 @@ export {
   type ResourceFileItem,
   type ResourceFilesResponse,
 } from './endpoints/resources';
+
+export {
+  getModel,
+  type ModelDetailResponse,
+  type DependencyDTO,
+  type ContainerDTO,
+  type ComputeDTO,
+  type EntryPointDTO,
+  type ArgumentDTO,
+  type TestSpecDTO,
+} from './endpoints/models';

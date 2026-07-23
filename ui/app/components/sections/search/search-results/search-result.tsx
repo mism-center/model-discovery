@@ -8,45 +8,22 @@ import {
 } from '@heroicons/react/16/solid';
 import { DocumentIcon } from '@heroicons/react/24/solid';
 import { QuotationMarkIcon } from '@sidekickicons/react/16/solid';
-// import { Link } from 'react-router';
+import { Link } from 'react-router';
 
 import type { SearchResultItem } from '~/api';
+import { formatBytes, formatMonthYear } from '~/utils/format';
 import { AuthorListTooltip } from './author-list-tooltip';
 import { RunControls } from './run-controls';
-
-/**
- * Format an ISO timestamp / date string as `Mon Year` (e.g. `Jan 2024`).
- */
-function formatDate(iso: string) {
-  const date = new Date(iso);
-  // Catch invalid dates
-  if (Number.isNaN(date.valueOf())) return iso;
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    year: 'numeric',
-  }).format(date);
-}
-
-/**
- * Human-readable byte-size formatting.
- */
-function formatSize(bytes: number): string {
-  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
-  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`;
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${bytes} B`;
-}
 
 interface SearchResultProps {
   result: SearchResultItem;
 }
 
 export function SearchResult({ result }: SearchResultProps) {
-  // Details-page navigation is disabled while the details route is unimplemented.
-  // const isDataset = result.resource_type === 'dataset';
-  // const linkPath = isDataset
-  //   ? `/datasets/${result.id}/`
-  //   : `/models/${result.id}/`;
+  // Only models have a details page today; datasets stay unlinked until a
+  // dataset details route exists.
+  const isModel = result.resource_type !== 'dataset';
+  const detailsPath = isModel ? `/models/${result.id}` : undefined;
 
   const formatTags = result.format_tags ?? [];
   const authors = result.authors ?? [];
@@ -98,7 +75,16 @@ export function SearchResult({ result }: SearchResultProps) {
             'after:delay-0 group-hover:after:delay-150'
           )}
         >
-          {result.name}
+          {detailsPath ? (
+            <Link to={detailsPath} className="outline-none">
+              {/* Cover the whole card so anywhere in it navigates to details,
+                  while the action buttons on the right sit above via z-index. */}
+              <span className="absolute inset-0 z-0" aria-hidden="true" />
+              {result.name}
+            </Link>
+          ) : (
+            result.name
+          )}
         </h3>
 
         {/* Description */}
@@ -155,7 +141,7 @@ export function SearchResult({ result }: SearchResultProps) {
             )}
             <div className="flex items-center gap-1.5">
               <CalendarIcon className="size-3.5" />
-              <span>{formatDate(displayDate)}</span>
+              <span>{formatMonthYear(displayDate)}</span>
             </div>
             {formatTags.length > 0 && (
               <div className="flex items-center gap-1.5">
@@ -168,7 +154,7 @@ export function SearchResult({ result }: SearchResultProps) {
             {typeof result.size_bytes === 'number' && (
               <div className="flex items-center gap-1.5">
                 <CircleStackIcon className="size-3.5" />
-                {formatSize(result.size_bytes)}
+                {formatBytes(result.size_bytes)}
               </div>
             )}
             {publications.length > 0 && (
@@ -184,8 +170,9 @@ export function SearchResult({ result }: SearchResultProps) {
         </div>
       </div>
 
-      {/* Right side actions */}
-      <div className="flex flex-col justify-between items-end">
+      {/* Right side actions. `relative z-10` keeps these above the title's
+          full-card overlay link so clicks here don't navigate to details. */}
+      <div className="relative z-10 flex flex-col justify-between items-end">
         <Button
           variant="flat"
           size="sm"
@@ -201,17 +188,20 @@ export function SearchResult({ result }: SearchResultProps) {
           <BookmarkIcon className="size-5" />
         </Button>
 
-        {/* View details — disabled until the details page is implemented.
-            Replaced in this slot by <RunControls /> below.
-        <Button
-          size="sm"
-          color="primary"
-          className="px-5 py-2.5 rounded-lg text-sm font-bold"
-        >
-          View details
-        </Button>
-        */}
-        {executable && <RunControls model={result} />}
+        <div className="flex items-center gap-2">
+          {detailsPath && (
+            <Button
+              as={Link}
+              to={detailsPath}
+              size="sm"
+              variant="bordered"
+              className="px-5 py-2.5 rounded-lg text-sm font-bold border-primary/40 text-primary"
+            >
+              View details
+            </Button>
+          )}
+          {executable && <RunControls model={result} />}
+        </div>
       </div>
     </div>
   );

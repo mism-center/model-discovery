@@ -17,6 +17,16 @@ export type ResourceSummaryItem = components['schemas']['ResourceSummaryItem'];
 export type UserRunsResponse = components['schemas']['UserRunsResponse'];
 export type UserRunItem = components['schemas']['UserRunItem'];
 
+/**
+ * The subset of a model the launch affordances (RunControls / RunModelModal)
+ * actually read. Both `SearchResultItem` and `ModelDetailResponse` satisfy it,
+ * so either can drive a launch without coupling the components to one shape.
+ */
+export type RunnableModel = Pick<
+  components['schemas']['SearchResultItem'],
+  'id' | 'name' | 'execution_type' | 'io_spec'
+>;
+
 export const TERMINAL_RUN_STATUSES: ReadonlySet<RunStatus> = new Set([
   'completed',
   'failed',

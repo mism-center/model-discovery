@@ -21,6 +21,7 @@ from mismapi.schemas.registry import (
     MetadataPackageFile,
     MetadataPackageRawResponse,
     MetadataPackageUpdateRequest,
+    ModelDetailResponse,
     ModelRunDetailItem,
     ModelRunDetailsResponse,
     RegisterModelRequest,
@@ -28,10 +29,15 @@ from mismapi.schemas.registry import (
     UpdateModelRequest,
     author_from_dto,
     author_to_dto,
+    compute_to_dto,
+    container_to_dto,
+    dependency_to_dto,
+    entry_point_to_dto,
     io_spec_from_dto,
     io_spec_to_dto,
     pub_from_dto,
     pub_to_dto,
+    test_spec_to_dto,
 )
 from mismapi.schemas.search import ModelListItem, ModelListResponse
 from mismapi.schemas.upload import UploadInitiatedResponse
@@ -109,6 +115,37 @@ def _model_response(r: Resource) -> RegisterModelResponse:
     )
 
 
+def _model_detail_response(r: Resource) -> ModelDetailResponse:
+    base = _model_response(r).model_dump()
+    return ModelDetailResponse(
+        **base,
+        # Model characterization (schema.md Section A)
+        short_description=r.short_description,
+        model_class=list(r.model_class),
+        formalism=list(r.formalism),
+        determinism=r.determinism,
+        time_dynamics=r.time_dynamics,
+        spatial=r.spatial,
+        multiscale=r.multiscale,
+        # Biology
+        infectious_agents=list(r.infectious_agents),
+        health_conditions=list(r.health_conditions),
+        biological_processes=list(r.biological_processes),
+        molecular_entities=list(r.molecular_entities),
+        proteins_genes=list(r.proteins_genes),
+        # Execution characterization (schema.md Section B)
+        execution_status=r.execution_status,
+        language_name=r.language_name,
+        language_version=r.language_version,
+        execution_notes=r.execution_notes,
+        dependencies=[dependency_to_dto(d) for d in r.dependencies],
+        containers=[container_to_dto(c) for c in r.containers],
+        compute=compute_to_dto(r.compute) if r.compute else None,
+        entry_points=[entry_point_to_dto(e) for e in r.entry_points],
+        tests=test_spec_to_dto(r.tests) if r.tests else None,
+    )
+
+
 @router.get("/models", response_model=ModelListResponse)
 async def list_models(
     service: RegistryServiceDep,
@@ -134,20 +171,23 @@ async def list_models(
     return ModelListResponse(total=total, results=[_model_list_item(r) for r in page])
 
 
-@router.get("/models/{model_id}", response_model=RegisterModelResponse)
+@router.get("/models/{model_id}", response_model=ModelDetailResponse)
 async def get_model(
     model_id: str,
     service: RegistryServiceDep,
-) -> RegisterModelResponse:
+) -> ModelDetailResponse:
     """Fetch a single model by ID.
 
     Includes ``registration_status`` so the UI can poll annotation progress
     (DRAFT → ANNOTATING → PENDING_REVIEW / ANNOTATION_FAILED → APPROVED).
     The execution-platform's background poller writes these transitions directly
     to the shared registry; this endpoint reads the current value on demand.
+
+    Returns the full detail view, including the characterization fields
+    populated by the metadata-package workflow.
     """
     resource = service.get_model(model_id)
-    return _model_response(resource)
+    return _model_detail_response(resource)
 
 
 @router.post("/models", response_model=RegisterModelResponse, status_code=201)

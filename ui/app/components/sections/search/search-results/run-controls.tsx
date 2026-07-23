@@ -1,12 +1,12 @@
 import { Button, useDisclosure } from '@heroui/react';
 import { PlayIcon } from '@heroicons/react/24/solid';
 
-import type { SearchResultItem } from '~/api';
+import type { RunnableModel } from '~/api/endpoints/runs';
 import { useUser } from '~/api/auth/user';
 import { RunModelModal } from './run-model-modal';
 
 interface RunControlsProps {
-  model: SearchResultItem;
+  model: RunnableModel;
 }
 
 /**

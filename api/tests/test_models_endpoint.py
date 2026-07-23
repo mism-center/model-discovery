@@ -512,6 +512,89 @@ def test_update_model_omitted_new_fields_are_none() -> None:
     assert kwargs["io_spec"] is None
 
 
+# ── GET /models/{id} detail view ────────────────────────────────
+
+
+def test_get_model_detail_includes_characterization_fields() -> None:
+    import dataclasses
+
+    from mism_registry.types import (
+        Argument,
+        Compute,
+        Container,
+        Dependency,
+        EntryPoint,
+        TestSpec,
+    )
+
+    resource = dataclasses.replace(
+        _make_model(),
+        short_description="short",
+        model_class=["ODE model"],
+        formalism=["KISAO:0000019"],
+        determinism="deterministic",
+        time_dynamics="continuous",
+        spatial="non-spatial",
+        multiscale=True,
+        infectious_agents=["SARS-CoV-2"],
+        proteins_genes=["ACE2"],
+        execution_status="characterized",
+        language_name="python",
+        language_version=">=3.11",
+        execution_notes="notes",
+        dependencies=[Dependency(name="numpy", version_constraint=">=1.0", kind="runtime")],
+        containers=[Container(kind="docker", file="Dockerfile", image_name="model:latest")],
+        compute=Compute(cpu_cores=4, memory_gb=8.0, gpu_required=False),
+        entry_points=[
+            EntryPoint(
+                command="python run.py",
+                purpose="run",
+                arguments=(Argument(name="--seed", description="rng seed", default=0),),
+            )
+        ],
+        tests=TestSpec(framework="pytest", invocation="pytest -q"),
+    )
+
+    service = MagicMock(spec=RegistryService)
+    service.get_model.return_value = resource
+
+    client = _make_app_with_service(service)
+    response = client.get("/api/v1/models/m-1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["short_description"] == "short"
+    assert payload["model_class"] == ["ODE model"]
+    assert payload["determinism"] == "deterministic"
+    assert payload["multiscale"] is True
+    assert payload["infectious_agents"] == ["SARS-CoV-2"]
+    assert payload["language_name"] == "python"
+    assert payload["execution_status"] == "characterized"
+    assert payload["dependencies"][0]["name"] == "numpy"
+    assert payload["containers"][0]["kind"] == "docker"
+    assert payload["compute"]["cpu_cores"] == 4
+    assert payload["entry_points"][0]["command"] == "python run.py"
+    assert payload["entry_points"][0]["arguments"][0]["name"] == "--seed"
+    assert payload["tests"]["framework"] == "pytest"
+    service.get_model.assert_called_once_with("m-1")
+
+
+def test_get_model_detail_empty_characterization_defaults() -> None:
+    service = MagicMock(spec=RegistryService)
+    service.get_model.return_value = _make_model()
+
+    client = _make_app_with_service(service)
+    response = client.get("/api/v1/models/m-1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dependencies"] == []
+    assert payload["containers"] == []
+    assert payload["compute"] is None
+    assert payload["tests"] is None
+    assert payload["determinism"] == "unknown"
+
+
 # ── metadata-package raw review ─────────────────────────────────
 
 
