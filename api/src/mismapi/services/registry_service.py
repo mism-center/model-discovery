@@ -566,8 +566,7 @@ class RegistryService:
         status: RunStatus | None = None,
     ) -> list[Run]:
         """All runs triggered by a user, across every model, optionally by status."""
-        runs = self._registry.find_runs(status=status)
-        return [run for run in runs if run.triggered_by == triggered_by]
+        return self._registry.find_runs(triggered_by=triggered_by, status=status)
 
     def find_user_run_details(
         self,

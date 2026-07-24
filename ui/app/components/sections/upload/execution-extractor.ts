@@ -53,6 +53,27 @@ export function extractExecutionFormValues(
       ep.default_output_location ?? '';
     values[`execution.entry_points[${i}].confidence`] = ep.confidence ?? '';
     values[`execution.entry_points[${i}].source`] = ep.source ?? '';
+    // Per-argument sub-fields
+    for (const [j, arg] of (ep.arguments ?? []).entries()) {
+      values[`execution.entry_points[${i}].arguments[${j}].name`] =
+        arg.name ?? '';
+      values[`execution.entry_points[${i}].arguments[${j}].description`] =
+        arg.description ?? '';
+      values[`execution.entry_points[${i}].arguments[${j}].default`] =
+        arg.default === null || arg.default === undefined
+          ? ''
+          : String(arg.default);
+      values[`execution.entry_points[${i}].arguments[${j}].data_type`] =
+        arg.data_type ?? '';
+      values[`execution.entry_points[${i}].arguments[${j}].user_can_override`] =
+        arg.user_can_override === null || arg.user_can_override === undefined
+          ? ''
+          : String(arg.user_can_override);
+      values[`execution.entry_points[${i}].arguments[${j}].position`] =
+        arg.position === null || arg.position === undefined
+          ? ''
+          : String(arg.position);
+    }
   }
 
   // ── Dependencies (list-dep — per-item name/version_constraint/source) ──
@@ -332,6 +353,107 @@ export function applyFormValuesToExecution(
           values[`execution.entry_points[${i}].confidence`] ??
           existing.confidence ??
           null,
+        arguments: (() => {
+          const argCount = countFormItems(
+            values,
+            `execution.entry_points[${i}].arguments`,
+            'name'
+          );
+          if (argCount === 0 && !Array.isArray(existing.arguments)) {
+            return existing.arguments;
+          }
+          return Array.from({ length: argCount }, (_, j) => {
+            const existingArg = (existing.arguments ?? [])[j] ?? {};
+            const dataType =
+              values[
+                `execution.entry_points[${i}].arguments[${j}].data_type`
+              ] ??
+              existingArg.data_type ??
+              '';
+            const rawDefault =
+              values[`execution.entry_points[${i}].arguments[${j}].default`];
+            let parsedDefault: unknown = existingArg.default;
+            if (rawDefault !== undefined) {
+              switch (dataType) {
+                case 'bool': {
+                  if (rawDefault === 'true') parsedDefault = true;
+                  else if (rawDefault === 'false') parsedDefault = false;
+                  else parsedDefault = null;
+                  break;
+                }
+                case 'int': {
+                  const n = Number.parseInt(rawDefault, 10);
+                  parsedDefault = Number.isNaN(n) ? null : n;
+                  break;
+                }
+                case 'float': {
+                  const n = Number.parseFloat(rawDefault);
+                  parsedDefault = Number.isNaN(n) ? null : n;
+                  break;
+                }
+                default: {
+                  parsedDefault = rawDefault || null;
+                }
+              }
+            }
+            const rawUco =
+              values[
+                `execution.entry_points[${i}].arguments[${j}].user_can_override`
+              ];
+            let parsedUco: boolean | null | undefined;
+            switch (rawUco) {
+              case 'true': {
+                parsedUco = true;
+                break;
+              }
+              case 'false': {
+                parsedUco = false;
+                break;
+              }
+              case undefined: {
+                parsedUco = existingArg.user_can_override;
+                break;
+              }
+              default: {
+                parsedUco = null;
+              }
+            }
+            return {
+              ...existingArg,
+              name:
+                values[`execution.entry_points[${i}].arguments[${j}].name`] ??
+                existingArg.name ??
+                null,
+              description:
+                values[
+                  `execution.entry_points[${i}].arguments[${j}].description`
+                ] ??
+                existingArg.description ??
+                null,
+              default: parsedDefault,
+              data_type: dataType || null,
+              user_can_override: parsedUco,
+              position: (() => {
+                const rawPosition =
+                  values[
+                    `execution.entry_points[${i}].arguments[${j}].position`
+                  ];
+                switch (rawPosition) {
+                  case undefined: {
+                    return existingArg.position;
+                  }
+                  case '': {
+                    return null;
+                  }
+                  default: {
+                    const n = Number.parseInt(rawPosition, 10);
+                    return Number.isNaN(n) ? null : n;
+                  }
+                }
+              })(),
+            };
+          });
+        })(),
       };
     });
   }

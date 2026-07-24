@@ -120,7 +120,10 @@ export interface paths {
     /** Update Model */
     put: operations['update_model_api_v1_models__model_id__put'];
     post?: never;
-    /** Delete Model */
+    /**
+     * Delete Model
+     * @description Permanently delete a model and its on-disk annotation files.
+     */
     delete: operations['delete_model_api_v1_models__model_id__delete'];
     options?: never;
     head?: never;
@@ -471,6 +474,35 @@ export interface components {
         [key: string]: unknown;
       };
     };
+    /**
+     * ArgumentDTO
+     * @description A documented argument to an entry-point command.
+     */
+    ArgumentDTO: {
+      /** Name */
+      name: string;
+      /**
+       * Description
+       * @default
+       */
+      description: string;
+      /** Default */
+      default?: unknown;
+      /** Enums */
+      enums?: string[] | null;
+      /**
+       * Data Type
+       * @default
+       */
+      data_type: string;
+      /**
+       * Position
+       * @default 0
+       */
+      position: number;
+      /** User Can Override */
+      user_can_override?: boolean | null;
+    };
     /** AuthorDTO */
     AuthorDTO: {
       /** Name */
@@ -497,6 +529,24 @@ export interface components {
       file: string;
     };
     /**
+     * ContainerDTO
+     * @description A container recipe declared on a model.
+     */
+    ContainerDTO: {
+      /** Kind */
+      kind: string;
+      /**
+       * File
+       * @default
+       */
+      file: string;
+      /**
+       * Image Name
+       * @default
+       */
+      image_name: string;
+    };
+    /**
      * CurrentUser
      * @description Authenticated user view returned by ``GET /api/auth/me``.
      */
@@ -515,14 +565,31 @@ export interface components {
       preferred_username?: string | null;
     };
     /**
+     * EntryPointDTO
+     * @description One invocable command declared on a model.
+     */
+    EntryPointDTO: {
+      /** Command */
+      command: string;
+      /**
+       * Purpose
+       * @default
+       */
+      purpose: string;
+      /** Arguments */
+      arguments?: components['schemas']['ArgumentDTO'][];
+    };
+    /**
      * ExecuteRunRequest
      * @description Create a run AND trigger execution on the Execution API.
      */
     ExecuteRunRequest: {
       /** Input Resource Ids */
       input_resource_ids?: string[];
-      /** Parameters */
-      parameters?: {
+      /** Entrypoint Index */
+      entrypoint_index?: number | null;
+      /** Arguments */
+      arguments?: {
         [key: string]: unknown;
       };
       /**
@@ -771,6 +838,10 @@ export interface components {
        */
       execution_ref: string;
       io_spec?: components['schemas']['IOSpecDTO'] | null;
+      /** Entry Points */
+      entry_points?: components['schemas']['EntryPointDTO'][];
+      /** Containers */
+      containers?: components['schemas']['ContainerDTO'][];
       /**
        * Registration Status
        * @default
@@ -1101,6 +1172,10 @@ export interface components {
        */
       execution_ref: string;
       io_spec?: components['schemas']['IOSpecDTO'] | null;
+      /** Entry Points */
+      entry_points?: components['schemas']['EntryPointDTO'][];
+      /** Containers */
+      containers?: components['schemas']['ContainerDTO'][];
       /** Format Tags */
       format_tags?: string[];
       /** Authors */
@@ -1277,6 +1352,10 @@ export interface components {
        */
       execution_ref: string;
       io_spec?: components['schemas']['IOSpecDTO'] | null;
+      /** Entry Points */
+      entry_points?: components['schemas']['EntryPointDTO'][];
+      /** Containers */
+      containers?: components['schemas']['ContainerDTO'][];
       /** Metadata */
       metadata?: {
         [key: string]: unknown;
@@ -1316,6 +1395,8 @@ export interface components {
       parameters?: {
         [key: string]: unknown;
       };
+      entrypoint?: components['schemas']['EntryPointDTO'] | null;
+      container?: components['schemas']['ContainerDTO'] | null;
       /** Started At */
       started_at?: string | null;
       /** Completed At */
@@ -2016,12 +2097,12 @@ export interface operations {
         };
       };
       /** @description Validation Error */
-      403: {
+      422: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ErrorResponse'];
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

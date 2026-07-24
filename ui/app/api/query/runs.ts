@@ -50,6 +50,14 @@ export function userRunsQueryOptions(
   return queryOptions<UserRunsResponse>({
     queryKey: runKeys.user(status),
     queryFn: ({ signal }) => listUserRuns({ status, signal, client }),
+    // Poll while any run in the list is still non-terminal so status (and the
+    // derived duration) stay fresh even for collapsed rows, which don't run
+    // their own detail query. Stop once every run has reached a terminal state.
+    refetchInterval: (query) => {
+      const runs = query.state.data?.runs ?? [];
+      const anyActive = runs.some((item) => !isTerminalStatus(item.run.status));
+      return anyActive ? 5000 : false;
+    },
   });
 }
 

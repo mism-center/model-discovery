@@ -82,6 +82,7 @@ export function MetadataField({
         fieldKey={fieldKey}
         onChange={onChange}
         getFormValue={getFormValue}
+        formValues={formValues}
         onAddItem={makeAddItemHandler([
           'command',
           'purpose',
@@ -347,6 +348,7 @@ function EditableEntryPointList({
   onChange,
   getFormValue,
   onAddItem,
+  formValues,
 }: {
   annotation: FieldAnnotation;
   itemCount: number;
@@ -354,8 +356,16 @@ function EditableEntryPointList({
   onChange: (key: string, newValue: string) => void;
   getFormValue?: (key: string) => string;
   onAddItem: () => void;
+  formValues?: FormValues;
 }) {
   const gv = (key: string) => getFormValue?.(key) ?? '';
+
+  const countArgs = (epIndex: number): number => {
+    if (!formValues) return 0;
+    let j = 0;
+    while (`${fieldKey}[${epIndex}].arguments[${j}].name` in formValues) j++;
+    return j;
+  };
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -369,6 +379,7 @@ function EditableEntryPointList({
         {Array.from({ length: itemCount }, (_, index) => {
           const conf = gv(`${fieldKey}[${index}].confidence`);
           const source = gv(`${fieldKey}[${index}].source`);
+          const argCount = countArgs(index);
           return (
             <div
               key={index}
@@ -405,6 +416,160 @@ function EditableEntryPointList({
                   input: 'font-mono',
                 }}
               />
+
+              {/* ── Arguments sub-section ── */}
+              <div className="flex flex-col gap-1.5 mt-1">
+                <span className="text-xs text-default-600 font-semibold uppercase tracking-wide">
+                  Arguments ({argCount})
+                </span>
+                {argCount > 0 && (
+                  <div className="flex flex-col gap-2">
+                    {Array.from({ length: argCount }, (_, j) => (
+                      <div
+                        key={j}
+                        className="bg-default-50 border border-default-200 rounded px-3 py-2 flex flex-col gap-2"
+                      >
+                        <Input
+                          label="name"
+                          value={gv(
+                            `${fieldKey}[${index}].arguments[${j}].name`
+                          )}
+                          onValueChange={(v) =>
+                            onChange(
+                              `${fieldKey}[${index}].arguments[${j}].name`,
+                              v
+                            )
+                          }
+                          classNames={{
+                            label: 'text-xs text-default-800 font-medium',
+                            input: 'font-mono',
+                          }}
+                        />
+                        <Textarea
+                          label="description"
+                          value={gv(
+                            `${fieldKey}[${index}].arguments[${j}].description`
+                          )}
+                          minRows={2}
+                          onValueChange={(v) =>
+                            onChange(
+                              `${fieldKey}[${index}].arguments[${j}].description`,
+                              v
+                            )
+                          }
+                          classNames={{
+                            label: 'text-xs text-default-800 font-medium',
+                          }}
+                        />
+                        <Input
+                          label="default"
+                          value={gv(
+                            `${fieldKey}[${index}].arguments[${j}].default`
+                          )}
+                          onValueChange={(v) =>
+                            onChange(
+                              `${fieldKey}[${index}].arguments[${j}].default`,
+                              v
+                            )
+                          }
+                          classNames={{
+                            label: 'text-xs text-default-800 font-medium',
+                            input: 'font-mono',
+                          }}
+                        />
+                        <Input
+                          label="data type"
+                          value={gv(
+                            `${fieldKey}[${index}].arguments[${j}].data_type`
+                          )}
+                          onValueChange={(v) =>
+                            onChange(
+                              `${fieldKey}[${index}].arguments[${j}].data_type`,
+                              v
+                            )
+                          }
+                          classNames={{
+                            label: 'text-xs text-default-800 font-medium',
+                          }}
+                          description="bool | int | float | str"
+                        />
+                        <Input
+                          label="position"
+                          value={gv(
+                            `${fieldKey}[${index}].arguments[${j}].position`
+                          )}
+                          onValueChange={(v) =>
+                            onChange(
+                              `${fieldKey}[${index}].arguments[${j}].position`,
+                              v
+                            )
+                          }
+                          classNames={{
+                            label: 'text-xs text-default-800 font-medium',
+                            input: 'font-mono',
+                          }}
+                          description="Argument order (0-based)"
+                        />
+                        <div className="flex flex-col gap-1">
+                          <span className="text-xs text-default-800 font-medium">
+                            user can override
+                          </span>
+                          <select
+                            value={gv(
+                              `${fieldKey}[${index}].arguments[${j}].user_can_override`
+                            )}
+                            onChange={(e) =>
+                              onChange(
+                                `${fieldKey}[${index}].arguments[${j}].user_can_override`,
+                                e.target.value
+                              )
+                            }
+                            className="text-xs text-default-800 bg-default-200 border border-default-200 rounded px-2 py-1 max-w-[100px]"
+                          >
+                            <option value="">—</option>
+                            <option value="true">true</option>
+                            <option value="false">false</option>
+                          </select>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <Button
+                  size="sm"
+                  color="default"
+                  variant="flat"
+                  className="self-start text-xs"
+                  onPress={() => {
+                    const j = argCount;
+                    onChange(`${fieldKey}[${index}].arguments[${j}].name`, '');
+                    onChange(
+                      `${fieldKey}[${index}].arguments[${j}].description`,
+                      ''
+                    );
+                    onChange(
+                      `${fieldKey}[${index}].arguments[${j}].default`,
+                      ''
+                    );
+                    onChange(
+                      `${fieldKey}[${index}].arguments[${j}].data_type`,
+                      ''
+                    );
+                    onChange(
+                      `${fieldKey}[${index}].arguments[${j}].user_can_override`,
+                      ''
+                    );
+                    onChange(
+                      `${fieldKey}[${index}].arguments[${j}].position`,
+                      ''
+                    );
+                  }}
+                >
+                  + Add Argument
+                </Button>
+              </div>
+
+              {/* ── Confidence / source footer ── */}
               <div className="flex items-center gap-4 pt-0.5 flex-wrap">
                 {conf && (
                   <div className="flex items-center gap-1.5">
