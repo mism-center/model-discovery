@@ -271,7 +271,8 @@ class RegistryService:
         *,
         model_id: str,
         input_resource_ids: list[str] | None = None,
-        parameters: dict[str, Any] | None = None,
+        entrypoint_index: int | None = None,
+        arguments: dict[str, Any] | None = None,
         triggered_by: str = "",
         notes: str = "",
     ) -> Run:
@@ -280,7 +281,8 @@ class RegistryService:
                 self._registry,
                 model_id=model_id,
                 input_resource_ids=input_resource_ids or [],
-                parameters=parameters or {},
+                entrypoint_index=entrypoint_index,
+                arguments=arguments or {},
                 triggered_by=triggered_by or principal.subject,
                 notes=notes,
             )

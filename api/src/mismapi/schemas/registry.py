@@ -2,7 +2,15 @@ from datetime import date, datetime
 from typing import Any, Literal
 
 from mism_registry import ExecutionType
-from mism_registry.types import Author, IOSlot, IOSpec, Publication
+from mism_registry.types import (
+    Argument,
+    Author,
+    Container,
+    EntryPoint,
+    IOSlot,
+    IOSpec,
+    Publication,
+)
 from pydantic import BaseModel, Field, field_validator
 
 from mismapi.core.file_storage import validate_location_uri
@@ -35,6 +43,34 @@ class IOSpecDTO(BaseModel):
     inputs: list[IOSlotDTO] = Field(default_factory=list)
     outputs: list[IOSlotDTO] = Field(default_factory=list)
     parameters_schema: dict[str, Any] | None = None
+
+
+class ArgumentDTO(BaseModel):
+    """A documented argument to an entry-point command."""
+
+    name: str
+    description: str = ""
+    default: Any = None
+    enums: list[str] | None = None  # allowed values, if constrained
+    data_type: str = ""  # e.g. "int", "str", "path", "bool"
+    position: int = 0  # positional index; 0 = unassigned (option/flag)
+    user_can_override: bool | None = None
+
+
+class EntryPointDTO(BaseModel):
+    """One invocable command declared on a model."""
+
+    command: str
+    purpose: str = ""
+    arguments: list[ArgumentDTO] = Field(default_factory=list)
+
+
+class ContainerDTO(BaseModel):
+    """A container recipe declared on a model."""
+
+    kind: str  # "docker" | "singularity"
+    file: str = ""
+    image_name: str = ""
 
 
 # ── DTO ↔ dataclass converters ───────────────────────────────────────
@@ -80,6 +116,30 @@ def io_spec_to_dto(spec: IOSpec) -> IOSpecDTO:
         outputs=[io_slot_to_dto(s) for s in spec.outputs],
         parameters_schema=spec.parameters_schema,
     )
+
+
+def argument_to_dto(a: Argument) -> ArgumentDTO:
+    return ArgumentDTO(
+        name=a.name,
+        description=a.description,
+        default=a.default,
+        enums=list(a.enums) if a.enums is not None else None,
+        data_type=a.data_type or "",
+        position=a.position or 0,
+        user_can_override=a.user_can_override,
+    )
+
+
+def entry_point_to_dto(e: EntryPoint) -> EntryPointDTO:
+    return EntryPointDTO(
+        command=e.command,
+        purpose=e.purpose,
+        arguments=[argument_to_dto(a) for a in e.arguments],
+    )
+
+
+def container_to_dto(c: Container) -> ContainerDTO:
+    return ContainerDTO(kind=c.kind, file=c.file, image_name=c.image_name)
 
 
 # ── Shared field mixin (used in request & response bodies) ───────────
@@ -149,6 +209,10 @@ class RegisterModelResponse(BaseModel):
     execution_type: str | None = None
     execution_ref: str = ""
     io_spec: IOSpecDTO | None = None
+    # Execution recipe (populated from the annotation metadata-package): the
+    # entry points a run can select and the container(s) it runs in.
+    entry_points: list[EntryPointDTO] = Field(default_factory=list)
+    containers: list[ContainerDTO] = Field(default_factory=list)
     format_tags: list[str] = Field(default_factory=list)
     # Authorship & attribution
     authors: list[AuthorDTO] = Field(default_factory=list)
@@ -291,7 +355,12 @@ class UpdateDatasetRequest(_AttributionFields, _ScientificFields, _IntegrityFiel
 
 class CreateRunRequest(BaseModel):
     input_resource_ids: list[str] = Field(default_factory=list)
-    parameters: dict[str, Any] = Field(default_factory=dict)
+    # Select one of the model's declared entry points by index. When set,
+    # ``arguments`` (VALUES keyed by the entry point's declared arg names —
+    # never command/flag strings) are validated against it. Injection defense
+    # lives in the registry: the caller never supplies a raw command.
+    entrypoint_index: int | None = None
+    arguments: dict[str, Any] = Field(default_factory=dict)
     notes: str = ""
 
 
@@ -308,7 +377,8 @@ class ExecuteRunRequest(BaseModel):
     """Create a run AND trigger execution on the Execution API."""
 
     input_resource_ids: list[str] = Field(default_factory=list)
-    parameters: dict[str, Any] = Field(default_factory=dict)
+    entrypoint_index: int | None = None
+    arguments: dict[str, Any] = Field(default_factory=dict)
     notes: str = ""
     mode: Literal["batch", "interactive"] = "batch"
 
@@ -363,6 +433,8 @@ class ResourceSummaryItem(BaseModel):
     execution_type: str | None = None
     execution_ref: str = ""
     io_spec: IOSpecDTO | None = None
+    entry_points: list[EntryPointDTO] = Field(default_factory=list)
+    containers: list[ContainerDTO] = Field(default_factory=list)
     # System
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
@@ -379,6 +451,10 @@ class RunDetailItem(BaseModel):
     input_resource_ids: list[str] = Field(default_factory=list)
     output_resource_ids: list[str] = Field(default_factory=list)
     parameters: dict[str, Any] = Field(default_factory=dict)
+    # Entry point selected for this run + the container it was denormalized
+    # onto (both null for runs created before entry-point selection existed).
+    entrypoint: EntryPointDTO | None = None
+    container: ContainerDTO | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
     error_message: str = ""

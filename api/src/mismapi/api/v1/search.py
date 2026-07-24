@@ -6,6 +6,8 @@ from mism_registry.search import FieldFilter, SearchQuery
 from mismapi.core.deps import RegistryServiceDep
 from mismapi.schemas.registry import (
     author_to_dto,
+    container_to_dto,
+    entry_point_to_dto,
     io_spec_to_dto,
     pub_to_dto,
 )
@@ -54,6 +56,8 @@ async def search_resources(
             execution_type=r.execution_type.value if r.execution_type else None,
             execution_ref=r.execution_ref,
             io_spec=io_spec_to_dto(r.io_spec) if r.io_spec else None,
+            entry_points=[entry_point_to_dto(e) for e in r.entry_points],
+            containers=[container_to_dto(c) for c in r.containers],
             format_tags=list(r.format_tags),
             authors=[author_to_dto(a) for a in r.authors],
             organization=r.organization,
