@@ -204,10 +204,15 @@ export function RunRow({ item, defaultExpanded = false }: RunRowProps) {
   const panelId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
 
-  // When deep-linked (e.g. from the "View" toast after launching), bring the
-  // freshly-opened row into view and briefly ring it.
+  // When deep-linked (e.g. from the "View" toast after launching), expand the
+  // row, bring it into view, and briefly ring it. This runs whenever
+  // `defaultExpanded` becomes true — not just on mount — so it also fires when
+  // the user is already on /runs and clicks "View run" for a row that's already
+  // rendered (or appears via refetch) rather than mounting fresh.
   useEffect(() => {
     if (!defaultExpanded) return;
+    setExpanded(true);
+    setHighlight(true);
     rootRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     const timer = setTimeout(() => setHighlight(false), 2500);
     return () => clearTimeout(timer);
