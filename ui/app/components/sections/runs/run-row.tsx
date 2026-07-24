@@ -12,7 +12,6 @@ import {
   StopIcon,
   XCircleIcon,
 } from '@heroicons/react/16/solid';
-import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 
 import {
@@ -21,7 +20,6 @@ import {
   type UserRunItem,
 } from '~/api/endpoints/runs';
 import type { ArgumentDTO, EntryPointDTO } from '~/api';
-import { runDetailQueryOptions } from '~/api/query/runs';
 import { RunModelModal } from '~/components/sections/search/search-results/run-model-modal';
 import { RunOutputFiles } from '~/components/sections/search/search-results/run-output-files';
 import { TerminateRunModal } from '~/components/sections/search/search-results/terminate-run-modal';
@@ -215,26 +213,11 @@ export function RunRow({ item, defaultExpanded = false }: RunRowProps) {
     return () => clearTimeout(timer);
   }, [defaultExpanded]);
 
-  // Live run detail (hydrated outputs + `refresh=true` status). Seeded from the
-  // list item and only enabled while expanded — the list query itself polls to
-  // keep every row's status/duration current, so this per-row query exists just
-  // to pull the extra detail (outputs) once a row is opened, then backs off and
-  // stops at a terminal status.
-  const { data } = useQuery({
-    ...runDetailQueryOptions(item.run.id),
-    initialData: {
-      run: item.run,
-      input_resources: item.input_resources,
-      output_resources: item.output_resources,
-    },
-    enabled: expanded,
-  });
-
-  const run = data?.run ?? item.run;
-  const outputs: ResourceSummaryItem[] =
-    data?.output_resources ?? item.output_resources ?? [];
-  const inputs: ResourceSummaryItem[] =
-    data?.input_resources ?? item.input_resources ?? [];
+  // The parent `/me/runs` query polls (and reconciles active runs server-side)
+  // every 5s.
+  const run = item.run;
+  const outputs: ResourceSummaryItem[] = item.output_resources ?? [];
+  const inputs: ResourceSummaryItem[] = item.input_resources ?? [];
   const terminal = isTerminalStatus(run.status);
   const color = STATUS_COLOR[run.status] ?? 'default';
 
