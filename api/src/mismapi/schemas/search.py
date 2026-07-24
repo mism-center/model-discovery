@@ -98,6 +98,8 @@ class SearchResultItem(BaseModel):
     execution_type: str | None = None
     execution_ref: str = ""
     io_spec: IOSpecDTO | None = None
+    entry_points: list[EntryPointDTO] = Field(default_factory=list)
+    containers: list[ContainerDTO] = Field(default_factory=list)
     format_tags: list[str] = Field(default_factory=list)
     # Authorship & attribution
     authors: list[AuthorDTO] = Field(default_factory=list)
