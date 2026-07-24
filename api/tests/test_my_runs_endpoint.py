@@ -122,31 +122,34 @@ def _build_service(*, runs: list[Run], resources: list[Resource]) -> RegistrySer
     return RegistryService(registry=registry, session=MagicMock(spec=Session))
 
 
-def _make_execution_client() -> ExecutionClient:
-    """Stub execution client whose status poll is an async no-op.
+def _make_execution_client(get_status: AsyncMock | None = None) -> MagicMock:
+    """Stub execution client whose status poll is an async no-op by default.
 
     The endpoint calls ``get_status`` on it for each active run to trigger the
     lazy DAL refresh; here we just record the calls so tests can assert which
-    runs were reconciled.
+    runs were reconciled. Pass a custom ``get_status`` AsyncMock (e.g. with a
+    ``side_effect``) to simulate a failing poll. Returned as a ``MagicMock`` so
+    tests can read mock attributes like ``await_args_list``.
     """
-    client = MagicMock(spec=ExecutionClient)
-    client.get_status = AsyncMock(return_value={"status": "ok"})
-    return client
+    return MagicMock(
+        spec=ExecutionClient,
+        get_status=get_status or AsyncMock(return_value={"status": "ok"}),
+    )
 
 
 def _make_app(
     service: RegistryService,
     *,
     authenticated: bool = True,
-    execution_client: ExecutionClient | None = None,
+    execution_client: MagicMock | None = None,
 ) -> TestClient:
     app = create_app(settings=minimal_oidc_settings())
     app.dependency_overrides[require_principal] = (
         _allow_principal if authenticated else _deny_principal
     )
     app.dependency_overrides[_get_registry_service] = lambda: service
-    app.dependency_overrides[_get_execution_client] = (
-        lambda: execution_client or _make_execution_client()
+    app.dependency_overrides[_get_execution_client] = lambda: (
+        execution_client or _make_execution_client()
     )
     return TestClient(app)
 
@@ -258,9 +261,7 @@ def test_my_runs_refreshes_only_active_runs() -> None:
         created_at=datetime(2025, 3, 1, tzinfo=UTC),
     )
 
-    service = _build_service(
-        runs=[running, registered, completed], resources=[model_a]
-    )
+    service = _build_service(runs=[running, registered, completed], resources=[model_a])
     execution_client = _make_execution_client()
     client = _make_app(service, execution_client=execution_client)
 
@@ -283,12 +284,13 @@ def test_my_runs_survives_execution_refresh_failure() -> None:
     )
 
     service = _build_service(runs=[running], resources=[model_a])
-    execution_client = _make_execution_client()
-    execution_client.get_status = AsyncMock(
-        side_effect=APIError(
-            status_code=502,
-            code="execution_status_failed",
-            detail="unreachable",
+    execution_client = _make_execution_client(
+        get_status=AsyncMock(
+            side_effect=APIError(
+                status_code=502,
+                code="execution_status_failed",
+                detail="unreachable",
+            )
         )
     )
     client = _make_app(service, execution_client=execution_client)

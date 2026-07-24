@@ -27,9 +27,7 @@ logger = logging.getLogger(__name__)
 
 # Statuses a run can no longer move out of — no point polling the Execution
 # service for these, and no risk of them going stale.
-_TERMINAL_STATUSES = frozenset(
-    {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED}
-)
+_TERMINAL_STATUSES = frozenset({RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED})
 
 router = APIRouter()
 
@@ -60,9 +58,7 @@ async def list_my_runs(
     # worth a round-trip to the Execution service.
     active_run_ids = [
         run.id
-        for run in service.find_user_runs(
-            triggered_by=principal.subject, status=status
-        )
+        for run in service.find_user_runs(triggered_by=principal.subject, status=status)
         if run.status not in _TERMINAL_STATUSES
     ]
 
