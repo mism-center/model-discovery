@@ -300,8 +300,14 @@ export interface paths {
      *
      *     Returns runs newest-first (by created_at), each hydrated with its model
      *     summary and input/output resources. Requires authentication (401 for
-     *     anonymous callers). No Execution-service refresh is performed here — the UI
-     *     refreshes active runs when a row is expanded.
+     *     anonymous callers).
+     *
+     *     Non-terminal runs are reconciled with the Execution service first (same lazy
+     *     refresh as ``GET /runs/{run_id}?refresh=true``) so a user's own history is
+     *     always current — a run that finished won't linger as "running" until its row
+     *     is opened. Terminal runs are skipped (their status can't change), and a
+     *     failed status poll for one run is logged and ignored rather than failing the
+     *     whole list.
      */
     get: operations['list_my_runs_api_v1_me_runs_get'];
     put?: never;
@@ -1538,6 +1544,10 @@ export interface components {
        */
       execution_ref: string;
       io_spec?: components['schemas']['IOSpecDTO'] | null;
+      /** Entry Points */
+      entry_points?: components['schemas']['EntryPointDTO'][];
+      /** Containers */
+      containers?: components['schemas']['ContainerDTO'][];
       /** Format Tags */
       format_tags?: string[];
       /** Authors */
@@ -2720,6 +2730,8 @@ export interface operations {
       query?: {
         /** @description Relative path to a single file inside the resource directory. Omit to download the entire directory as a zip archive. */
         file?: string | null;
+        /** @description How a single file is served. 'attachment' (default) forces a download; 'inline' serves it with a content type guessed from the extension so the browser can render it (used for in-app previews). Ignored for the zip archive. */
+        disposition?: string;
       };
       header?: never;
       path: {
