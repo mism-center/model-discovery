@@ -47,7 +47,9 @@ dev:
 
 ## Run the unit tests (pytest)
 test-unit:
-	$(UV) run pytest tests/unit/ -v
+	$(UV) run pytest tests/ --ignore=tests/integration --ignore=tests/functional -v
+
+#	$(UV) run pytest tests/unit/ -v
 
 ## Run the integration tests (pytest)
 test-integration:
