@@ -11,6 +11,8 @@ export type MetadataPackageRawResponse =
   components['schemas']['MetadataPackageRawResponse'];
 export type ModelListItem = components['schemas']['ModelListItem'];
 export type ModelListResponse = components['schemas']['ModelListResponse'];
+export type EntryPointDTO = components['schemas']['EntryPointDTO'];
+export type ArgumentDTO = components['schemas']['ArgumentDTO'];
 
 export async function listModels(
   options: {

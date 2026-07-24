@@ -20,11 +20,41 @@ import {
   type ResourceSummaryItem,
   type UserRunItem,
 } from '~/api/endpoints/runs';
+import type { ArgumentDTO, EntryPointDTO } from '~/api';
 import { runDetailQueryOptions } from '~/api/query/runs';
 import { RunModelModal } from '~/components/sections/search/search-results/run-model-modal';
 import { RunOutputFiles } from '~/components/sections/search/search-results/run-output-files';
 import { TerminateRunModal } from '~/components/sections/search/search-results/terminate-run-modal';
-import { formatDuration, formatTimestamp, STATUS_COLOR } from './run-format';
+import {
+  formatDuration,
+  formatElapsed,
+  formatTimestamp,
+  STATUS_COLOR,
+} from './run-format';
+
+/**
+ * Epoch-ms clock that ticks every second while `active`, so a running job's
+ * duration counts up on its own instead of freezing until the next run refetch.
+ * Returns `null` until mounted on the client — callers fall back to a static
+ * duration during SSR/first paint to keep hydration deterministic. The interval
+ * is torn down (and never started) once `active` is false, so terminal runs
+ * don't keep a timer alive.
+ */
+function useNow(active: boolean): number | null {
+  const [now, setNow] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!active) {
+      setNow(null);
+      return;
+    }
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [active]);
+
+  return now;
+}
 
 interface RunRowProps {
   /**
@@ -56,6 +86,99 @@ function DetailField({
     <div className={cn('min-w-0', className)}>
       <dt className={PANEL_LABEL}>{label}</dt>
       <dd className="mt-1 text-[13px] text-default-900">{children}</dd>
+    </div>
+  );
+}
+
+/** Render an argument/parameter value for display. */
+function formatArgValue(value: unknown): string {
+  if (value == null || value === '') return '—';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+/**
+ * The entry point a run was launched with, plus the argument values used.
+ *
+ * For each argument the entry point declares, we show the value the run
+ * actually used (`parameters[name]`) when present, otherwise the argument's
+ * declared default (tagged "default"). Any `parameters` key that doesn't match
+ * a declared argument is listed afterwards so nothing that was sent is hidden.
+ */
+function EntryPointDetail({
+  entrypoint,
+  parameters,
+}: {
+  entrypoint: EntryPointDTO;
+  parameters: Record<string, unknown>;
+}) {
+  const declared: ArgumentDTO[] = entrypoint.arguments ?? [];
+  const declaredNames = new Set(declared.map((arg) => arg.name));
+  const extraKeys = Object.keys(parameters).filter(
+    (key) => !declaredNames.has(key)
+  );
+
+  const command = entrypoint.command?.trim() || '—';
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      <span className={PANEL_LABEL}>Entry point</span>
+      <div className="rounded-lg border border-default-200 bg-default-50 px-3.5 py-3">
+        <code className="block text-[13px] font-mono text-default-900 wrap-break-word">
+          {command}
+        </code>
+        {entrypoint.purpose && (
+          <p className="mt-1 text-xs text-default-600">{entrypoint.purpose}</p>
+        )}
+
+        {(declared.length > 0 || extraKeys.length > 0) && (
+          <dl className="mt-3 grid grid-cols-[minmax(0,auto)_minmax(0,max-content)_auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 border-t border-default-200/75 pt-3">
+            {declared.map((arg) => {
+              const overridden = Object.prototype.hasOwnProperty.call(
+                parameters,
+                arg.name
+              );
+              const value = overridden
+                ? formatArgValue(parameters[arg.name])
+                : formatArgValue(arg.default);
+              return (
+                <div key={arg.name} className="contents">
+                  <dt
+                    className="text-[13px] font-mono text-default-700 truncate"
+                    title={arg.name}
+                  >
+                    {arg.name}
+                  </dt>
+                  <dd className="min-w-0 text-[13px] font-mono text-default-900 wrap-break-word">
+                    {value}
+                  </dd>
+                  <span className="self-baseline text-[10px] uppercase tracking-wider text-default-600">
+                    {!overridden && value !== '—' ? '(default)' : ''}
+                  </span>
+                  <span aria-hidden="true" />
+                </div>
+              );
+            })}
+            {extraKeys.map((key) => (
+              <div key={key} className="contents">
+                <dt
+                  className="text-[13px] font-mono text-default-700 truncate"
+                  title={key}
+                >
+                  {key}
+                </dt>
+                <dd className="min-w-0 text-[13px] font-mono text-default-900 wrap-break-word">
+                  {formatArgValue(parameters[key])}
+                </dd>
+                {/* Empty tag + spacer cells keep the value column aligned. */}
+                <span aria-hidden="true" />
+                <span aria-hidden="true" />
+              </div>
+            ))}
+          </dl>
+        )}
+      </div>
     </div>
   );
 }
@@ -92,10 +215,11 @@ export function RunRow({ item, defaultExpanded = false }: RunRowProps) {
     return () => clearTimeout(timer);
   }, [defaultExpanded]);
 
-  // Live run detail (status refresh + hydrated outputs). Seeded from the list
-  // item so nothing fetches until the row is expanded; once expanded, the
-  // options' backed-off polling keeps non-terminal runs fresh and stops at a
-  // terminal status. (Same seeding pattern as run-status-popover.)
+  // Live run detail (hydrated outputs + `refresh=true` status). Seeded from the
+  // list item and only enabled while expanded — the list query itself polls to
+  // keep every row's status/duration current, so this per-row query exists just
+  // to pull the extra detail (outputs) once a row is opened, then backs off and
+  // stops at a terminal status.
   const { data } = useQuery({
     ...runDetailQueryOptions(item.run.id),
     initialData: {
@@ -113,6 +237,16 @@ export function RunRow({ item, defaultExpanded = false }: RunRowProps) {
     data?.input_resources ?? item.input_resources ?? [];
   const terminal = isTerminalStatus(run.status);
   const color = STATUS_COLOR[run.status] ?? 'default';
+
+  // Duration shown in the header/detail panel. Terminal runs use the fixed
+  // started→completed span. Non-terminal runs count up live from `started_at`
+  // (via a 1s clock); before the client clock is ready, or before the job has
+  // started, we fall back to the static `0s`-style value so SSR stays stable.
+  const now = useNow(!terminal);
+  const liveDuration =
+    !terminal && now !== null && run.started_at
+      ? formatElapsed(run.started_at, now)
+      : formatDuration(run.started_at, run.completed_at);
 
   const rerunModal = useDisclosure();
   const terminateModal = useDisclosure();
@@ -156,9 +290,7 @@ export function RunRow({ item, defaultExpanded = false }: RunRowProps) {
             <span aria-hidden="true" className="text-default-500">
               •
             </span>
-            <span className="tabular-nums shrink-0">
-              {formatDuration(run.started_at, run.completed_at)}
-            </span>
+            <span className="tabular-nums shrink-0">{liveDuration}</span>
             <span aria-hidden="true" className="text-default-500">
               •
             </span>
@@ -230,9 +362,7 @@ export function RunRow({ item, defaultExpanded = false }: RunRowProps) {
               </DetailField>
               <DetailField label="Duration">
                 <span className="tabular-nums">
-                  {terminal
-                    ? formatDuration(run.started_at, run.completed_at)
-                    : '—'}
+                  {run.started_at ? liveDuration : '—'}
                 </span>
               </DetailField>
               <DetailField label="Model version">
@@ -287,6 +417,13 @@ export function RunRow({ item, defaultExpanded = false }: RunRowProps) {
               </div>
             )}
 
+            {run.entrypoint && (
+              <EntryPointDetail
+                entrypoint={run.entrypoint}
+                parameters={run.parameters ?? {}}
+              />
+            )}
+
             {terminal && (
               <div className="border-t border-default-200/75 pt-5">
                 <RunOutputFiles outputs={outputs} />
@@ -333,12 +470,17 @@ export function RunRow({ item, defaultExpanded = false }: RunRowProps) {
         </div>
       )}
 
-      <RunModelModal
-        model={item.model}
-        isOpen={rerunModal.isOpen}
-        onClose={rerunModal.onClose}
-        initialInputResourceIds={run.input_resource_ids}
-      />
+      {/* Mount only while open so each rerun re-seeds from this run's values. */}
+      {rerunModal.isOpen && (
+        <RunModelModal
+          model={item.model}
+          isOpen
+          onClose={rerunModal.onClose}
+          initialInputResourceIds={run.input_resource_ids}
+          initialEntrypointCommand={run.entrypoint?.command}
+          initialParameters={run.parameters}
+        />
+      )}
       <TerminateRunModal
         run={run}
         isOpen={terminateModal.isOpen}
