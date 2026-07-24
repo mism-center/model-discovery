@@ -374,6 +374,8 @@ def test_search_response_shape(api: httpx.Client) -> None:
         "execution_type",
         "execution_ref",
         "io_spec",
+        "entry_points",
+        "containers",
         # System
         "metadata",
         "created_at",
@@ -408,6 +410,8 @@ def test_search_response_new_fields_default_values(api: httpx.Client) -> None:
     assert item["external_ids"] == {}
     assert item["license"] == ""
     assert item["io_spec"] is None
+    assert item["entry_points"] == []
+    assert item["containers"] == []
     assert isinstance(item["metadata"], dict)
 
 
