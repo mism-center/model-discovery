@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   addToast,
   Button,
@@ -12,10 +12,9 @@ import {
   ModalHeader,
   Select,
   SelectItem,
-  Spinner,
 } from '@heroui/react';
 import { XMarkIcon } from '@heroicons/react/24/solid';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 
 import {
@@ -25,7 +24,6 @@ import {
   type ExecuteRunResponse,
   type SearchResultItem,
 } from '~/api';
-import { modelDetailQueryOptions } from '~/api/query/models';
 import { runKeys } from '~/api/query/runs';
 import { ApiErrorDisplay } from '~/components/common/api-error-display';
 
@@ -81,22 +79,7 @@ export function RunModelModal({
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const inputs = model.io_spec?.inputs ?? [];
-
-  // `SearchResultItem` doesn't carry `entry_points`, so fetch the full model
-  // to populate the entry-point selector. Only runs while the modal is open.
-  const {
-    data: modelDetail,
-    isLoading: isModelLoading,
-    isError: isModelError,
-  } = useQuery({
-    ...modelDetailQueryOptions(model.id),
-    enabled: isOpen,
-  });
-
-  const entryPoints = useMemo<EntryPointDTO[]>(
-    () => modelDetail?.entry_points ?? [],
-    [modelDetail]
-  );
+  const entryPoints: EntryPointDTO[] = model.entry_points ?? [];
 
   const [resourceIds, setResourceIds] = useState<string[]>(() =>
     inputs.map((_, i) => initialInputResourceIds?.[i] ?? '')
@@ -135,17 +118,13 @@ export function RunModelModal({
     );
   };
 
-  // Seed selection + argument values once the model's entry points load. The
-  // modal is remounted on each open (callers render it only while open), so
-  // this initial seed is all the resetting needed — no teardown bookkeeping.
+  // Seed selection + argument values on mount.
   useEffect(() => {
     if (entryPoints.length === 0) return;
     const index = Math.max(rerunIndex, 0);
     setEntrypointIndex(index);
     setArgValues(seedArgValues(index));
-    // Seed exactly once per set of loaded entry points; user edits after that
-    // must survive re-renders.
-  }, [entryPoints]);
+  }, []);
 
   const mutation = useMutation<ExecuteRunResponse, Error, ExecuteRunRequest>({
     mutationFn: (body) => executeModelRun(model.id, body),
@@ -236,25 +215,11 @@ export function RunModelModal({
     (slot, i) => slot.required && !resourceIds[i]?.trim()
   );
 
-  // Entry-point section. The full model (with entry points) loads
-  // asynchronously; show a spinner while it does, then the selector and any
-  // argument inputs for the chosen entry point. Built as a variable to keep
-  // the render free of nested ternaries.
+  // Entry-point section: the selector and any argument inputs for the chosen
+  // entry point. Built as a variable to keep the render free of nested
+  // ternaries.
   let entryPointSection: React.ReactNode = null;
-  if (isModelLoading) {
-    entryPointSection = (
-      <div className="flex items-center gap-2 pt-2 text-sm text-default-500">
-        <Spinner size="sm" />
-        <span>Loading entry points…</span>
-      </div>
-    );
-  } else if (isModelError) {
-    entryPointSection = (
-      <p className="pt-2 text-sm text-danger">
-        Couldn&apos;t load this model&apos;s entry points.
-      </p>
-    );
-  } else if (entryPoints.length > 0) {
+  if (entryPoints.length > 0) {
     entryPointSection = (
       <>
         <Divider className="my-1" />
