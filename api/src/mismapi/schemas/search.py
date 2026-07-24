@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field
 
 from mismapi.schemas.registry import (
     AuthorDTO,
+    ContainerDTO,
+    EntryPointDTO,
     IOSpecDTO,
     PublicationDTO,
 )
@@ -42,6 +44,8 @@ class ModelListItem(BaseModel):
     # Execution
     execution_ref: str = ""
     io_spec: IOSpecDTO | None = None
+    entry_points: list[EntryPointDTO] = Field(default_factory=list)
+    containers: list[ContainerDTO] = Field(default_factory=list)
     # Registration workflow
     registration_status: str = ""
     # System

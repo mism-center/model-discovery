@@ -66,7 +66,6 @@ def test_execute_run_batch_success() -> None:
         "/api/v1/models/model-1/runs",
         json={
             "input_resource_ids": ["ds-1"],
-            "parameters": {"condition": "both"},
             "notes": "test run",
         },
     )
@@ -81,6 +80,32 @@ def test_execute_run_batch_success() -> None:
 
     service.create_run.assert_called_once()
     exec_client.launch_batch.assert_awaited_once_with("run-1")
+
+
+def test_execute_run_forwards_entrypoint_and_arguments() -> None:
+    """entrypoint_index + arguments in the body reach service.create_run,
+    where they are validated against the model's declared entry point."""
+    run = _make_run()
+    service = MagicMock(spec=RegistryService)
+    service.create_run.return_value = run
+
+    exec_client = AsyncMock(spec=ExecutionClient)
+    exec_client.launch_batch.return_value = {"run_id": run.id, "status": "registered"}
+
+    client = _make_app(service, exec_client)
+    response = client.post(
+        "/api/v1/models/model-1/runs",
+        json={
+            "input_resource_ids": ["ds-1"],
+            "entrypoint_index": 2,
+            "arguments": {"experiment": "7b"},
+        },
+    )
+
+    assert response.status_code == 201
+    _, kwargs = service.create_run.call_args
+    assert kwargs["entrypoint_index"] == 2
+    assert kwargs["arguments"] == {"experiment": "7b"}
 
 
 def test_execute_run_batch_default_mode() -> None:
