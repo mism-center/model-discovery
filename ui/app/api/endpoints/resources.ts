@@ -26,8 +26,17 @@ export async function listResourceFiles(
  * Used as an `href` on plain anchor tags so the browser handles the download
  * natively (no in-memory blob, native progress UI). Omit `file` to download
  * the whole resource directory as a zip.
+ *
+ * Pass `{ inline: true }` (single file only) to request the preview variant:
+ * the backend serves it with a content type guessed from the extension and an
+ * `inline` disposition, so the browser renders it (e.g. as an `<img src>`)
+ * instead of forcing a download.
  */
-export function resourceDownloadUrl(resourceId: string, file?: string): string {
+export function resourceDownloadUrl(
+  resourceId: string,
+  file?: string,
+  options: { inline?: boolean } = {}
+): string {
   // browserApiBaseUrl() is '' for same-origin (shared ingress); fall back to
   // the current origin so `new URL()` has an absolute base to resolve against.
   const base = browserApiBaseUrl() || globalThis.location?.origin;
@@ -36,5 +45,34 @@ export function resourceDownloadUrl(resourceId: string, file?: string): string {
     base
   );
   if (file) url.searchParams.set('file', file);
+  // `inline` only applies to a single file; the zip is always an attachment.
+  if (file && options.inline) url.searchParams.set('disposition', 'inline');
   return url.toString();
+}
+
+/**
+ * Largest text file we will fetch for an in-app preview. Bigger files show a
+ * "download instead" message rather than being pulled into memory.
+ */
+export const TEXT_PREVIEW_MAX_BYTES = 1_500_000;
+
+/**
+ * Fetch the raw text content of a single file for previewing. Uses the inline
+ * download URL (real content type) but reads the body as text. Cookies are
+ * sent for same-origin/credentialed auth, matching the API client.
+ */
+export async function fetchResourceFileText(
+  resourceId: string,
+  file: string,
+  options: { signal?: AbortSignal } = {}
+): Promise<string> {
+  const url = resourceDownloadUrl(resourceId, file, { inline: true });
+  const res = await fetch(url, {
+    credentials: 'include',
+    signal: options.signal,
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to load file (${res.status.toString()})`);
+  }
+  return res.text();
 }
