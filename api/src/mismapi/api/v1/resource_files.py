@@ -13,6 +13,7 @@ shapes responses.
 
 import io
 import logging
+import mimetypes
 import zipfile
 from collections.abc import Buffer, Iterator
 from datetime import UTC, datetime
@@ -169,11 +170,32 @@ async def download_resource(
             "Omit to download the entire directory as a zip archive."
         ),
     ),
+    disposition: str = Query(
+        default="attachment",
+        pattern="^(attachment|inline)$",
+        description=(
+            "How a single file is served. 'attachment' (default) forces a "
+            "download; 'inline' serves it with a content type guessed from the "
+            "extension so the browser can render it (used for in-app previews). "
+            "Ignored for the zip archive."
+        ),
+    ),
 ) -> StreamingResponse | FileResponse:
     """Download artifacts for a resource — single file or whole directory zip."""
     if file is not None:
         resource, file_path = service.resolve_resource_file(resource_id, file)
-        logger.info("Serving file %s for resource %s", file, resource.id)
+        logger.info("Serving file %s for resource %s (%s)", file, resource.id, disposition)
+        if disposition == "inline":
+            # Guess the type from the extension so browsers render images/text
+            # inline. `content_disposition_type="inline"` keeps the filename
+            # (for "save as") without forcing a download.
+            media_type, _ = mimetypes.guess_type(file_path.name)
+            return FileResponse(
+                path=str(file_path),
+                filename=file_path.name,
+                media_type=media_type or "application/octet-stream",
+                content_disposition_type="inline",
+            )
         return FileResponse(
             path=str(file_path),
             filename=file_path.name,
