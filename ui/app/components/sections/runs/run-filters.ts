@@ -137,7 +137,19 @@ export function modelBuckets(
   }
   // Sorting a fresh array (spread copy), so in-place sort mutates nothing shared.
   // eslint-disable-next-line unicorn/no-array-sort
-  return [...byId.values()].sort(
+  const result = [...byId.values()].sort(
     (a, b) => b.count - a.count || a.name.localeCompare(b.name)
   );
+
+  // TODO(TEMP): remove — dummy buckets to exercise the "Show all" / scrollbox
+  // affordance on the Model facet when no real user has >8 models.
+  for (let i = 1; i <= 10; i++) {
+    result.push({
+      id: `__dummy-${i}`,
+      name: `Dummy ModelModel Mod ${i}`,
+      count: i,
+    });
+  }
+
+  return result;
 }
