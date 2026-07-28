@@ -141,15 +141,5 @@ export function modelBuckets(
     (a, b) => b.count - a.count || a.name.localeCompare(b.name)
   );
 
-  // TODO(TEMP): remove — dummy buckets to exercise the "Show all" / scrollbox
-  // affordance on the Model facet when no real user has >8 models.
-  for (let i = 1; i <= 10; i++) {
-    result.push({
-      id: `__dummy-${i}`,
-      name: `Dummy ModelModel Mod ${i}`,
-      count: i,
-    });
-  }
-
   return result;
 }
