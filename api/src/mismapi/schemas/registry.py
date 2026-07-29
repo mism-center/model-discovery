@@ -565,6 +565,11 @@ class MetadataPackageRawResponse(BaseModel):
 
     model_id: str
     files: list[MetadataPackageFile] = Field(default_factory=list)
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Non-blocking issues found while parsing the metadata-package "
+        "(missing/empty required fields); approval still succeeded.",
+    )
 
 
 class MetadataPackageUpdateRequest(BaseModel):

@@ -13,7 +13,12 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from mism_registry.enums import ExecutionType, ResourceType, ResourceVersionStatus
+from mism_registry.enums import (
+    ExecutionType,
+    ResourceRegistrationStatus,
+    ResourceType,
+    ResourceVersionStatus,
+)
 from mism_registry.in_memory import InMemoryRegistry
 from mism_registry.resource import Resource
 
@@ -76,7 +81,7 @@ def test_write_roundtrips_and_persists(tmp_path: Path, monkeypatch: pytest.Monke
     pkg = _make_package(tmp_path)
     service = _make_service(tmp_path, monkeypatch)
 
-    out = service.write_metadata_package_raw(
+    out, warnings = service.write_metadata_package_raw(
         _principal(), model_id="m-1", files=[("metadata.yaml", _META_NEW)]
     )
 
@@ -86,6 +91,7 @@ def test_write_roundtrips_and_persists(tmp_path: Path, monkeypatch: pytest.Monke
     assert dict(out)["execution.yaml"] == _EXEC
     # DB was synced with the parsed name
     assert service._registry.get_resource("m-1").name == "New Model"
+    assert warnings == []
 
 
 def test_write_rejects_unknown_filename_without_writing(
@@ -165,23 +171,70 @@ def test_metadata_package_found_after_version_sync(
     assert dict(out)["metadata.yaml"] == _META
 
 
-def test_write_invalid_structure_raises_400_after_write(
+def test_write_with_unparseable_metadata_still_approves_with_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Valid YAML syntax but missing required 'model.name.value' structure → 400.
+    """Valid YAML syntax but missing required 'model.name.value' structure.
 
-    The file IS written (syntax is valid) but the DB sync fails because
-    build_resource_from_package cannot extract the required fields.
+    The metadata-package is annotator-generated and can't be edited/fixed by
+    the user before approving, so a field-mapping failure must not block
+    approval: the file is written, the model is still approved, previously
+    stored fields are preserved, and the issue comes back as a warning
+    instead of raising.
     """
     pkg = _make_package(tmp_path)
     service = _make_service(tmp_path, monkeypatch)
     bad_meta = "model:\n  name: not-a-dict\n"
 
-    with pytest.raises(APIError) as exc:
-        service.write_metadata_package_raw(
-            _principal(), model_id="m-1", files=[("metadata.yaml", bad_meta)]
-        )
+    out, warnings = service.write_metadata_package_raw(
+        _principal(), model_id="m-1", files=[("metadata.yaml", bad_meta)]
+    )
 
-    assert exc.value.status_code == 400
-    # File was written (YAML syntax was valid)
+    # File was written (YAML syntax was valid).
     assert (pkg / "metadata.yaml").read_text(encoding="utf-8") == bad_meta
+    assert dict(out)["metadata.yaml"] == bad_meta
+
+    stored = service._registry.get_resource("m-1")
+    # Approval still went through despite the unparseable name structure.
+    assert stored.registration_status == ResourceRegistrationStatus.APPROVED
+    # Previously stored name preserved (parsed fields were not applied).
+    assert stored.name == "Example Model"
+    # The issue is surfaced as a non-blocking warning naming the failure.
+    assert any("could not be fully parsed" in w for w in warnings)
+
+
+def test_write_skips_publication_with_null_title_and_warns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reproduces the originally reported crash: a publication entry with a
+    null title (annotator couldn't confidently extract one). This must not
+    block approval or raise — the incomplete publication is skipped, every
+    other field is still applied, and a warning names the exact file+field.
+    """
+    _make_package(tmp_path)
+    service = _make_service(tmp_path, monkeypatch)
+    meta_with_null_title = (
+        "model:\n"
+        "  name:\n"
+        "    value: New Model\n"
+        "  publications:\n"
+        "    - title: null\n"
+        "      doi: null\n"
+        "      pmid: null\n"
+        "      url: null\n"
+    )
+
+    out, warnings = service.write_metadata_package_raw(
+        _principal(), model_id="m-1", files=[("metadata.yaml", meta_with_null_title)]
+    )
+
+    assert dict(out)["metadata.yaml"] == meta_with_null_title
+    stored = service._registry.get_resource("m-1")
+    # Approved and other fields applied — the null-title entry didn't block anything.
+    assert stored.registration_status == ResourceRegistrationStatus.APPROVED
+    assert stored.name == "New Model"
+    # The incomplete publication is skipped, not stored with a fabricated title.
+    assert stored.publications == []
+    assert warnings == [
+        "metadata.yaml: 'model.publications[0].title' is missing or empty; entry skipped"
+    ]
