@@ -192,12 +192,19 @@ async function fetchModelStatus(modelId: string): Promise<string | null> {
 async function fetchAnnotationPackage(modelId: string): Promise<{
   files: { filename: string; content: string }[];
   registryId: string;
-} | null> {
+}> {
   const res = await fetch(
     `${apiOrigin()}/api/v1/models/${encodeURIComponent(modelId)}/metadata-package/raw`,
     { credentials: 'include' }
   );
-  if (!res.ok) return null;
+  if (!res.ok) {
+    throw new Error(
+      await readApiErrorDetail(
+        res,
+        'Loading the annotation metadata package failed'
+      )
+    );
+  }
   const data = (await res.json()) as {
     files?: { filename: string; content: string }[];
   };
@@ -208,12 +215,19 @@ type ResourceFileItem = components['schemas']['ResourceFileItem'];
 
 async function fetchAnnotationOutputFiles(
   resourceId: string
-): Promise<ResourceFileItem[] | null> {
+): Promise<ResourceFileItem[]> {
   const res = await fetch(
     `${apiOrigin()}/api/v1/resources/${encodeURIComponent(resourceId)}/files`,
     { credentials: 'include' }
   );
-  if (!res.ok) return null;
+  if (!res.ok) {
+    throw new Error(
+      await readApiErrorDetail(
+        res,
+        'Loading the annotation output files failed'
+      )
+    );
+  }
   const data =
     (await res.json()) as components['schemas']['ResourceFilesResponse'];
   return (data.files ?? []).filter(
@@ -426,6 +440,7 @@ export default function TusTest() {
   const [outputFiles, setOutputFiles] = useState<ResourceFileItem[] | null>(
     null
   );
+  const [metadataLoadError, setMetadataLoadError] = useState('');
 
   useEffect(() => {
     const instance = createUppy(() => modelNameRef.current);
@@ -502,6 +517,33 @@ export default function TusTest() {
     };
   }, []);
 
+  // Loads the review form's raw metadata YAML + output file list for a model
+  // whose annotation has reached a reviewable state. Extracted so both the
+  // monitoring poll and the debug jump-to-complete path share the same
+  // error handling: on failure (e.g. a transient 404 while the annotation
+  // job's files are still propagating to this pod's mount) the error is
+  // surfaced via metadataLoadError instead of being silently swallowed.
+  async function loadAnnotationReviewData(modelId: string) {
+    try {
+      const [metaResult, files] = await Promise.all([
+        fetchAnnotationPackage(modelId),
+        fetchAnnotationOutputFiles(modelId),
+      ]);
+      setRawFiles(metaResult.files);
+      setMetadataRegistryId(metaResult.registryId);
+      setMetadataSaveState('idle');
+      setOutputFiles(files);
+      setMetadataLoadError('');
+    } catch (error: unknown) {
+      setRawFiles([]);
+      setOutputFiles(null);
+      const detail = error instanceof Error ? error.message : String(error);
+      setMetadataLoadError(
+        `Could not load the annotation review form: ${detail}`
+      );
+    }
+  }
+
   useEffect(() => {
     if (workflowStep !== 'monitoring' || !registeredModelId) return;
 
@@ -519,15 +561,8 @@ export default function TusTest() {
             );
             setWorkflowStep('error');
           } else {
-            const [metaResult, files] = await Promise.all([
-              fetchAnnotationPackage(registeredModelId),
-              fetchAnnotationOutputFiles(registeredModelId),
-            ]);
-            setRawFiles(metaResult?.files ?? []);
-            setMetadataRegistryId(metaResult?.registryId ?? '');
-            setMetadataSaveState('idle');
-            setOutputFiles(files);
             setWorkflowStep('complete');
+            await loadAnnotationReviewData(registeredModelId);
           }
         }
       })();
@@ -546,16 +581,11 @@ export default function TusTest() {
     setMetadataSaveState('idle');
     setMetadataSaveError('');
     setOutputFiles(null);
+    setMetadataLoadError('');
     setFailedStep('idle');
     setRegisteredModelId(resourceId);
     setWorkflowStep('complete');
-    const [metaResult, files] = await Promise.all([
-      fetchAnnotationPackage(resourceId),
-      fetchAnnotationOutputFiles(resourceId),
-    ]);
-    setRawFiles(metaResult?.files ?? []);
-    setMetadataRegistryId(metaResult?.registryId ?? '');
-    setOutputFiles(files);
+    await loadAnnotationReviewData(resourceId);
   }
 
   async function handleGitHubImport() {
@@ -845,6 +875,23 @@ export default function TusTest() {
                         {metadataSaveError}
                       </span>
                     )}
+                  </div>
+                )}
+                {rawFiles.length === 0 && metadataLoadError && (
+                  <div className="mt-2 flex flex-col items-start gap-2 rounded-md border border-warning-300 bg-warning-50 p-3">
+                    <span className="text-xs text-warning-800">
+                      {metadataLoadError}
+                    </span>
+                    <Button
+                      size="sm"
+                      color="warning"
+                      variant="flat"
+                      onPress={() =>
+                        void loadAnnotationReviewData(registeredModelId)
+                      }
+                    >
+                      Retry
+                    </Button>
                   </div>
                 )}
                 <div className="mt-3">
