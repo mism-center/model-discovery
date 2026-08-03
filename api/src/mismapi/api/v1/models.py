@@ -321,10 +321,11 @@ async def update_model_metadata_package_raw(
 ) -> MetadataPackageRawResponse:
     """Write edited raw YAML back to the metadata-package and return the result.
 
-    Always succeeds (given ownership + a syntactically valid file) even if
-    the metadata-package content has missing/unparseable fields — see
-    ``RegistryService.write_metadata_package_raw``. Any such issues are
-    returned in ``warnings``, not raised.
+    Missing/empty fields on individual entries (an author with no name,
+    etc.) are tolerated and reported in ``warnings``, not raised — see
+    ``RegistryService.write_metadata_package_raw``. If the package fails to
+    parse at all (the top-level ``model``/``execution`` structure itself is
+    broken), this raises a 400 and does not approve the model.
     """
     files, warnings = service.write_metadata_package_raw(
         principal,

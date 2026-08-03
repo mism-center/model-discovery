@@ -171,36 +171,35 @@ def test_metadata_package_found_after_version_sync(
     assert dict(out)["metadata.yaml"] == _META
 
 
-def test_write_with_unparseable_metadata_still_approves_with_warning(
+def test_write_raises_when_metadata_cannot_be_parsed_and_does_not_approve(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Valid YAML syntax but missing required 'model.name.value' structure.
 
-    The metadata-package is annotator-generated and can't be edited/fixed by
-    the user before approving, so a field-mapping failure must not block
-    approval: the file is written, the model is still approved, previously
-    stored fields are preserved, and the issue comes back as a warning
-    instead of raising.
+    A structural parse failure means the package can't be trusted, so
+    clicking approve must not silently succeed: the raw YAML text is still
+    written to disk (it was already validated as syntactically-valid YAML
+    before parsing was attempted, so the user's edits aren't lost), but the
+    request raises a 400 and the model is not approved / DB is untouched.
     """
     pkg = _make_package(tmp_path)
     service = _make_service(tmp_path, monkeypatch)
     bad_meta = "model:\n  name: not-a-dict\n"
 
-    out, warnings = service.write_metadata_package_raw(
-        _principal(), model_id="m-1", files=[("metadata.yaml", bad_meta)]
-    )
+    with pytest.raises(APIError) as exc:
+        service.write_metadata_package_raw(
+            _principal(), model_id="m-1", files=[("metadata.yaml", bad_meta)]
+        )
 
-    # File was written (YAML syntax was valid).
+    assert exc.value.status_code == 400
+
+    # File was still written (YAML syntax was valid) so the user's edit isn't lost.
     assert (pkg / "metadata.yaml").read_text(encoding="utf-8") == bad_meta
-    assert dict(out)["metadata.yaml"] == bad_meta
 
     stored = service._registry.get_resource("m-1")
-    # Approval still went through despite the unparseable name structure.
-    assert stored.registration_status == ResourceRegistrationStatus.APPROVED
-    # Previously stored name preserved (parsed fields were not applied).
+    # Approval did NOT go through — status and fields are untouched.
+    assert stored.registration_status == ResourceRegistrationStatus.DRAFT
     assert stored.name == "Example Model"
-    # The issue is surfaced as a non-blocking warning naming the failure.
-    assert any("could not be fully parsed" in w for w in warnings)
 
 
 def test_write_skips_publication_with_null_title_and_warns(
