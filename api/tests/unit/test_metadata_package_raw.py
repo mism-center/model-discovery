@@ -36,9 +36,21 @@ def _principal(subject: str = "user-1") -> AuthenticatedPrincipal:
     return AuthenticatedPrincipal(subject=subject, issuer="test", audience="mism-api", scopes=set())
 
 
-def _make_service(mount: Path, monkeypatch: pytest.MonkeyPatch) -> RegistryService:
+def _make_service(
+    mount: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    retry_max_attempts: int = 3,
+    retry_backoff_seconds: float = 0.0,
+) -> RegistryService:
     monkeypatch.setattr(
-        reg_svc, "get_settings", lambda: SimpleNamespace(irods_mount_path=str(mount))
+        reg_svc,
+        "get_settings",
+        lambda: SimpleNamespace(
+            irods_mount_path=str(mount),
+            metadata_package_retry_max_attempts=retry_max_attempts,
+            metadata_package_retry_backoff_seconds=retry_backoff_seconds,
+        ),
     )
     registry = InMemoryRegistry()
     registry.register_resource(
@@ -171,7 +183,54 @@ def test_metadata_package_found_after_version_sync(
     assert dict(out)["metadata.yaml"] == _META
 
 
-def test_write_raises_when_metadata_cannot_be_parsed_and_does_not_approve(
+def test_metadata_package_dir_retries_until_files_appear(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression for the intermittent-404 race: the annotation job pod and this
+    API pod mount the same iRODS PVC from different pods, so a just-written
+    metadata-package can briefly be invisible through this pod's mount.
+    _metadata_package_dir should retry rather than 404 on the first miss.
+
+    The model's own directory (created at upload time) already exists; only
+    the nested metadata-package/ (written later by the annotation job) is
+    initially missing — mirroring the real race.
+    """
+    (tmp_path / "m-1" / "0.1.0").mkdir(parents=True)
+    service = _make_service(tmp_path, monkeypatch, retry_max_attempts=3, retry_backoff_seconds=0.0)
+
+    sleep_calls: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+        if len(sleep_calls) == 1:
+            _make_package(tmp_path)  # simulate the files becoming visible after the first wait
+
+    monkeypatch.setattr(reg_svc.time, "sleep", fake_sleep)
+
+    out = service.read_metadata_package_raw("m-1")
+
+    assert dict(out)["metadata.yaml"] == _META
+    assert len(sleep_calls) == 1
+
+
+def test_metadata_package_dir_404_after_retries_exhausted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the package never shows up within the retry budget, still 404 — the
+    retry only smooths over transient propagation lag, not a genuinely
+    missing package.
+    """
+    (tmp_path / "m-1" / "0.1.0").mkdir(parents=True)
+    service = _make_service(tmp_path, monkeypatch, retry_max_attempts=3, retry_backoff_seconds=0.0)
+
+    with pytest.raises(APIError) as exc:
+        service.read_metadata_package_raw("m-1")
+
+    assert exc.value.status_code == 404
+    assert exc.value.code == "metadata_package_not_found"
+
+
+def test_write_invalid_structure_raises_400_after_write(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Valid YAML syntax but missing required 'model.name.value' structure.

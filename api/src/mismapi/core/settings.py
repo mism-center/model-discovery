@@ -57,6 +57,18 @@ class Settings(BaseSettings):
     # "irods:///<rel>" or "/irods/<rel>" resolve to "{irods_mount_path}/<rel>".
     irods_mount_path: str = Field(default="/irods", alias="IRODS_MOUNT_PATH")
 
+    # The annotation job pod and this API pod mount the same iRODS PVC from
+    # different pods; there's a brief window after the job is reported
+    # "succeeded" where the written metadata-package files aren't yet visible
+    # through this pod's mount. Bounded retry absorbs that propagation lag
+    # before surfacing a 404 — see RegistryService._metadata_package_dir.
+    metadata_package_retry_max_attempts: int = Field(
+        default=3, alias="METADATA_PACKAGE_RETRY_MAX_ATTEMPTS"
+    )
+    metadata_package_retry_backoff_seconds: float = Field(
+        default=0.5, alias="METADATA_PACKAGE_RETRY_BACKOFF_SECONDS"
+    )
+
     # Upload service
     upload_service_url: BaseUrl = Field(default="http://localhost:8200", alias="UPLOAD_SERVICE_URL")
     upload_timeout_seconds: float = Field(default=60.0, alias="UPLOAD_TIMEOUT_SECONDS")

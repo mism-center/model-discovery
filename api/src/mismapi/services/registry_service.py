@@ -1,6 +1,7 @@
 import dataclasses
 import logging
 import shutil
+import time
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -369,6 +370,13 @@ class RegistryService:
         directly) continues to work.
         Raises 404 if the model, the package dir, or either required YAML file
         is missing; 400 for unsupported schemes / path traversal.
+
+        The annotation job pod and this API pod mount the same iRODS PVC from
+        different pods, so there's a brief window right after the annotation
+        job is marked "succeeded" where the just-written package/files aren't
+        yet visible through this pod's mount. Retry the existence check a
+        bounded number of times before giving up, to absorb that propagation
+        lag (settings.metadata_package_retry_max_attempts / _backoff_seconds).
         """
         try:
             model = self._registry.get_resource(model_id)
@@ -379,20 +387,40 @@ class RegistryService:
         # resolve_location_uri enforces the traversal check and that the dir exists.
         model_dir = resolve_location_uri(model.location_uri, mount)
         pkg_dir = model_dir / "metadata-package"
-        if not pkg_dir.is_dir():
+
+        settings = get_settings()
+        max_attempts = settings.metadata_package_retry_max_attempts
+        backoff_seconds = settings.metadata_package_retry_backoff_seconds
+        missing: list[str] = []
+        for attempt in range(1, max_attempts + 1):
+            if not pkg_dir.is_dir():
+                missing = ["metadata-package/"]
+            else:
+                missing = [
+                    f for f in (METADATA_FILE, EXECUTION_FILE) if not (pkg_dir / f).is_file()
+                ]
+            if not missing:
+                return pkg_dir
+            if attempt < max_attempts:
+                logger.warning(
+                    "metadata_package_not_ready model_id=%s attempt=%s missing=%s",
+                    model_id,
+                    attempt,
+                    missing,
+                )
+                time.sleep(backoff_seconds * attempt)
+
+        if missing == ["metadata-package/"]:
             raise APIError(
                 status_code=404,
                 code="metadata_package_not_found",
                 detail=f"No metadata-package directory found for model {model_id}.",
             )
-        missing = [f for f in (METADATA_FILE, EXECUTION_FILE) if not (pkg_dir / f).is_file()]
-        if missing:
-            raise APIError(
-                status_code=404,
-                code="metadata_package_not_found",
-                detail=f"metadata-package for model {model_id} is missing {', '.join(missing)}.",
-            )
-        return pkg_dir
+        raise APIError(
+            status_code=404,
+            code="metadata_package_not_found",
+            detail=f"metadata-package for model {model_id} is missing {', '.join(missing)}.",
+        )
 
     def parse_metadata_package(self, model_id: str) -> tuple[Resource, list[str]]:
         """Parse the metadata-package for a model into a (transient) Resource.
