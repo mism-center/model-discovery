@@ -281,18 +281,25 @@ async def get_model_metadata_package(
 
     Looks for ``<model_id>/<version>/metadata-package/`` on the storage mount and
     maps its ``metadata.yaml`` + ``execution.yaml`` onto a Resource (values only,
-    not persisted). 404 if the package is absent, 400 if it can't be parsed.
+    not persisted). 404 if the package is absent, 400 if it can't be parsed at
+    all; individual missing/empty fields are tolerated and reported in
+    ``warnings`` instead.
     """
-    resource = service.parse_metadata_package(model_id)
+    resource, warnings = service.parse_metadata_package(model_id)
     # asdict gives full nested detail (io, dependencies, ...); FastAPI's encoder
     # turns the enums into their string values and datetimes into ISO strings.
-    return dataclasses.asdict(resource)
+    data = dataclasses.asdict(resource)
+    data["warnings"] = warnings
+    return data
 
 
-def _raw_response(model_id: str, files: list[tuple[str, str]]) -> MetadataPackageRawResponse:
+def _raw_response(
+    model_id: str, files: list[tuple[str, str]], warnings: list[str]
+) -> MetadataPackageRawResponse:
     return MetadataPackageRawResponse(
         model_id=model_id,
         files=[MetadataPackageFile(filename=name, content=content) for name, content in files],
+        warnings=warnings,
     )
 
 
@@ -302,7 +309,7 @@ async def get_model_metadata_package_raw(
     service: RegistryServiceDep,
 ) -> MetadataPackageRawResponse:
     """Return the model's raw metadata-package YAML files as review sections."""
-    return _raw_response(model_id, service.read_metadata_package_raw(model_id))
+    return _raw_response(model_id, service.read_metadata_package_raw(model_id), [])
 
 
 @router.put("/models/{model_id}/metadata-package/raw", response_model=MetadataPackageRawResponse)
@@ -312,13 +319,20 @@ async def update_model_metadata_package_raw(
     service: RegistryServiceDep,
     principal: AuthenticatedPrincipalDep,
 ) -> MetadataPackageRawResponse:
-    """Write edited raw YAML back to the metadata-package and return the result."""
-    files = service.write_metadata_package_raw(
+    """Write edited raw YAML back to the metadata-package and return the result.
+
+    Missing/empty fields on individual entries (an author with no name,
+    etc.) are tolerated and reported in ``warnings``, not raised — see
+    ``RegistryService.write_metadata_package_raw``. If the package fails to
+    parse at all (the top-level ``model``/``execution`` structure itself is
+    broken), this raises a 400 and does not approve the model.
+    """
+    files, warnings = service.write_metadata_package_raw(
         principal,
         model_id=model_id,
         files=[(f.filename, f.content) for f in payload.files],
     )
-    return _raw_response(model_id, files)
+    return _raw_response(model_id, files, warnings)
 
 
 @router.post(

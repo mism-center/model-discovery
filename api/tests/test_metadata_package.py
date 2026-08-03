@@ -22,7 +22,7 @@ _EXAMPLE_PKG = Path(__file__).resolve().parents[3] / "vivarium-chemotaxis" / "me
     reason="example metadata-package not checked out",
 )
 def test_build_resource_from_example_package() -> None:
-    r = build_resource_from_package(_EXAMPLE_PKG)
+    r, _warnings = build_resource_from_package(_EXAMPLE_PKG)
 
     # Section A: identity + biology unwrapped to plain values.
     assert r.name == "Vivarium-chemotaxis"

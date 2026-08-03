@@ -13,7 +13,12 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from mism_registry.enums import ExecutionType, ResourceType, ResourceVersionStatus
+from mism_registry.enums import (
+    ExecutionType,
+    ResourceRegistrationStatus,
+    ResourceType,
+    ResourceVersionStatus,
+)
 from mism_registry.in_memory import InMemoryRegistry
 from mism_registry.resource import Resource
 
@@ -88,7 +93,7 @@ def test_write_roundtrips_and_persists(tmp_path: Path, monkeypatch: pytest.Monke
     pkg = _make_package(tmp_path)
     service = _make_service(tmp_path, monkeypatch)
 
-    out = service.write_metadata_package_raw(
+    out, warnings = service.write_metadata_package_raw(
         _principal(), model_id="m-1", files=[("metadata.yaml", _META_NEW)]
     )
 
@@ -98,6 +103,7 @@ def test_write_roundtrips_and_persists(tmp_path: Path, monkeypatch: pytest.Monke
     assert dict(out)["execution.yaml"] == _EXEC
     # DB was synced with the parsed name
     assert service._registry.get_resource("m-1").name == "New Model"
+    assert warnings == []
 
 
 def test_write_rejects_unknown_filename_without_writing(
@@ -227,10 +233,13 @@ def test_metadata_package_dir_404_after_retries_exhausted(
 def test_write_invalid_structure_raises_400_after_write(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Valid YAML syntax but missing required 'model.name.value' structure → 400.
+    """Valid YAML syntax but missing required 'model.name.value' structure.
 
-    The file IS written (syntax is valid) but the DB sync fails because
-    build_resource_from_package cannot extract the required fields.
+    A structural parse failure means the package can't be trusted, so
+    clicking approve must not silently succeed: the raw YAML text is still
+    written to disk (it was already validated as syntactically-valid YAML
+    before parsing was attempted, so the user's edits aren't lost), but the
+    request raises a 400 and the model is not approved / DB is untouched.
     """
     pkg = _make_package(tmp_path)
     service = _make_service(tmp_path, monkeypatch)
@@ -242,5 +251,48 @@ def test_write_invalid_structure_raises_400_after_write(
         )
 
     assert exc.value.status_code == 400
-    # File was written (YAML syntax was valid)
+
+    # File was still written (YAML syntax was valid) so the user's edit isn't lost.
     assert (pkg / "metadata.yaml").read_text(encoding="utf-8") == bad_meta
+
+    stored = service._registry.get_resource("m-1")
+    # Approval did NOT go through — status and fields are untouched.
+    assert stored.registration_status == ResourceRegistrationStatus.DRAFT
+    assert stored.name == "Example Model"
+
+
+def test_write_skips_publication_with_null_title_and_warns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reproduces the originally reported crash: a publication entry with a
+    null title (annotator couldn't confidently extract one). This must not
+    block approval or raise — the incomplete publication is skipped, every
+    other field is still applied, and a warning names the exact file+field.
+    """
+    _make_package(tmp_path)
+    service = _make_service(tmp_path, monkeypatch)
+    meta_with_null_title = (
+        "model:\n"
+        "  name:\n"
+        "    value: New Model\n"
+        "  publications:\n"
+        "    - title: null\n"
+        "      doi: null\n"
+        "      pmid: null\n"
+        "      url: null\n"
+    )
+
+    out, warnings = service.write_metadata_package_raw(
+        _principal(), model_id="m-1", files=[("metadata.yaml", meta_with_null_title)]
+    )
+
+    assert dict(out)["metadata.yaml"] == meta_with_null_title
+    stored = service._registry.get_resource("m-1")
+    # Approved and other fields applied — the null-title entry didn't block anything.
+    assert stored.registration_status == ResourceRegistrationStatus.APPROVED
+    assert stored.name == "New Model"
+    # The incomplete publication is skipped, not stored with a fabricated title.
+    assert stored.publications == []
+    assert warnings == [
+        "metadata.yaml: 'model.publications[0].title' is missing or empty; entry skipped"
+    ]

@@ -57,6 +57,11 @@ def _s(x: Any) -> str:
     return "" if x is None else str(x)
 
 
+def _is_missing(value: Any) -> bool:
+    """True if a required field's value is null or a blank/whitespace string."""
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
 def _terms(items: Any) -> list[str]:
     """Ontology-mapped list ``[{value, iri, ...}]`` -> ``[value]`` (IRIs dropped)."""
     return [it["value"] for it in items or []]
@@ -68,48 +73,80 @@ def _load(path: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def build_resource_from_package(pkg_dir: Path) -> Resource:
+def build_resource_from_package(pkg_dir: Path) -> tuple[Resource, list[str]]:
     """Map a metadata-package directory onto a ``Resource``.
 
-    Reads ``metadata.yaml`` + ``execution.yaml`` from ``pkg_dir``. Raises
-    ``FileNotFoundError`` if either file is missing, ``yaml.YAMLError`` on
-    malformed YAML, and ``KeyError`` if a required key (e.g. ``model.name``) is
-    absent — callers translate these into HTTP errors.
+    Reads ``metadata.yaml`` + ``execution.yaml`` from ``pkg_dir``. The
+    annotator that produces these files may leave required identifying
+    fields (e.g. an author's ``name``, a publication's ``title``) null or
+    empty; such entries are skipped rather than raised on, since the
+    downstream ``mism_registry`` dataclasses reject empty required strings.
+    Returns ``(resource, warnings)`` where ``warnings`` names the exact file
+    and field path of every skipped entry, so callers can surface them as
+    non-blocking, actionable messages instead of failing the request.
+
+    Still raises ``FileNotFoundError`` if either file is missing,
+    ``yaml.YAMLError`` on malformed YAML, and ``KeyError``/``TypeError`` if
+    the file's basic top-level structure (e.g. ``model``/``execution``) is
+    absent or malformed — callers translate these into HTTP errors.
     """
     meta = _load(pkg_dir / METADATA_FILE)
     execu = _load(pkg_dir / EXECUTION_FILE)
     m = meta["model"]
     ext = m.get("external_identifier", {}) or {}
+    warnings: list[str] = []
 
     # -- Section A: model -------------------------------------------------
     bio = m.get("biology", {}) or {}
-    authors = [
-        Author(
-            name=a["name"],
-            affiliation=_s(a.get("affiliation")),
-            orcid=_s(a.get("orcid")),
-            role=_s(a.get("role")),
+    authors: list[Author] = []
+    for i, a in enumerate(m.get("authors", []) or []):
+        name = a.get("name")
+        if _is_missing(name):
+            warnings.append(
+                f"{METADATA_FILE}: 'model.authors[{i}].name' is missing or empty; entry skipped"
+            )
+            continue
+        authors.append(
+            Author(
+                name=str(name),
+                affiliation=_s(a.get("affiliation")),
+                orcid=_s(a.get("orcid")),
+                role=_s(a.get("role")),
+            )
         )
-        for a in m.get("authors", []) or []
-    ]
-    contacts = [
-        Contact(
-            name=c["name"],
-            role=_s(c.get("role")),
-            email=_s(c.get("email")),
-            affiliation=_s(c.get("affiliation")),
+    contacts: list[Contact] = []
+    for i, c in enumerate(m.get("contacts", []) or []):
+        name = c.get("name")
+        if _is_missing(name):
+            warnings.append(
+                f"{METADATA_FILE}: 'model.contacts[{i}].name' is missing or empty; entry skipped"
+            )
+            continue
+        contacts.append(
+            Contact(
+                name=str(name),
+                role=_s(c.get("role")),
+                email=_s(c.get("email")),
+                affiliation=_s(c.get("affiliation")),
+            )
         )
-        for c in m.get("contacts", []) or []
-    ]
-    publications = [
-        Publication(
-            title=p["title"],
-            doi=_s(p.get("doi")),
-            pmid=_s(p.get("pmid")),
-            url=_s(p.get("url")),
+    publications: list[Publication] = []
+    for i, p in enumerate(m.get("publications", []) or []):
+        title = p.get("title")
+        if _is_missing(title):
+            warnings.append(
+                f"{METADATA_FILE}: 'model.publications[{i}].title' is missing or empty; "
+                "entry skipped"
+            )
+            continue
+        publications.append(
+            Publication(
+                title=str(title),
+                doi=_s(p.get("doi")),
+                pmid=_s(p.get("pmid")),
+                url=_s(p.get("url")),
+            )
         )
-        for p in m.get("publications", []) or []
-    ]
     related = [
         RelatedResource(
             qualifier=r["qualifier"],
@@ -125,10 +162,17 @@ def build_resource_from_package(pkg_dir: Path) -> Resource:
 
     deps: list[Dependency] = []
     for kind, lst in (execu["execution"].get("dependencies", {}) or {}).items():
-        for d in lst or []:
+        for i, d in enumerate(lst or []):
+            name = d.get("name")
+            if _is_missing(name):
+                warnings.append(
+                    f"{EXECUTION_FILE}: 'execution.dependencies.{kind}[{i}].name' is missing "
+                    "or empty; entry skipped"
+                )
+                continue
             deps.append(
                 Dependency(
-                    name=d["name"],
+                    name=str(name),
                     version_constraint=_s(d.get("version_constraint")),
                     kind=kind,
                     group=_s(d.get("group")),
@@ -139,27 +183,35 @@ def build_resource_from_package(pkg_dir: Path) -> Resource:
         for c in execu["execution"].get("containers", []) or []
     ]
     compute = _build_compute(execu["execution"].get("compute"))
-    entry_points = [
-        EntryPoint(
-            command=e["command"],
-            purpose=_s(e.get("purpose")),
-            arguments=tuple(
-                Argument(
-                    name=a["name"],
-                    description=_s(a.get("description")),
-                    default=a.get("default"),
-                    # New in entry-point-schema: these drive run-argument
-                    # validation (enums/position) and to_cli rendering.
-                    enums=tuple(a["enums"]) if a.get("enums") is not None else None,
-                    data_type=a.get("data_type") or "",
-                    position=a.get("position", 0),
-                    user_can_override=a.get("user_can_override"),
-                )
-                for a in e.get("arguments", []) or []
-            ),
+    entry_points: list[EntryPoint] = []
+    for i, e in enumerate(execu["execution"].get("entry_points", []) or []):
+        command = e.get("command")
+        if _is_missing(command):
+            warnings.append(
+                f"{EXECUTION_FILE}: 'execution.entry_points[{i}].command' is missing or "
+                "empty; entry skipped"
+            )
+            continue
+        entry_points.append(
+            EntryPoint(
+                command=str(command),
+                purpose=_s(e.get("purpose")),
+                arguments=tuple(
+                    Argument(
+                        name=a["name"],
+                        description=_s(a.get("description")),
+                        default=a.get("default"),
+                        # New in entry-point-schema: these drive run-argument
+                        # validation (enums/position) and to_cli rendering.
+                        enums=tuple(a["enums"]) if a.get("enums") is not None else None,
+                        data_type=a.get("data_type") or "",
+                        position=a.get("position", 0),
+                        user_can_override=a.get("user_can_override"),
+                    )
+                    for a in e.get("arguments", []) or []
+                ),
+            )
         )
-        for e in execu["execution"].get("entry_points", []) or []
-    ]
     tests_d = execu["execution"].get("tests")
     tests = (
         TestSpec(framework=_s(tests_d.get("framework")), invocation=_s(tests_d.get("invocation")))
@@ -170,7 +222,7 @@ def build_resource_from_package(pkg_dir: Path) -> Resource:
     # -- Section C: io ----------------------------------------------------
     io = _build_io(execu.get("io"))
 
-    return Resource(
+    resource = Resource(
         name=m["name"]["value"],
         resource_type=ResourceType.MODEL,
         location_uri=ext.get("value", ""),
@@ -210,6 +262,7 @@ def build_resource_from_package(pkg_dir: Path) -> Resource:
         tests=tests,
         io=io,
     )
+    return resource, warnings
 
 
 def _to_execution_type(kind: Any) -> ExecutionType | None:

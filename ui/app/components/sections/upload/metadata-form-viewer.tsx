@@ -57,6 +57,23 @@ const VIEWABLE_FORCE_EDITABLE_TYPES = new Set([
   'list-dep',
 ]);
 
+// Extracts the quoted field path from a backend warning string, e.g.
+// "metadata.yaml: 'model.publications[0].title' is missing or empty; entry
+// skipped" -> "model.publications[0].title". Returns null for warnings with
+// no quoted field path (e.g. the generic whole-package parse-failure notice).
+function extractWarningFieldPath(warning: string): string | null {
+  const match = /'([^']+)'/.exec(warning);
+  return match ? match[1] : null;
+}
+
+// Maps a warning's field path onto the section fieldKey it belongs to, e.g.
+// "model.publications[0].title" -> "model.publications", so it can be
+// matched against a FieldSection's fieldKeys.
+function warningSectionKey(warning: string): string | null {
+  const path = extractWarningFieldPath(warning);
+  return path ? path.split('[')[0] : null;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function MetadataFormViewer({
@@ -120,21 +137,25 @@ export function MetadataFormViewer({
   const [saveState, setSaveState] = useState<
     'idle' | 'saving' | 'saved' | 'error'
   >('idle');
+  const [saveWarnings, setSaveWarnings] = useState<string[]>([]);
 
   function handleFieldChange(key: string, value: string) {
     setFormValues((prev) => ({ ...prev, [key]: value }));
     setIsDirty(true);
     setSaveState('idle');
+    setSaveWarnings([]);
   }
 
   function handleExecFieldChange(key: string, value: string) {
     setExecFormValues((prev) => ({ ...prev, [key]: value }));
     setIsExecDirty(true);
     setSaveState('idle');
+    setSaveWarnings([]);
   }
 
   async function handleApprove() {
     setSaveState('saving');
+    setSaveWarnings([]);
 
     const updatedMeta = applyFormValuesToMetadata(parsedMeta, formValues);
     const newMetaContent = metaContent
@@ -171,7 +192,9 @@ export function MetadataFormViewer({
         onSaveError(detail || `Save failed (${res.status.toString()})`);
         return;
       }
+      const payload = (await res.json()) as { warnings?: string[] };
       setSaveState('saved');
+      setSaveWarnings(payload.warnings ?? []);
       setIsDirty(false);
       setIsExecDirty(false);
       setSavedMetaContent(newMetaContent);
@@ -279,6 +302,7 @@ export function MetadataFormViewer({
                   setSectionEditing((prev) => ({ ...prev, [title]: v }))
                 }
                 noEdit={'noEdit' in rest && rest.noEdit === true}
+                warnings={saveWarnings}
               />
             ))}
           </div>
@@ -390,6 +414,7 @@ export function MetadataFormViewer({
                 noEdit={noEdit}
                 template={EXECUTION_TEMPLATE}
                 getItems={(key) => resolveExecutionListItems(key, parsedExec)}
+                warnings={saveWarnings}
               />
             ))}
           </div>
@@ -461,23 +486,40 @@ export function MetadataFormViewer({
       </Tabs>
 
       {/* Approve action bar */}
-      <div className="flex items-center gap-2 pt-2 border-t border-default-200">
-        <Button
-          size="sm"
-          color="success"
-          variant="flat"
-          className="text-foreground"
-          isLoading={saveState === 'saving'}
-          isDisabled={saveState === 'saving'}
-          onPress={() => void handleApprove()}
-        >
-          Approve
-        </Button>
-        {(isDirty || isExecDirty) && saveState === 'idle' && (
-          <span className="text-xs text-default-800">Unsaved changes</span>
-        )}
-        {saveState === 'saved' && (
-          <span className="text-xs text-success-800">Saved</span>
+      <div className="flex flex-col gap-2 pt-2 border-t border-default-200">
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            color="success"
+            variant="flat"
+            className="text-foreground"
+            isLoading={saveState === 'saving'}
+            isDisabled={saveState === 'saving'}
+            onPress={() => void handleApprove()}
+          >
+            Approve
+          </Button>
+          {(isDirty || isExecDirty) && saveState === 'idle' && (
+            <span className="text-xs text-default-800">Unsaved changes</span>
+          )}
+          {saveState === 'saved' && (
+            <span className="text-xs text-success-800">Saved</span>
+          )}
+        </div>
+        {saveState === 'saved' && saveWarnings.length > 0 && (
+          <div className="rounded border border-warning-200 bg-warning-50 p-2 text-xs text-warning-800">
+            <p className="font-semibold mb-1">
+              Approved, but {saveWarnings.length} field
+              {saveWarnings.length > 1 ? 's' : ''} could not be fully parsed:
+            </p>
+            <ul className="list-disc list-inside space-y-0.5">
+              {saveWarnings.map((w) => (
+                <li key={w} className="font-mono">
+                  {w}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
     </div>
@@ -499,6 +541,8 @@ type FieldSectionProps = {
   template?: AnnotationTemplate;
   /** Override for list-item resolution; falls back to resolveListItems(key, parsedMeta). */
   getItems?: (key: string) => unknown[] | undefined;
+  /** Approve-time warnings for fields that could not be fully parsed. */
+  warnings?: string[];
 };
 
 function FieldSection({
@@ -512,6 +556,7 @@ function FieldSection({
   noEdit = false,
   template,
   getItems,
+  warnings = [],
 }: FieldSectionProps) {
   const tmpl = template ?? ANNOTATION_TEMPLATE;
   const [isCollapsed, setIsCollapsed] = useState(true);
@@ -541,6 +586,15 @@ function FieldSection({
     return false;
   }, [visibleKeys, formValues]);
 
+  const sectionWarnings = useMemo(
+    () =>
+      warnings.filter((w) => {
+        const key = warningSectionKey(w);
+        return key !== null && visibleKeys.includes(key);
+      }),
+    [warnings, visibleKeys]
+  );
+
   // Only show the Edit checkbox when at least one field would actually change
   // rendering when forceEditable is toggled (viewable fields with editable inputTypes).
   const canEdit = visibleKeys.some((key) => {
@@ -554,7 +608,7 @@ function FieldSection({
   return (
     <Card shadow="none" className="border border-default-200">
       <CardHeader
-        className="py-3 px-4 cursor-pointer select-none"
+        className="flex flex-col items-stretch gap-2 py-3 px-4 cursor-pointer select-none"
         onClick={() => setIsCollapsed((v) => !v)}
       >
         <div className="flex items-center gap-2">
@@ -579,7 +633,32 @@ function FieldSection({
               Needs attention
             </Chip>
           )}
+          {sectionWarnings.length > 0 && (
+            <Chip size="sm" color="danger" variant="flat">
+              {sectionWarnings.length} skipped
+            </Chip>
+          )}
         </div>
+        {sectionWarnings.length > 0 && (
+          <div
+            className="rounded border border-danger-200 bg-danger-50 p-2 text-xs text-danger-800"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="font-semibold mb-1">
+              {sectionWarnings.length} field
+              {sectionWarnings.length > 1 ? 's' : ''} in this section could not
+              be fully parsed and {sectionWarnings.length > 1 ? 'were' : 'was'}{' '}
+              skipped:
+            </p>
+            <ul className="list-disc list-inside space-y-0.5">
+              {sectionWarnings.map((w) => (
+                <li key={w} className="font-mono">
+                  {w}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </CardHeader>
       {!isCollapsed && (
         <CardBody className="flex flex-col gap-4 pt-3">
