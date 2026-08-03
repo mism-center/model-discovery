@@ -41,6 +41,8 @@ export {
 export {
   listResourceFiles,
   resourceDownloadUrl,
+  fetchResourceFileText,
+  TEXT_PREVIEW_MAX_BYTES,
   type ResourceFileItem,
   type ResourceFilesResponse,
 } from './endpoints/resources';

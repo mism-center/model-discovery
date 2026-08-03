@@ -535,10 +535,13 @@ def test_get_metadata_package_raw_returns_sections() -> None:
 
 def test_update_metadata_package_raw_forwards_files() -> None:
     service = MagicMock(spec=RegistryService)
-    service.write_metadata_package_raw.return_value = [
-        ("metadata.yaml", "model:\n  name: edited\n"),
-        ("execution.yaml", "execution:\n  status: ok\n"),
-    ]
+    service.write_metadata_package_raw.return_value = (
+        [
+            ("metadata.yaml", "model:\n  name: edited\n"),
+            ("execution.yaml", "execution:\n  status: ok\n"),
+        ],
+        ["metadata.yaml: 'model.publications[0].title' is missing or empty; entry skipped"],
+    )
 
     client = _make_app_with_service(service)
     response = client.put(
@@ -547,7 +550,11 @@ def test_update_metadata_package_raw_forwards_files() -> None:
     )
 
     assert response.status_code == 200
-    assert response.json()["files"][0]["content"] == "model:\n  name: edited\n"
+    payload = response.json()
+    assert payload["files"][0]["content"] == "model:\n  name: edited\n"
+    assert payload["warnings"] == [
+        "metadata.yaml: 'model.publications[0].title' is missing or empty; entry skipped"
+    ]
     kwargs = service.write_metadata_package_raw.call_args.kwargs
     assert kwargs["model_id"] == "m-1"
     assert kwargs["files"] == [("metadata.yaml", "model:\n  name: edited\n")]
