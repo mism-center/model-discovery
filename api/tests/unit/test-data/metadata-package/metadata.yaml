@@ -1,0 +1,183 @@
+schema_version: "0.1"
+model:
+  name: {value: "Vivarium-chemotaxis", source: "README.md:1", confidence: high}
+  short_description: {value: "A library for the multi-scale model of chemotaxis described in the Agmon and Spangler paper.", source: "README.md:3", confidence: high}
+  long_description: {value: "A Vivarium model of E. coli chemotaxis combining metabolism, transport, transcription, translation, complexation, degradation, proton motive force, flagella activity, and chemoreceptor activity. The repository includes local CHE, FLG, and PMF processes and imports other processes from vivarium-cell.", source: "README.md:10-13", confidence: high}
+  version: {value: "0.0.2", source: "setup.py:12", confidence: high}
+  external_identifier:
+    scheme: url
+    value: "https://github.com/vivarium-collective/vivarium-chemotaxis"
+    source: "setup.py:16"
+  model_class:
+    - value: "multi-scale model"
+      iri: null
+      ontology_label: null
+      ontology: mamo
+      mapping_confidence: none
+      source: "README.md:3; README.md:10-13"
+      confidence: high
+    - value: "ordinary differential equation model"
+      iri: "http://identifiers.org/mamo/MAMO_0000046"
+      ontology_label: "ordinary differential equation model"
+      ontology: mamo
+      mapping_confidence: high
+      source: "chemotaxis/composites/transport_metabolism.py:134; chemotaxis/experiments/paper_experiments.py:320"
+      confidence: high
+    - value: "stochastic model"
+      iri: null
+      ontology_label: null
+      ontology: mamo
+      mapping_confidence: none
+      source: "chemotaxis/processes/flagella_motor.py:255-274; chemotaxis/processes/chemoreceptor_cluster.py:156-160"
+      confidence: high
+  formalism:
+    - value: ODE
+      iri: "http://identifiers.org/mamo/MAMO_0000046"
+      ontology_label: "ordinary differential equation model"
+      ontology: mamo
+      mapping_confidence: medium
+      source: "chemotaxis/composites/transport_metabolism.py:134; chemotaxis/experiments/paper_experiments.py:320"
+      confidence: high
+    - value: stochastic
+      iri: null
+      ontology_label: null
+      ontology: mamo
+      mapping_confidence: none
+      source: "chemotaxis/processes/flagella_motor.py:255-274"
+      confidence: high
+  determinism: stochastic
+  time_dynamics: discrete
+  spatial: compartmental
+  multiscale: true
+  model_scales:
+    - {value: molecular, source: "chemotaxis/composites/chemotaxis_master.py:177-188", confidence: high}
+    - {value: cellular, source: "README.md:10-13", confidence: high}
+    - {value: population, source: "chemotaxis/experiments/paper_experiments.py:378-430", confidence: high}
+  biology:
+    species:
+      - value: "Escherichia coli"
+        iri: "http://purl.obolibrary.org/obo/NCBITaxon_562"
+        ontology_label: "Escherichia coli"
+        ontology: ncbitaxon
+        mapping_confidence: high
+        source: "README.md:3"
+        confidence: high
+    infectious_agent: []
+    health_condition: []
+    topic_category: []
+    biological_processes:
+      - value: chemotaxis
+        iri: "http://purl.obolibrary.org/obo/GO_0006935"
+        ontology_label: chemotaxis
+        ontology: go
+        mapping_confidence: high
+        source: "README.md:3; chemotaxis/processes/chemoreceptor_cluster.py:45-58"
+        confidence: high
+      - value: gene expression
+        iri: "http://purl.obolibrary.org/obo/GO_0010467"
+        ontology_label: gene expression
+        ontology: go
+        mapping_confidence: high
+        source: "README.md:10-13; chemotaxis/composites/flagella_expression.py:49-105"
+        confidence: high
+    molecular_entities: []
+    proteins_genes: []
+  authors:
+    - name: "Eran Agmon"
+      affiliation: null
+      orcid: null
+      role: author
+      source: "setup.py:13"
+    - name: "Ryan Spangler"
+      affiliation: null
+      orcid: null
+      role: author
+      source: "setup.py:13"
+  contacts:
+    - name: "Eran Agmon"
+      role: maintainer
+      email: "eagmon@stanford.edu"
+      affiliation: null
+      source: "setup.py:14"
+    - name: "Ryan Spangler"
+      role: maintainer
+      email: "ryan.spangler@gmail.com"
+      affiliation: null
+      source: "setup.py:14"
+  license:
+    spdx_id: MIT
+    source: "LICENSE:1"
+    confidence: high
+  publications:
+    - title: "A Multi-Scale Approach to Modeling E. coli Chemotaxis"
+      doi: null
+      pmid: null
+      url: "https://www.mdpi.com/1099-4300/22/10/1101"
+      source: "README.md:4-5"
+  related_resources:
+    - qualifier: bqmodel:isDerivedFrom
+      identifier: {scheme: url, value: "https://www.mdpi.com/1099-4300/22/10/1101"}
+      source: "README.md:4-5"
+    - qualifier: bqmodel:isDerivedFrom
+      identifier: {scheme: url, value: "https://github.com/vivarium-collective/vivarium-cell"}
+      source: "README.md:12-13"
+  funding: []
+provenance:
+  annotated_at: "2026-07-28T17:18:05Z"
+  annotated_by: "biomodel-annotator/0.1"
+  source_root: "/workspace"
+  files_inspected:
+    - README.md
+    - LICENSE
+    - setup.py
+    - requirements.txt
+    - pytest.ini
+    - chemotaxis/__init__.py
+    - chemotaxis/processes/chemoreceptor_cluster.py
+    - chemotaxis/processes/coarse_motor.py
+    - chemotaxis/processes/flagella_motor.py
+    - chemotaxis/processes/membrane_potential.py
+    - chemotaxis/composites/chemotaxis_master.py
+    - chemotaxis/composites/chemotaxis_minimal.py
+    - chemotaxis/composites/chemotaxis_flagella.py
+    - chemotaxis/composites/transport_metabolism.py
+    - chemotaxis/composites/flagella_expression.py
+    - chemotaxis/experiments/paper_experiments.py
+    - chemotaxis/experiments/control.py
+    - chemotaxis/reference_data/transport_metabolism.csv
+  ontology_lookups:
+    service: "EBI OLS via ols-ontology MCP"
+    embedding_models_available: ["rest-api-proxy (can_embed: false)"]
+    embedding_fallback_used: false
+  unmapped_fields:
+    - field_path: model.model_class[0]
+      attempted_queries: [{ontology: mamo, query: "multi-scale model", strategy: lexical, hits: 0, accepted: false, reason: "no hits"}]
+    - field_path: model.model_class[2]
+      attempted_queries: [{ontology: mamo, query: "stochastic model", strategy: lexical, hits: 1, accepted: false, reason: "top label was stochastic differential equation model, not an acceptable exact or close match"}]
+    - field_path: model.formalism[1]
+      attempted_queries: [{ontology: mamo, query: stochastic, strategy: lexical, hits: 1, accepted: false, reason: "top label was stochastic differential equation model, not an acceptable match"}]
+    - field_path: io.inputs.parameters[1].biological_meaning
+      attempted_queries: [{ontology: sbo, query: "flagellar count", strategy: lexical, hits: 0, accepted: false, reason: "no acceptable hit"}]
+    - field_path: io.inputs.parameters[2].unit
+      attempted_queries: [{ontology: uo, query: seconds, strategy: lexical, hits: 0, accepted: false, reason: "no acceptable exact unit hit"}]
+    - field_path: io.inputs.parameters[2].biological_meaning
+      attempted_queries: [{ontology: sio, query: "simulation timestep", strategy: lexical, hits: 0, accepted: false, reason: "no acceptable hit"}]
+    - field_path: io.inputs.parameters[3].unit
+      attempted_queries: [{ontology: uo, query: "per second", strategy: lexical, hits: 30, accepted: false, reason: "returned unrelated compound rate units; no exact per-second label"}]
+    - field_path: io.inputs.parameters[3].biological_meaning
+      attempted_queries: [{ontology: go, query: "methylation rate", strategy: lexical, hits: 0, accepted: false, reason: "no acceptable hit"}]
+    - field_path: io.inputs.parameters[4].unit
+      attempted_queries: [{ontology: uo, query: liter, strategy: lexical, hits: 0, accepted: false, reason: "no acceptable exact hit"}]
+    - field_path: io.inputs.parameters[4].biological_meaning
+      attempted_queries: [{ontology: sio, query: "environment volume", strategy: lexical, hits: 0, accepted: false, reason: "no acceptable hit"}]
+    - field_path: io.outputs[1].format
+      attempted_queries: [{ontology: edam, query: "plot image", strategy: lexical, hits: 0, accepted: false, reason: "no acceptable hit"}]
+  partial_annotation_scope:
+    in_scope: ["repository metadata, runnable modules, local process/composite definitions, canonical reference-data input"]
+    deferred:
+      - path: "vivarium-cell imported process implementations"
+        reason: "external dependency source was not present in this repository"
+      - path: "doc/AgmonSpangler2020_supplementary.pdf"
+        reason: "supplementary PDF was inventoried but not parsed"
+  human_review_required: true
+  notes: "First-pass annotation; imported vivarium-cell and Vivarium runtime behavior are not expanded."
