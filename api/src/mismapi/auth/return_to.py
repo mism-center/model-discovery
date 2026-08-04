@@ -28,6 +28,11 @@ DEFAULT_LANDING_PATH = "/"
 ROUTE_PATHS: dict[str, str] = {
     "search": "/search",
     "runs": "/runs",
+    "upload": "/upload",
+    # Carries the model under review as `?id=<uuid>`; the query rides along via
+    # `return_to_query` rather than being part of the path, so this stays a
+    # static key.
+    "annotation-review": "/annotation-review",
 }
 
 #: Route keys whose path needs one caller-supplied id. Values are `str.format`

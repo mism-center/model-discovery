@@ -8,8 +8,7 @@ import {
 } from '@tanstack/react-query';
 import { Button, Card, CardBody, Spinner } from '@heroui/react';
 
-import { prefetchUser } from '~/api/auth/user';
-import { serverApiClient } from '~/api/client/server-client';
+import { requireUser } from '~/api/auth/require-user';
 import { resourceDownloadUrl } from '~/api/endpoints/resources';
 import {
   modelAnnotationPackageQueryOptions,
@@ -17,7 +16,6 @@ import {
   modelKeys,
 } from '~/api/query/models';
 import { resourceFilesQueryOptions } from '~/api/query/resources';
-import { getQueryClient } from '~/api/query/query-client';
 import { MetadataFormViewer } from '~/components/sections/upload/metadata-form-viewer';
 import type { Route } from './+types/annotation-review';
 
@@ -31,23 +29,36 @@ export function meta() {
   ];
 }
 
+/**
+ * Auth-gated route, mirroring `runs.tsx`.
+ *
+ * Reviewing an annotation is a privileged action and every endpoint behind this
+ * page 401s for anonymous callers, so the gate belongs at the boundary:
+ * `requireUser` resolves the session server-side and redirects into the login
+ * flow before the route renders. Previously nothing gated it — the only entry
+ * point (the pending-review card) is hidden without a user, but navigating
+ * straight to `/annotation-review?id=…` rendered the page shell and left every
+ * query to fail into an error state. Hidden is not locked.
+ *
+ * `returnToKey` carries the `?id=` query through login via `return_to_query`, so
+ * the reviewer lands back on the model they were opening.
+ */
 export async function loader({ request }: Route.LoaderArgs) {
+  const { client, queryClient } = await requireUser(request, {
+    returnToKey: 'annotation-review',
+  });
+
   const url = new URL(request.url);
   const modelId = url.searchParams.get('id') ?? '';
-  const client = serverApiClient(request);
-  const queryClient = getQueryClient();
 
-  await Promise.all([
-    prefetchUser(queryClient, client),
-    ...(modelId
-      ? [
-          queryClient.prefetchQuery(modelDetailQueryOptions(modelId, client)),
-          queryClient.prefetchQuery(
-            modelAnnotationPackageQueryOptions(modelId, client)
-          ),
-        ]
-      : []),
-  ]);
+  if (modelId) {
+    await Promise.all([
+      queryClient.prefetchQuery(modelDetailQueryOptions(modelId, client)),
+      queryClient.prefetchQuery(
+        modelAnnotationPackageQueryOptions(modelId, client)
+      ),
+    ]);
+  }
 
   return { dehydratedState: dehydrate(queryClient), modelId };
 }

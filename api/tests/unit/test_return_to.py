@@ -12,6 +12,21 @@ def test_runs_key_maps_to_path() -> None:
     assert resolve_return_to("runs", None) == "/runs"
 
 
+def test_upload_key_maps_to_path() -> None:
+    # Auth-gated /upload route round-trips back after login.
+    assert resolve_return_to("upload", None) == "/upload"
+
+
+def test_annotation_review_key_carries_the_model_id_as_query() -> None:
+    # The reviewed model rides along as ?id=, not as a path segment, so the
+    # reviewer lands back on the model they were opening.
+    result = resolve_return_to("annotation-review", "id=6f1c8d02-3b7e-4a5f-9c21-0d4e8b7a6c3f")
+    parsed = urlparse(result)
+    assert parsed.path == "/annotation-review"
+    assert parsed.netloc == ""
+    assert parse_qs(parsed.query) == {"id": ["6f1c8d02-3b7e-4a5f-9c21-0d4e8b7a6c3f"]}
+
+
 def test_known_key_reattaches_query() -> None:
     result = resolve_return_to("search", "q=foo&filter=bar")
     parsed = urlparse(result)

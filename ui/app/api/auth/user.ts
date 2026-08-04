@@ -34,6 +34,8 @@ export async function fetchUser(
 const RETURN_TO_KEYS: Record<string, string> = {
   '/search': 'search',
   '/runs': 'runs',
+  '/upload': 'upload',
+  '/annotation-review': 'annotation-review',
 };
 
 /**
@@ -121,15 +123,58 @@ export function useUser(): {
 }
 
 /**
- * Prefetch the user query into the supplied query client. Used by the root
- * loader so SSR has user state available on first paint.
+ * In-flight user resolution, keyed by the HTTP request it belongs to.
+ *
+ * Every matched loader runs for a single navigation, and each builds its own
+ * QueryClient — `getQueryClient()` is deliberately fresh per call on the server
+ * so caches never leak between users. The cost was that root's loader and the
+ * route's loader each issued their own `/api/auth/me`, making two identical
+ * authenticated round-trips per navigation.
+ *
+ * A `Request` belongs to exactly one HTTP request, so a cached entry here can
+ * never be observed by another user — the dedupe is safe by construction rather
+ * than by discipline. And if React Router ever stopped handing every matched
+ * loader the same `Request` instance, this would quietly stop deduping instead of
+ * returning the wrong user.
+ *
+ * A `WeakMap` so entries are collectable as soon as the request is done; there is
+ * no eviction to get wrong.
+ */
+const userByRequest = new WeakMap<Request, Promise<CurrentUser | null>>();
+
+/**
+ * Resolve the current user once per request, sharing the result across every
+ * loader that asks. Server-side only — pass the loader's `request`.
+ */
+export function resolveUser(
+  request: Request,
+  client: ApiClientType
+): Promise<CurrentUser | null> {
+  const inFlight = userByRequest.get(request);
+  if (inFlight) return inFlight;
+
+  const pending = fetchUser(client);
+  userByRequest.set(request, pending);
+  return pending;
+}
+
+/**
+ * Prefetch the user query into the supplied query client, so SSR has user state
+ * on first paint.
+ *
+ * Only the root loader needs this. Root's `HydrationBoundary` wraps the whole
+ * route tree and hydrates synchronously during render, so `useUser()` is already
+ * populated before any route component renders — a route prefetching the user
+ * again only adds a second request and a redundant hydration of the same key.
+ * A loader that needs the *value* server-side should call `resolveUser`.
  */
 export async function prefetchUser(
   queryClient: QueryClient,
-  client: ApiClientType
+  client: ApiClientType,
+  request: Request
 ): Promise<void> {
   await queryClient.prefetchQuery({
     queryKey: userQueryKey,
-    queryFn: () => fetchUser(client),
+    queryFn: () => resolveUser(request, client),
   });
 }

@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { redirect } from 'react-router';
 
-import { fetchUser, userQueryKey, type CurrentUser } from '~/api/auth/user';
+import { resolveUser, userQueryKey, type CurrentUser } from '~/api/auth/user';
 import { serverApiClient } from '~/api/client/server-client';
 import { getQueryClient } from '~/api/query/query-client';
 
@@ -43,7 +43,9 @@ export async function requireUser(
   queryClient: QueryClient;
 }> {
   const client = serverApiClient(request);
-  const user = await fetchUser(client);
+  // `resolveUser`, not `fetchUser`: the root loader is resolving the same user
+  // for this request, and this shares that single round-trip.
+  const user = await resolveUser(request, client);
 
   if (!user) {
     throw redirect(buildLoginUrl(request, options.returnToKey));

@@ -13,9 +13,11 @@ import Tus from '@uppy/tus';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 
+import { requireUser } from '~/api/auth/require-user';
 import type { components } from '~/api/generated/schema';
 import { MetadataFormViewer } from '~/components/sections/upload/metadata-form-viewer';
 import { browserApiBaseUrl, resolveTusdPlaceholderUrl } from '~/utils/env';
+import type { Route } from './+types/upload';
 import '@uppy/core/css/style.min.css';
 import '@uppy/dashboard/css/style.min.css';
 
@@ -249,6 +251,21 @@ export function meta() {
       content: 'Upload a model file or import a GitHub repository into MISM.',
     },
   ];
+}
+
+/**
+ * Auth-gated route, mirroring `runs.tsx` and `annotation-review.tsx`.
+ *
+ * Uploading requires a session — the initiate-upload and GitHub-import endpoints
+ * both reject anonymous callers — so the gate belongs at the boundary rather than
+ * letting someone fill in the whole form and only discover that on submit.
+ *
+ * Nothing is prefetched: this page has no server-fetched queries, and the root
+ * loader already hydrates the user for `useUser()`.
+ */
+export async function loader({ request }: Route.LoaderArgs) {
+  await requireUser(request, { returnToKey: 'upload' });
+  return null;
 }
 
 type FileStatus = {
