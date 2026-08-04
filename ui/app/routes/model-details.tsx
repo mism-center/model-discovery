@@ -3,7 +3,7 @@ import { data } from 'react-router';
 import type { ShouldRevalidateFunctionArgs } from 'react-router';
 
 import { ApiError } from '~/api';
-import { prefetchUser } from '~/api/auth/user';
+import { prefetchUser, userQueryKey, type CurrentUser } from '~/api/auth/user';
 import { serverApiClient } from '~/api/client/server-client';
 import { getQueryClient } from '~/api/query/query-client';
 import { modelDetailQueryOptions } from '~/api/query/models';
@@ -33,19 +33,33 @@ export function meta({ data }: Route.MetaArgs) {
 }
 
 /**
- * Prefetch the model, its run history, and its file listing on the server so
- * the first paint has data. Mirrors search.tsx: swallow prefetch errors so a
- * transient backend hiccup renders the in-page error state (ApiErrorDisplay)
- * rather than 500'ing the route — the client `useQuery` re-runs and surfaces
- * the failure.
+ * Prefetch the model, its file listing, and — for signed-in visitors only — the
+ * caller's runs, so the first paint has data. Mirrors search.tsx: swallow
+ * prefetch errors so a transient backend hiccup renders the in-page error state
+ * (ApiErrorDisplay) rather than 500'ing the route — the client `useQuery` re-runs
+ * and surfaces the failure.
  *
  * The model name is fetched (best-effort) so `meta()` can render an SSR title;
  * `meta()` runs before the client query resolves, so it can't read the cache.
+ *
+ * This route is public, so it must not use `requireUser` — that redirects
+ * anonymous visitors, and only the run-history *section* is gated, not the page.
  */
 export async function loader({ params, request }: Route.LoaderArgs) {
   const modelId = params.id;
   const client = serverApiClient(request);
   const queryClient = getQueryClient();
+
+  // `GET /models/:id/runs` is scoped to the caller and 401s without a session,
+  // so prefetching it for an anonymous visitor is a guaranteed failure whose
+  // only effect is an error state. Chained off the user prefetch rather than
+  // awaited up front, so the model and file prefetches still run concurrently
+  // with the auth check.
+  const runsPrefetch = prefetchUser(queryClient, client).then(() => {
+    const user = queryClient.getQueryData<CurrentUser | null>(userQueryKey);
+    if (!user) return;
+    return queryClient.prefetchQuery(modelRunsQueryOptions(modelId, client));
+  });
 
   let modelName: string | undefined;
   await Promise.all([
@@ -57,9 +71,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
         )?.name;
       })
       .catch(() => {}),
-    queryClient.prefetchQuery(modelRunsQueryOptions(modelId, client)),
     queryClient.prefetchQuery(resourceFilesQueryOptions(modelId, client)),
-    prefetchUser(queryClient, client),
+    runsPrefetch,
   ]);
 
   // `prefetchQuery` never rejects — it swallows the failure and records it on the

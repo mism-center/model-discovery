@@ -10,7 +10,15 @@ import { SectionCard } from './primitives';
 import { SectionListSkeleton } from './skeleton';
 
 /**
- * This model's execution history.
+ * The caller's runs of this model.
+ *
+ * Scoped to the signed-in user, not to the model: `GET /models/:id/runs` filters
+ * on `triggered_by`, so this never shows anyone else's runs.
+ *
+ * Precondition: only render this for a signed-in user. The endpoint requires
+ * authentication and 401s when anonymous, which surfaced as "Couldn't load run
+ * history" — blaming the server for a missing login. `model-details.tsx` owns
+ * that gate for both this section and its nav entry, so the two cannot disagree.
  *
  * `RunRow` expects a `UserRunItem`, which carries the run's `model`; the
  * model-runs endpoint returns `model` once at the top level plus per-run items
@@ -30,7 +38,7 @@ export function RunHistorySection({ modelId }: { modelId: string }) {
   return (
     <SectionCard
       title="Run history"
-      description="Executions of this model and their outputs."
+      description="Runs you have launched for this model, and their outputs."
     >
       <RunHistoryBody
         items={items}
@@ -70,7 +78,7 @@ function RunHistoryBody({
       <EmptyState
         icon={PlayCircleIcon}
         title="No runs yet"
-        description="Launch this model to see its execution history here."
+        description="Launch this model to see your runs here."
       />
     );
   }

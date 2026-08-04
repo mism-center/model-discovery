@@ -2,6 +2,7 @@ import cn from 'classnames';
 import { useQuery } from '@tanstack/react-query';
 
 import { ApiError } from '~/api';
+import { useUser } from '~/api/auth/user';
 import type { ModelDetailResponse } from '~/api/endpoints/models';
 import { modelDetailQueryOptions } from '~/api/query/models';
 import { ApiErrorDisplay } from '~/components/common/api-error-display';
@@ -35,24 +36,32 @@ import { ModelDetailsSkeleton, SectionNavSkeleton } from './skeleton';
  * mathematics is about), so an operational section must not split them.
  * Provenance is reference material, so it trails.
  *
- * Fixed, not derived from which fields are populated: the nav must not change
- * shape per model, and a section that has nothing to show says so rather than
- * disappearing.
+ * Not derived from which fields are populated: the nav must not change shape per
+ * model, and a section with nothing to show says so rather than disappearing.
+ *
+ * `requiresUser` is the one exception, and it is a different axis. Run history is
+ * scoped to the caller by `GET /models/:id/runs`, so for an anonymous visitor it
+ * is not data that happens to be missing — it is data that cannot exist. Showing
+ * a sign-in prompt mid-page would be noise the header's "Sign in to run" already
+ * covers, and listing a nav anchor that leads to it would be a dead end. Varying
+ * by viewer does not reintroduce the problem the fixed list solves, which was
+ * the page changing shape from one model to the next.
  */
-const SECTION_TITLES = [
-  'Model characterization',
-  'Biology',
-  'Inputs & outputs',
-  'Execution',
-  'Files',
-  'Run history',
-  'Provenance',
+const SECTION_DEFS = [
+  { title: 'Model characterization' },
+  { title: 'Biology' },
+  { title: 'Inputs & outputs' },
+  { title: 'Execution' },
+  { title: 'Files' },
+  { title: 'Run history', requiresUser: true },
+  { title: 'Provenance' },
 ] as const;
 
-const SECTIONS: SectionLink[] = SECTION_TITLES.map((title) => ({
-  id: sectionId(title),
-  label: title,
-}));
+function sectionsFor(hasUser: boolean): SectionLink[] {
+  return SECTION_DEFS.filter(
+    (section) => !('requiresUser' in section) || hasUser
+  ).map(({ title }) => ({ id: sectionId(title), label: title }));
+}
 
 /**
  * Model details page.
@@ -68,6 +77,13 @@ export function ModelDetailsSection({ modelId }: { modelId: string }) {
     error,
     refetch,
   } = useQuery(modelDetailQueryOptions(modelId));
+
+  // One source of truth for the auth-gated section, so the nav and the body
+  // cannot disagree and leave an anchor pointing at nothing. `isLoading` counts
+  // as "no user" only until the session resolves — it is hydrated from the
+  // loader, so in practice it is known on first paint.
+  const { user } = useUser();
+  const sections = sectionsFor(Boolean(user));
 
   // The rail exists to navigate sections, so it has nothing to offer when the
   // model failed to load. Collapsing to one column beats leaving a 280px empty
@@ -87,9 +103,9 @@ export function ModelDetailsSection({ modelId }: { modelId: string }) {
         {showRail && (
           <div className="hidden lg:block lg:min-w-[280px]">
             {model ? (
-              <SectionNav sections={SECTIONS} />
+              <SectionNav sections={sections} />
             ) : (
-              <SectionNavSkeleton items={SECTIONS.length} />
+              <SectionNavSkeleton items={sections.length} />
             )}
           </div>
         )}
@@ -106,6 +122,7 @@ export function ModelDetailsSection({ modelId }: { modelId: string }) {
               isLoading={isLoading}
               error={error}
               refetch={refetch}
+              showRunHistory={Boolean(user)}
             />
           </div>
         </section>
@@ -121,12 +138,14 @@ function Body({
   isLoading,
   error,
   refetch,
+  showRunHistory,
 }: {
   modelId: string;
   model: ModelDetailResponse | undefined;
   isLoading: boolean;
   error: unknown;
   refetch: () => void;
+  showRunHistory: boolean;
 }) {
   if (error) {
     // A missing id is the most likely failure on this route, and it is not
@@ -153,7 +172,7 @@ function Body({
       <IOSpecSection model={model} />
       <ExecutionSection model={model} />
       <FilesSection modelId={modelId} />
-      <RunHistorySection modelId={modelId} />
+      {showRunHistory && <RunHistorySection modelId={modelId} />}
       <ProvenanceSection model={model} />
     </div>
   );
