@@ -325,17 +325,22 @@ export function Header() {
             />
           </DropdownMenu>
         </Dropdown>
-        <NavbarItem>
-          <NavLink to="/upload" className={navLinkClassnames}>
-            Upload
-          </NavLink>
-        </NavbarItem>
+        {/* `/upload` and `/runs` are both `requireUser`-gated, so the links are
+            hidden rather than left to bounce an anonymous visitor through login
+            to reach a page they were never offered a reason to want. */}
         {user && (
-          <NavbarItem>
-            <NavLink to="/runs" className={navLinkClassnames}>
-              My Runs
-            </NavLink>
-          </NavbarItem>
+          <>
+            <NavbarItem>
+              <NavLink to="/upload" className={navLinkClassnames}>
+                Upload
+              </NavLink>
+            </NavbarItem>
+            <NavbarItem>
+              <NavLink to="/runs" className={navLinkClassnames}>
+                My Runs
+              </NavLink>
+            </NavbarItem>
+          </>
         )}
         <NavbarItem>
           <NavLink to="/about" className={navLinkClassnames}>
