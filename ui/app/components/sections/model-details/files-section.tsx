@@ -1,10 +1,12 @@
-import { Spinner } from '@heroui/react';
+import { useState } from 'react';
+import { Spinner, useDisclosure } from '@heroui/react';
 import {
   ArchiveBoxArrowDownIcon,
   ArrowDownTrayIcon,
   CodeBracketIcon,
   DocumentIcon,
   DocumentTextIcon,
+  EyeIcon,
   FolderIcon,
   PhotoIcon,
   TableCellsIcon,
@@ -16,6 +18,10 @@ import { resourceDownloadUrl } from '~/api';
 import { resourceFilesQueryOptions } from '~/api/query/resources';
 import { ApiErrorDisplay } from '~/components/common/api-error-display';
 import { EmptyState } from '~/components/common/empty-state';
+import {
+  FilePreviewModal,
+  previewCategory,
+} from '~/components/sections/search/search-results/file-preview-modal';
 import { formatBytes } from '~/utils/format';
 import { SectionCard } from './primitives';
 
@@ -110,6 +116,14 @@ function FilesBody({
   error: unknown;
   refetch: () => void;
 }) {
+  const preview = useDisclosure();
+  const [previewFile, setPreviewFile] = useState<ResourceFileItem | null>(null);
+
+  const openPreview = (file: ResourceFileItem) => {
+    setPreviewFile(file);
+    preview.onOpen();
+  };
+
   if (error) {
     return (
       <ApiErrorDisplay
@@ -149,42 +163,80 @@ function FilesBody({
             </p>
           )}
           <ul className="flex flex-col divide-y divide-default-100">
-            {entries.map((file) => (
-              <li
-                key={file.path}
-                className="group flex items-center justify-between gap-4 py-2 px-2 -mx-2 rounded hover:bg-primary/4"
-              >
-                <div className="flex items-center gap-2 min-w-0 text-default-900">
+            {entries.map((file) => {
+              const category = file.is_dir ? null : previewCategory(file.path);
+              const label = (
+                <>
                   <FileTypeIcon file={file} />
-                  <span
-                    className="truncate text-sm group-hover:text-primary"
-                    title={file.path}
-                  >
+                  <span className="truncate text-sm" title={file.path}>
                     {basename(file.path)}
                   </span>
-                </div>
-                <div className="flex items-center gap-4 shrink-0">
-                  {!file.is_dir && (
-                    <span className="text-xs text-default-800 tabular-nums">
-                      {formatBytes(file.size_bytes)}
-                    </span>
-                  )}
-                  {!file.is_dir && (
-                    <a
-                      href={resourceDownloadUrl(modelId, file.path)}
-                      download
-                      aria-label={`Download ${file.path}`}
-                      className="text-default-800 group-hover:text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded"
-                    >
-                      <ArrowDownTrayIcon className="size-4" />
-                    </a>
-                  )}
-                </div>
-              </li>
-            ))}
+                </>
+              );
+
+              return (
+                <li key={file.path}>
+                  {/* A div, not one big anchor: a button cannot nest inside an
+                      anchor, and previewable rows need both affordances. */}
+                  <div className="group flex items-center justify-between gap-4 py-2 px-2 -mx-2 rounded hover:bg-primary/4">
+                    {category ? (
+                      <button
+                        type="button"
+                        onClick={() => openPreview(file)}
+                        aria-label={`Preview ${file.path}`}
+                        title={file.path}
+                        className="flex items-center gap-2 min-w-0 text-default-900 group-hover:text-primary rounded outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                      >
+                        {label}
+                      </button>
+                    ) : (
+                      <span className="flex items-center gap-2 min-w-0 text-default-900">
+                        {label}
+                      </span>
+                    )}
+                    <div className="flex items-center gap-4 shrink-0">
+                      {!file.is_dir && (
+                        <span className="text-xs text-default-800 tabular-nums">
+                          {formatBytes(file.size_bytes)}
+                        </span>
+                      )}
+                      {category && (
+                        <button
+                          type="button"
+                          onClick={() => openPreview(file)}
+                          aria-label={`Preview ${file.path}`}
+                          className="text-default-800 group-hover:text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded"
+                        >
+                          <EyeIcon aria-hidden="true" className="size-4" />
+                        </button>
+                      )}
+                      {!file.is_dir && (
+                        <a
+                          href={resourceDownloadUrl(modelId, file.path)}
+                          download
+                          aria-label={`Download ${file.path}`}
+                          className="text-default-800 group-hover:text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded"
+                        >
+                          <ArrowDownTrayIcon className="size-4" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       ))}
+
+      {preview.isOpen && previewFile && (
+        <FilePreviewModal
+          isOpen={preview.isOpen}
+          onClose={preview.onClose}
+          resourceId={modelId}
+          file={previewFile}
+        />
+      )}
     </div>
   );
 }
