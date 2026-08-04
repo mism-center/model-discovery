@@ -148,6 +148,12 @@ def build_resource_from_package(pkg_dir: Path) -> Resource:
                     name=a["name"],
                     description=_s(a.get("description")),
                     default=a.get("default"),
+                    # New in entry-point-schema: these drive run-argument
+                    # validation (enums/position) and to_cli rendering.
+                    enums=tuple(a["enums"]) if a.get("enums") is not None else None,
+                    data_type=a.get("data_type") or "",
+                    position=a.get("position", 0),
+                    user_can_override=a.get("user_can_override"),
                 )
                 for a in e.get("arguments", []) or []
             ),

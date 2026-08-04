@@ -1,5 +1,6 @@
 import dataclasses
 import logging
+import shutil
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -132,6 +133,29 @@ class RegistryService:
         except ResourceNotFoundError as exc:
             raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
 
+    def delete_model(
+        self,
+        principal: AuthenticatedPrincipal,
+        model_id: str,
+    ) -> None:
+        """Delete a model: remove the DB record and wipe its on-disk directory."""
+        resource = self.get_resource_and_assert_ownership(principal, resource_id=model_id)
+
+        mount = get_settings().irods_mount_path
+        try:
+            directory = resolve_location_uri(resource.location_uri, mount)
+            if directory.is_dir():
+                shutil.rmtree(directory)
+        except Exception:
+            logger.warning(
+                "Could not delete files for model %s at %s",
+                model_id,
+                resource.location_uri,
+            )
+
+        self._registry.delete_resource(model_id)
+        self._session.commit()
+
     def list_annotating_models(self) -> list[Resource]:
         """Return all MODEL resources currently in ANNOTATING state.
 
@@ -247,7 +271,8 @@ class RegistryService:
         *,
         model_id: str,
         input_resource_ids: list[str] | None = None,
-        parameters: dict[str, Any] | None = None,
+        entrypoint_index: int | None = None,
+        arguments: dict[str, Any] | None = None,
         triggered_by: str = "",
         notes: str = "",
     ) -> Run:
@@ -256,7 +281,8 @@ class RegistryService:
                 self._registry,
                 model_id=model_id,
                 input_resource_ids=input_resource_ids or [],
-                parameters=parameters or {},
+                entrypoint_index=entrypoint_index,
+                arguments=arguments or {},
                 triggered_by=triggered_by or principal.subject,
                 notes=notes,
             )
@@ -595,21 +621,8 @@ class RegistryService:
         triggered_by: str,
         status: RunStatus | None = None,
     ) -> list[Run]:
-        """All runs triggered by a user, across every model, optionally by status.
-
-        Prefers the DAL's `triggered_by` filter so the database does the work.
-        That parameter does not exist in the DAL revision `pyproject.toml`
-        currently pins, so there is a fallback that filters in Python — slower,
-        but never less selective. Both paths return only this user's runs.
-        Remove the fallback (and the `type: ignore`) when the pin moves.
-        """
-        try:
-            return self._registry.find_runs(  # type: ignore[call-arg]
-                status=status, triggered_by=triggered_by
-            )
-        except TypeError:
-            runs = self._registry.find_runs(status=status)
-            return [run for run in runs if run.triggered_by == triggered_by]
+        """All runs triggered by a user, across every model, optionally by status."""
+        return self._registry.find_runs(triggered_by=triggered_by, status=status)
 
     def find_user_run_details(
         self,
@@ -669,9 +682,10 @@ class RegistryService:
         tags: list[str] | None = None,
         organisms: list[str] | None = None,
         scales: list[str] | None = None,
+        registration_status: str | None = None,
     ) -> list[Resource]:
         # FUTURE: batch fga check for visibility filtering
-        return find_resources(
+        resources = find_resources(
             self._registry,
             resource_type=ResourceType.MODEL,
             name_contains=name_contains,
@@ -680,6 +694,9 @@ class RegistryService:
             organisms=organisms,
             scales=scales,
         )
+        if registration_status is not None:
+            resources = [r for r in resources if r.registration_status.value == registration_status]
+        return resources
 
     # ── Search ────────────────────────────────────────────────────────
 

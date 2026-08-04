@@ -130,7 +130,11 @@ export interface paths {
     /** Update Model */
     put: operations['update_model_api_v1_models__model_id__put'];
     post?: never;
-    delete?: never;
+    /**
+     * Delete Model
+     * @description Permanently delete a model and its on-disk annotation files.
+     */
+    delete: operations['delete_model_api_v1_models__model_id__delete'];
     options?: never;
     head?: never;
     patch?: never;
@@ -315,8 +319,14 @@ export interface paths {
      *
      *     Returns runs newest-first (by created_at), each hydrated with its model
      *     summary and input/output resources. Requires authentication (401 for
-     *     anonymous callers). No Execution-service refresh is performed here — the UI
-     *     refreshes active runs when a row is expanded.
+     *     anonymous callers).
+     *
+     *     Non-terminal runs are reconciled with the Execution service first (same lazy
+     *     refresh as ``GET /runs/{run_id}?refresh=true``) so a user's own history is
+     *     always current — a run that finished won't linger as "running" until its row
+     *     is opened. Terminal runs are skipped (their status can't change), and a
+     *     failed status poll for one run is logged and ignored rather than failing the
+     *     whole list.
      */
     get: operations['list_my_runs_api_v1_me_runs_get'];
     put?: never;
@@ -417,6 +427,9 @@ export interface paths {
     /**
      * List Resource Files
      * @description List every file in the resource's artifact directory.
+     *
+     *     A resource with no directory on the mount yet returns an empty list, not a
+     *     404 — see ``RegistryService.find_resource_directory``.
      */
     get: operations['list_resource_files_api_v1_resources__resource_id__files_get'];
     put?: never;
@@ -521,7 +534,10 @@ export interface components {
         [key: string]: unknown;
       };
     };
-    /** ArgumentDTO */
+    /**
+     * ArgumentDTO
+     * @description A documented argument to an entry-point command.
+     */
     ArgumentDTO: {
       /** Name */
       name: string;
@@ -539,8 +555,11 @@ export interface components {
        * @default
        */
       data_type: string;
-      /** Position */
-      position?: number | null;
+      /**
+       * Position
+       * @default 0
+       */
+      position: number;
       /** User Can Override */
       user_can_override?: boolean | null;
     };
@@ -707,6 +726,12 @@ export interface components {
       input_resource_ids?: string[];
       /** Parameters */
       parameters?: {
+        [key: string]: unknown;
+      };
+      /** Entrypoint Index */
+      entrypoint_index?: number | null;
+      /** Arguments */
+      arguments?: {
         [key: string]: unknown;
       };
       /**
@@ -972,6 +997,10 @@ export interface components {
        */
       execution_ref: string;
       io_spec?: components['schemas']['IOSpecDTO'] | null;
+      /** Entry Points */
+      entry_points?: components['schemas']['EntryPointDTO'][];
+      /** Containers */
+      containers?: components['schemas']['ContainerDTO'][];
       /** Format Tags */
       format_tags?: string[];
       /** Authors */
@@ -1086,11 +1115,7 @@ export interface components {
       execution_notes: string;
       /** Dependencies */
       dependencies?: components['schemas']['DependencyDTO'][];
-      /** Containers */
-      containers?: components['schemas']['ContainerDTO'][];
       compute?: components['schemas']['ComputeDTO'] | null;
-      /** Entry Points */
-      entry_points?: components['schemas']['EntryPointDTO'][];
       tests?: components['schemas']['TestSpecDTO'] | null;
       io?: components['schemas']['IODetailDTO'] | null;
       /** Contacts */
@@ -1175,6 +1200,15 @@ export interface components {
        */
       execution_ref: string;
       io_spec?: components['schemas']['IOSpecDTO'] | null;
+      /** Entry Points */
+      entry_points?: components['schemas']['EntryPointDTO'][];
+      /** Containers */
+      containers?: components['schemas']['ContainerDTO'][];
+      /**
+       * Registration Status
+       * @default
+       */
+      registration_status: string;
       /** Metadata */
       metadata?: {
         [key: string]: unknown;
@@ -1557,6 +1591,10 @@ export interface components {
        */
       execution_ref: string;
       io_spec?: components['schemas']['IOSpecDTO'] | null;
+      /** Entry Points */
+      entry_points?: components['schemas']['EntryPointDTO'][];
+      /** Containers */
+      containers?: components['schemas']['ContainerDTO'][];
       /** Format Tags */
       format_tags?: string[];
       /** Authors */
@@ -1754,6 +1792,10 @@ export interface components {
        */
       execution_ref: string;
       io_spec?: components['schemas']['IOSpecDTO'] | null;
+      /** Entry Points */
+      entry_points?: components['schemas']['EntryPointDTO'][];
+      /** Containers */
+      containers?: components['schemas']['ContainerDTO'][];
       /** Metadata */
       metadata?: {
         [key: string]: unknown;
@@ -1793,6 +1835,8 @@ export interface components {
       parameters?: {
         [key: string]: unknown;
       };
+      entrypoint?: components['schemas']['EntryPointDTO'] | null;
+      container?: components['schemas']['ContainerDTO'] | null;
       /** Started At */
       started_at?: string | null;
       /** Completed At */
@@ -1934,6 +1978,10 @@ export interface components {
        */
       execution_ref: string;
       io_spec?: components['schemas']['IOSpecDTO'] | null;
+      /** Entry Points */
+      entry_points?: components['schemas']['EntryPointDTO'][];
+      /** Containers */
+      containers?: components['schemas']['ContainerDTO'][];
       /** Format Tags */
       format_tags?: string[];
       /** Authors */
@@ -2209,6 +2257,7 @@ export interface operations {
       query?: {
         return_to_key?: string;
         return_to_query?: string;
+        return_to_id?: string;
       };
       header?: never;
       path?: never;
@@ -2330,6 +2379,8 @@ export interface operations {
         organisms?: string[] | null;
         /** @description Model scales (any must match) */
         scales?: string[] | null;
+        /** @description Exact match on registration status */
+        registration_status?: string | null;
         limit?: number;
         offset?: number;
       };
@@ -2455,6 +2506,44 @@ export interface operations {
         content: {
           'application/json': components['schemas']['RegisterModelResponse'];
         };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  delete_model_api_v1_models__model_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        model_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Authentication is required and was missing or invalid. */
       401: {
@@ -3125,6 +3214,8 @@ export interface operations {
       query?: {
         /** @description Relative path to a single file inside the resource directory. Omit to download the entire directory as a zip archive. */
         file?: string | null;
+        /** @description How a single file is served. 'attachment' (default) forces a download; 'inline' serves it with a content type guessed from the extension so the browser can render it (used for in-app previews). Ignored for the zip archive. */
+        disposition?: string;
       };
       header?: never;
       path: {

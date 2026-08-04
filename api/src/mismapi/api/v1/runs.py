@@ -4,6 +4,7 @@ GET /runs/{run_id} hits the Execution API first so its lazy DAL refresh
 fires, then reads the run back from the DAL with the freshly-updated status.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -25,12 +26,17 @@ class AnnotateResourceResponse(BaseModel):
 
 logger = logging.getLogger(__name__)
 
+# Statuses a run can no longer move out of — no point polling the Execution
+# service for these, and no risk of them going stale.
+_TERMINAL_STATUSES = frozenset({RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED})
+
 router = APIRouter()
 
 
 @router.get("/me/runs", response_model=UserRunsResponse)
 async def list_my_runs(
     service: RegistryServiceDep,
+    execution_client: ExecutionClientDep,
     principal: AuthenticatedPrincipalDep,
     status: RunStatus | None = Query(
         default=None, description="Optional filter — only include runs with this status."
@@ -40,9 +46,40 @@ async def list_my_runs(
 
     Returns runs newest-first (by created_at), each hydrated with its model
     summary and input/output resources. Requires authentication (401 for
-    anonymous callers). No Execution-service refresh is performed here — the UI
-    refreshes active runs when a row is expanded.
+    anonymous callers).
+
+    Non-terminal runs are reconciled with the Execution service first (same lazy
+    refresh as ``GET /runs/{run_id}?refresh=true``) so a user's own history is
+    always current — a run that finished won't linger as "running" until its row
+    is opened. Terminal runs are skipped (their status can't change), and a
+    failed status poll for one run is logged and ignored rather than failing the
+    whole list.
     """
+    # Read the run records first so we know which runs are still active and
+    # worth a round-trip to the Execution service.
+    active_run_ids = [
+        run.id
+        for run in service.find_user_runs(triggered_by=principal.subject, status=status)
+        if run.status not in _TERMINAL_STATUSES
+    ]
+
+    if active_run_ids:
+        # Trigger the Execution service's lazy DAL refresh for each active run,
+        # concurrently. `return_exceptions=True` keeps one unreachable run from
+        # sinking the whole history fetch.
+        results = await asyncio.gather(
+            *(execution_client.get_status(run_id) for run_id in active_run_ids),
+            return_exceptions=True,
+        )
+        for run_id, result in zip(active_run_ids, results, strict=True):
+            if isinstance(result, Exception):
+                logger.warning(
+                    "Failed to refresh status for run %s in history list: %s",
+                    run_id,
+                    result,
+                )
+
+    # Read back the (now-refreshed) run records, hydrated with model + I/O.
     details = service.find_user_run_details(
         triggered_by=principal.subject,
         status=status,

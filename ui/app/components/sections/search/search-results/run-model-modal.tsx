@@ -1,14 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   addToast,
   Button,
   closeToast,
+  Divider,
   Input,
   Modal,
   ModalBody,
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Select,
+  SelectItem,
 } from '@heroui/react';
 import { XMarkIcon } from '@heroicons/react/24/solid';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -16,6 +19,7 @@ import { useNavigate } from 'react-router';
 
 import {
   executeModelRun,
+  type EntryPointDTO,
   type ExecuteRunRequest,
   type ExecuteRunResponse,
 } from '~/api';
@@ -38,6 +42,29 @@ interface RunModelModalProps {
    * entries fall back to empty strings.
    */
   initialInputResourceIds?: string[];
+  /**
+   * Command of the entry point the prior run used (rerun only). Matched by
+   * command against the model's current entry points to preselect the same
+   * one; if it no longer exists we fall back to the first entry point.
+   */
+  initialEntrypointCommand?: string | null;
+  /**
+   * Argument values the prior run used (rerun only), keyed by argument name.
+   * Applied over declared defaults when the preselected entry point matches
+   * the one the run used.
+   */
+  initialParameters?: Record<string, unknown>;
+}
+
+/** Stable label for an entry point in the selector. */
+function entryPointLabel(entryPoint: EntryPointDTO, index: number): string {
+  return entryPoint.command?.trim() || `Entry point ${index + 1}`;
+}
+
+/** Render an argument's declared default as an editable string value. */
+function defaultArgValue(value: unknown): string {
+  if (value == null) return '';
+  return typeof value === 'string' ? value : String(value);
 }
 
 export function RunModelModal({
@@ -46,17 +73,58 @@ export function RunModelModal({
   onClose,
   mode = 'batch',
   initialInputResourceIds,
+  initialEntrypointCommand,
+  initialParameters,
 }: RunModelModalProps) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const inputs = model.io_spec?.inputs ?? [];
+  const entryPoints: EntryPointDTO[] = model.entry_points ?? [];
 
-  const buildInitialResourceIds = () =>
-    inputs.map((_, i) => initialInputResourceIds?.[i] ?? '');
-
-  const [resourceIds, setResourceIds] = useState<string[]>(
-    buildInitialResourceIds
+  const [resourceIds, setResourceIds] = useState<string[]>(() =>
+    inputs.map((_, i) => initialInputResourceIds?.[i] ?? '')
   );
+  // Index into `entryPoints` of the chosen entry point. Defaults to the first.
+  const [entrypointIndex, setEntrypointIndex] = useState(0);
+  // Argument override values for the selected entry point, keyed by argument
+  // name (which is what the run API expects). We ignore `user_can_override`
+  // for now and let users edit any argument the entry point declares.
+  const [argValues, setArgValues] = useState<Record<string, string>>({});
+
+  const selectedEntryPoint =
+    entryPoints[entrypointIndex] ?? entryPoints[0] ?? undefined;
+  const selectedArgs = selectedEntryPoint?.arguments ?? [];
+
+  // On rerun, index of the entry point the prior run used (matched by command),
+  // or -1 if none was given / it no longer exists.
+  const rerunIndex = initialEntrypointCommand
+    ? entryPoints.findIndex((ep) => ep.command === initialEntrypointCommand)
+    : -1;
+
+  // Argument values to seed for a given entry point: each argument's declared
+  // default, except for the entry point a rerun is replaying, where the prior
+  // run's values win.
+  const seedArgValues = (index: number): Record<string, string> => {
+    const args = entryPoints[index]?.arguments ?? [];
+    const replaying = index === rerunIndex;
+    return Object.fromEntries(
+      args.map((arg) => {
+        const rerunValue = replaying
+          ? initialParameters?.[arg.name]
+          : undefined;
+        const value = rerunValue === undefined ? arg.default : rerunValue;
+        return [arg.name, defaultArgValue(value)];
+      })
+    );
+  };
+
+  // Seed selection + argument values on mount.
+  useEffect(() => {
+    if (entryPoints.length === 0) return;
+    const index = Math.max(rerunIndex, 0);
+    setEntrypointIndex(index);
+    setArgValues(seedArgValues(index));
+  }, []);
 
   const mutation = useMutation<ExecuteRunResponse, Error, ExecuteRunRequest>({
     mutationFn: (body) => executeModelRun(model.id, body),
@@ -108,24 +176,36 @@ export function RunModelModal({
           </div>
         ),
       });
-      mutation.reset();
-      setResourceIds(buildInitialResourceIds());
       onClose();
     },
   });
 
   const handleClose = () => {
     if (mutation.isPending) return;
-    mutation.reset();
-    setResourceIds(buildInitialResourceIds());
     onClose();
+  };
+
+  // Switching entry points re-seeds its argument values (defaults, or the prior
+  // run's values if this is the entry point a rerun is replaying).
+  const handleSelectEntrypoint = (index: number) => {
+    setEntrypointIndex(index);
+    setArgValues(seedArgValues(index));
   };
 
   const handleSubmit = () => {
     const trimmedIds = resourceIds.map((id) => id.trim());
+    // Key overrides by argument name (what the run API consumes) and drop any
+    // the user left blank so declared defaults apply server-side.
+    const argumentEntries = selectedArgs
+      .map((arg) => [arg.name, argValues[arg.name]?.trim() ?? ''] as const)
+      .filter(([, value]) => value !== '');
+    const argumentsPayload = Object.fromEntries(argumentEntries);
+
     mutation.mutate({
       input_resource_ids: trimmedIds,
-      parameters: {},
+      // Only send an index when the model actually declares entry points.
+      entrypoint_index: entryPoints.length > 0 ? entrypointIndex : null,
+      arguments: argumentsPayload,
       notes: '',
       mode,
     });
@@ -134,6 +214,68 @@ export function RunModelModal({
   const requiredMissing = inputs.some(
     (slot, i) => slot.required && !resourceIds[i]?.trim()
   );
+
+  // Entry-point section: the selector and any argument inputs for the chosen
+  // entry point. Built as a variable to keep the render free of nested
+  // ternaries.
+  let entryPointSection: React.ReactNode = null;
+  if (entryPoints.length > 0) {
+    entryPointSection = (
+      <>
+        <Divider className="my-1" />
+        <div className="flex flex-col gap-4">
+          <Select
+            label="Entry point"
+            description={selectedEntryPoint?.purpose || undefined}
+            classNames={{ description: 'mt-1.5 text-default-700' }}
+            selectedKeys={[String(entrypointIndex)]}
+            disallowEmptySelection
+            isDisabled={mutation.isPending || entryPoints.length === 1}
+            onSelectionChange={(keys) => {
+              const [key] = [...keys];
+              if (key !== undefined) handleSelectEntrypoint(Number(key));
+            }}
+          >
+            {entryPoints.map((entryPoint, i) => (
+              <SelectItem
+                key={String(i)}
+                textValue={entryPointLabel(entryPoint, i)}
+              >
+                <span className="font-mono text-sm">
+                  {entryPointLabel(entryPoint, i)}
+                </span>
+              </SelectItem>
+            ))}
+          </Select>
+
+          {selectedArgs.length > 0 && (
+            <div className="flex flex-col gap-3">
+              <span className="text-xs font-medium text-default-800">
+                Arguments
+              </span>
+              {selectedArgs.map((arg, i) => (
+                <Input
+                  key={`${arg.name}-${i}`}
+                  label={arg.name}
+                  description={arg.description || undefined}
+                  classNames={{ description: 'mt-1.5 text-default-700' }}
+                  placeholder="Value"
+                  value={argValues[arg.name] ?? ''}
+                  onValueChange={(value) =>
+                    setArgValues((prev) => ({
+                      ...prev,
+                      [arg.name]: value,
+                    }))
+                  }
+                  isDisabled={mutation.isPending}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </>
+    );
+  }
 
   return (
     <Modal
@@ -160,7 +302,7 @@ export function RunModelModal({
 
           {inputs.length === 0 ? (
             <p className="text-sm text-default-700">
-              This model declares no inputs. Submit to launch immediately.
+              This model doesn&apos;t accept a custom input dataset.
             </p>
           ) : (
             <div className="flex flex-col gap-4">
@@ -169,6 +311,7 @@ export function RunModelModal({
                   key={`${slot.name}-${i}`}
                   label={slot.name}
                   description={slot.description || undefined}
+                  classNames={{ description: 'mt-1.5 text-default-400' }}
                   isRequired={slot.required}
                   placeholder="Resource ID"
                   value={resourceIds[i] ?? ''}
@@ -184,6 +327,8 @@ export function RunModelModal({
               ))}
             </div>
           )}
+
+          {entryPointSection}
         </ModalBody>
         <ModalFooter>
           <Button

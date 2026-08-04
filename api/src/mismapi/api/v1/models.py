@@ -65,6 +65,8 @@ def _model_list_item(r: Resource) -> ModelListItem:
         execution_type=r.execution_type.value if r.execution_type else None,
         execution_ref=r.execution_ref,
         io_spec=io_spec_to_dto(r.io_spec) if r.io_spec else None,
+        entry_points=[entry_point_to_dto(e) for e in r.entry_points],
+        containers=[container_to_dto(c) for c in r.containers],
         format_tags=list(r.format_tags),
         authors=[author_to_dto(a) for a in r.authors],
         organization=r.organization,
@@ -79,6 +81,7 @@ def _model_list_item(r: Resource) -> ModelListItem:
         size_bytes=r.size_bytes,
         external_ids=dict(r.external_ids),
         license=r.license,
+        registration_status=r.registration_status.value,
         metadata=dict(r.metadata),
         created_at=r.created_at,
         updated_at=r.updated_at,
@@ -99,6 +102,8 @@ def _model_response(r: Resource) -> RegisterModelResponse:
         execution_type=r.execution_type.value if r.execution_type else None,
         execution_ref=r.execution_ref,
         io_spec=io_spec_to_dto(r.io_spec) if r.io_spec else None,
+        entry_points=[entry_point_to_dto(e) for e in r.entry_points],
+        containers=[container_to_dto(c) for c in r.containers],
         format_tags=list(r.format_tags),
         authors=[author_to_dto(a) for a in r.authors],
         organization=r.organization,
@@ -120,6 +125,9 @@ def _model_response(r: Resource) -> RegisterModelResponse:
 
 
 def _model_detail_response(r: Resource) -> ModelDetailResponse:
+    # `entry_points` and `containers` are deliberately not repeated below:
+    # `RegisterModelResponse` carries them, so they arrive via `base` and passing
+    # them again raises "got multiple values for keyword argument".
     base = _model_response(r).model_dump()
     return ModelDetailResponse(
         **base,
@@ -143,9 +151,7 @@ def _model_detail_response(r: Resource) -> ModelDetailResponse:
         language_version=r.language_version,
         execution_notes=r.execution_notes,
         dependencies=[dependency_to_dto(d) for d in r.dependencies],
-        containers=[container_to_dto(c) for c in r.containers],
         compute=compute_to_dto(r.compute) if r.compute else None,
-        entry_points=[entry_point_to_dto(e) for e in r.entry_points],
         tests=test_spec_to_dto(r.tests) if r.tests else None,
         # Rich I/O characterization (schema.md Section C) + the attribution and
         # provenance links the response previously dropped on the floor.
@@ -164,6 +170,9 @@ async def list_models(
     tags: list[str] | None = Query(default=None, description="Format tags (all must match)"),
     organisms: list[str] | None = Query(default=None, description="Organisms (any must match)"),
     scales: list[str] | None = Query(default=None, description="Model scales (any must match)"),
+    registration_status: str | None = Query(
+        default=None, description="Exact match on registration status"
+    ),
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> ModelListResponse:
@@ -173,6 +182,7 @@ async def list_models(
         tags=tags,
         organisms=organisms,
         scales=scales,
+        registration_status=registration_status,
     )
 
     # Same visibility rule as GET /models/{model_id} and the search gate:
@@ -294,6 +304,16 @@ async def update_model(
     return _model_response(resource)
 
 
+@router.delete("/models/{model_id}", status_code=204)
+async def delete_model(
+    model_id: str,
+    service: RegistryServiceDep,
+    principal: AuthenticatedPrincipalDep,
+) -> None:
+    """Permanently delete a model and its on-disk annotation files."""
+    service.delete_model(principal, model_id)
+
+
 @router.post("/models/{model_id}/upload", response_model=UploadInitiatedResponse)
 async def initiate_model_file_upload(
     model_id: str,
@@ -385,7 +405,8 @@ async def execute_run(
         principal,
         model_id=model_id,
         input_resource_ids=payload.input_resource_ids,
-        parameters=payload.parameters,
+        entrypoint_index=payload.entrypoint_index,
+        arguments=payload.arguments,
         triggered_by=principal.subject,
         notes=payload.notes,
     )

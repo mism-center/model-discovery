@@ -41,9 +41,9 @@ export function extractFormValues(parsedMeta: ParsedMetadataYaml): FormValues {
   values['model.multiscale'] = leafString(
     model.multiscale as SchemaLeaf | undefined
   );
-  values['model.determinism'] = String(model.determinism ?? '');
-  values['model.time_dynamics'] = String(model.time_dynamics ?? '');
-  values['model.spatial'] = String(model.spatial ?? '');
+  values['model.determinism'] = anyLeafString(model.determinism);
+  values['model.time_dynamics'] = anyLeafString(model.time_dynamics);
+  values['model.spatial'] = anyLeafString(model.spatial);
 
   // List fields: comma-joined label strings for display
   values['model.model_class'] = ontologyListString(model.model_class);
@@ -315,6 +315,18 @@ function leafConfidence(
   return field.confidence !== null && field.confidence !== undefined
     ? String(field.confidence)
     : '';
+}
+
+/** Handles plain strings, SchemaLeaf objects, booleans, null, undefined. */
+function anyLeafString(field: unknown): string {
+  if (field === null || field === undefined) return '';
+  if (typeof field === 'string') return field;
+  if (typeof field === 'boolean') return String(field);
+  if (typeof field === 'object' && 'value' in (field as object)) {
+    const v = (field as { value?: unknown }).value;
+    return v === null || v === undefined ? '' : String(v);
+  }
+  return '';
 }
 
 function ontologyListString(list: OntologyLeaf[] | undefined): string {

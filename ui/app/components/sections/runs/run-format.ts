@@ -64,3 +64,19 @@ export const formatDuration = (
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return '0s';
   return formatSeconds((endMs - startMs) / 1000);
 };
+
+/**
+ * Format the elapsed time from an ISO start up to `nowMs` (epoch ms) as a
+ * compact duration string. Used for the live-ticking duration of a still-
+ * running job, where there's no `completed_at` to close the interval yet.
+ * Returns `0s` when the start is missing or unparseable.
+ */
+export const formatElapsed = (
+  start: string | null | undefined,
+  nowMs: number
+): string => {
+  if (!start) return '0s';
+  const startMs = Date.parse(start);
+  if (!Number.isFinite(startMs)) return '0s';
+  return formatSeconds((nowMs - startMs) / 1000);
+};

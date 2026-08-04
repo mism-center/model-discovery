@@ -34,17 +34,23 @@ export {
 export {
   listResourceFiles,
   resourceDownloadUrl,
+  fetchResourceFileText,
+  TEXT_PREVIEW_MAX_BYTES,
   type ResourceFileItem,
   type ResourceFilesResponse,
 } from './endpoints/resources';
 
 export {
   getModel,
-  type ModelDetailResponse,
-  type DependencyDTO,
-  type ContainerDTO,
-  type ComputeDTO,
-  type EntryPointDTO,
   type ArgumentDTO,
+  type ComputeDTO,
+  type ContactDTO,
+  type ContainerDTO,
+  type DependencyDTO,
+  type EntryPointDTO,
+  type IODetailDTO,
+  type ModelDetailResponse,
+  type RegisterModelResponse,
+  type RelatedResourceDTO,
   type TestSpecDTO,
 } from './endpoints/models';

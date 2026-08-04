@@ -70,6 +70,7 @@ def test_list_models_returns_results() -> None:
         tags=None,
         organisms=None,
         scales=None,
+        registration_status=None,
     )
 
 
@@ -101,6 +102,7 @@ def test_list_models_passes_filters() -> None:
         tags=["csv", "public"],
         organisms=None,
         scales=None,
+        registration_status=None,
     )
     service.list_models.assert_called_once_with(**filter_kwargs)
 
@@ -127,6 +129,7 @@ def test_list_models_pagination() -> None:
         tags=None,
         organisms=None,
         scales=None,
+        registration_status=None,
     )
 
 

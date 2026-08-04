@@ -3,6 +3,7 @@ from typing import Any, Literal
 
 from mism_registry import ExecutionType
 from mism_registry.types import (
+    Argument,
     Author,
     Compute,
     Contact,
@@ -95,15 +96,14 @@ class ComputeDTO(BaseModel):
 
 
 class ArgumentDTO(BaseModel):
+    """A documented argument to an entry-point command."""
+
     name: str
     description: str = ""
     default: Any = None
-    # Restored — these were dropped from the response, which cost the UI the
-    # ability to render an argument's allowed values, its type, or whether the
-    # caller is even permitted to change it at run time.
-    enums: list[str] | None = None
-    data_type: str = ""
-    position: int | None = None
+    enums: list[str] | None = None  # allowed values, if constrained
+    data_type: str = ""  # e.g. "int", "str", "path", "bool"
+    position: int = 0  # positional index; 0 = unassigned (option/flag)
     user_can_override: bool | None = None
 
 
@@ -301,28 +301,23 @@ def compute_to_dto(c: Compute) -> ComputeDTO:
     )
 
 
+def argument_to_dto(a: Argument) -> ArgumentDTO:
+    return ArgumentDTO(
+        name=a.name,
+        description=a.description,
+        default=a.default,
+        enums=list(a.enums) if a.enums is not None else None,
+        data_type=a.data_type or "",
+        position=a.position or 0,
+        user_can_override=a.user_can_override,
+    )
+
+
 def entry_point_to_dto(e: EntryPoint) -> EntryPointDTO:
     return EntryPointDTO(
         command=e.command,
         purpose=e.purpose,
-        arguments=[
-            ArgumentDTO(
-                name=a.name,
-                description=a.description,
-                default=a.default,
-                # getattr, not attribute access: these four fields exist on
-                # `Argument` in the metadata-schema working tree but NOT in the
-                # DAL revision `api/pyproject.toml` currently pins
-                # (`default-draft`). Reading them directly makes the endpoint
-                # raise AttributeError under the pinned dependency, which is what
-                # CI installs. Remove the getattr once the pinned ref is bumped.
-                enums=list(getattr(a, "enums", None) or []) or None,
-                data_type=getattr(a, "data_type", "") or "",
-                position=getattr(a, "position", None),
-                user_can_override=getattr(a, "user_can_override", None),
-            )
-            for a in e.arguments
-        ],
+        arguments=[argument_to_dto(a) for a in e.arguments],
     )
 
 
@@ -397,6 +392,10 @@ class RegisterModelResponse(BaseModel):
     execution_type: str | None = None
     execution_ref: str = ""
     io_spec: IOSpecDTO | None = None
+    # Execution recipe (populated from the annotation metadata-package): the
+    # entry points a run can select and the container(s) it runs in.
+    entry_points: list[EntryPointDTO] = Field(default_factory=list)
+    containers: list[ContainerDTO] = Field(default_factory=list)
     format_tags: list[str] = Field(default_factory=list)
     # Authorship & attribution
     authors: list[AuthorDTO] = Field(default_factory=list)
@@ -581,6 +580,12 @@ class UpdateDatasetRequest(_AttributionFields, _ScientificFields, _IntegrityFiel
 class CreateRunRequest(BaseModel):
     input_resource_ids: list[str] = Field(default_factory=list)
     parameters: dict[str, Any] = Field(default_factory=dict)
+    # Select one of the model's declared entry points by index. When set,
+    # ``arguments`` (VALUES keyed by the entry point's declared arg names —
+    # never command/flag strings) are validated against it. Injection defense
+    # lives in the registry: the caller never supplies a raw command.
+    entrypoint_index: int | None = None
+    arguments: dict[str, Any] = Field(default_factory=dict)
     notes: str = ""
 
 
@@ -598,6 +603,12 @@ class ExecuteRunRequest(BaseModel):
 
     input_resource_ids: list[str] = Field(default_factory=list)
     parameters: dict[str, Any] = Field(default_factory=dict)
+    # Select one of the model's declared entry points by index. When set,
+    # ``arguments`` (VALUES keyed by the entry point's declared arg names —
+    # never command/flag strings) are validated against it. Injection defense
+    # lives in the registry: the caller never supplies a raw command.
+    entrypoint_index: int | None = None
+    arguments: dict[str, Any] = Field(default_factory=dict)
     notes: str = ""
     mode: Literal["batch", "interactive"] = "batch"
 
@@ -652,6 +663,10 @@ class ResourceSummaryItem(BaseModel):
     execution_type: str | None = None
     execution_ref: str = ""
     io_spec: IOSpecDTO | None = None
+    # Execution recipe (populated from the annotation metadata-package): the
+    # entry points a run can select and the container(s) it runs in.
+    entry_points: list[EntryPointDTO] = Field(default_factory=list)
+    containers: list[ContainerDTO] = Field(default_factory=list)
     # System
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
@@ -668,6 +683,10 @@ class RunDetailItem(BaseModel):
     input_resource_ids: list[str] = Field(default_factory=list)
     output_resource_ids: list[str] = Field(default_factory=list)
     parameters: dict[str, Any] = Field(default_factory=dict)
+    # Entry point selected for this run + the container it was denormalized
+    # onto (both null for runs created before entry-point selection existed).
+    entrypoint: EntryPointDTO | None = None
+    container: ContainerDTO | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
     error_message: str = ""

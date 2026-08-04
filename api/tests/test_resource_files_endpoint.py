@@ -137,6 +137,61 @@ def test_download_single_file(resource_dir: Path) -> None:
     service.resolve_resource_file.assert_called_once_with("ds-1", "results.json")
 
 
+def test_download_single_file_inline_json(resource_dir: Path) -> None:
+    """disposition=inline serves a sniffed content type + inline disposition."""
+    resource = _make_resource()
+    service = MagicMock(spec=RegistryService)
+    service.resolve_resource_file.return_value = (
+        resource,
+        resource_dir / "results.json",
+    )
+
+    client = _make_app(service)
+    response = client.get("/api/v1/resources/ds-1/download?file=results.json&disposition=inline")
+
+    assert response.status_code == 200
+    assert response.content == b'{"foo": 1}'
+    assert response.headers["content-type"].startswith("application/json")
+    disposition = response.headers.get("content-disposition", "")
+    assert "inline" in disposition
+    assert "attachment" not in disposition
+
+
+def test_download_single_file_inline_image(resource_dir: Path) -> None:
+    """An image is served inline with its image/* content type."""
+    resource = _make_resource()
+    service = MagicMock(spec=RegistryService)
+    service.resolve_resource_file.return_value = (
+        resource,
+        resource_dir / "plots" / "plot.png",
+    )
+
+    client = _make_app(service)
+    response = client.get("/api/v1/resources/ds-1/download?file=plots/plot.png&disposition=inline")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert "inline" in response.headers.get("content-disposition", "")
+
+
+def test_download_single_file_invalid_disposition_rejected(resource_dir: Path) -> None:
+    """An unrecognized disposition value is rejected by request validation.
+
+    The app maps validation errors to 400 via its custom handler.
+    """
+    resource = _make_resource()
+    service = MagicMock(spec=RegistryService)
+    service.resolve_resource_file.return_value = (
+        resource,
+        resource_dir / "results.json",
+    )
+
+    client = _make_app(service)
+    response = client.get("/api/v1/resources/ds-1/download?file=results.json&disposition=bogus")
+
+    assert response.status_code == 400
+
+
 def test_download_single_file_traversal_blocked() -> None:
     service = MagicMock(spec=RegistryService)
     service.resolve_resource_file.side_effect = APIError(
