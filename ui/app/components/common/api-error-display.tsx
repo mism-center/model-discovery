@@ -39,7 +39,7 @@ export function ApiErrorDisplay({
     <div className={cn('flex flex-col gap-6', className)} role="alert">
       <div className="flex flex-col items-center text-center gap-3 py-10">
         <Icon
-          className="size-10 text-default-400"
+          className="size-10 text-default-700"
           aria-hidden="true"
           strokeWidth={1.25}
         />

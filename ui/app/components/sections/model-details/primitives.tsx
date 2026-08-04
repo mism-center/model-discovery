@@ -4,6 +4,13 @@ import { NotRecorded } from '~/components/common/definition-field';
 
 export { FIELD_LABEL } from '~/components/common/definition-field';
 
+/**
+ * The app's link treatment. `text-primary` measures 14.8:1 on white; the
+ * `text-secondary` this replaced was 4.5:1 and disagreed with every other anchor
+ * in the app.
+ */
+export const LINK = 'text-primary hover:underline';
+
 /** Stable anchor id for a section, so `/models/:id#execution` deep-links. */
 export function sectionId(title: string): string {
   return title
@@ -13,21 +20,17 @@ export function sectionId(title: string): string {
 }
 
 /**
- * One titled region of the detail page.
+ * One titled region of the detail page: a rule and a heading, not an elevated
+ * card. Stacking cards makes every metadata group look equally important; a
+ * single continuous surface with lightweight headings does not.
  *
- * Deliberately flat — a rule and a heading, not a bordered elevated card. None
- * of the registries this page competes with (Hugging Face, BioModels, nf-core,
- * Zenodo, Bioconductor) wraps each metadata group in its own card; they use one
- * continuous surface with lightweight group headings. Stacking six rounded
- * cards on a gray page made every group look equally important and left the
- * metadata rail — which used the *same* background as the page — looking like
- * unstyled floating text.
+ * Sections always render, including when they have no data — only ~12 of the 45
+ * response fields are populated by ingestion, so hiding empty ones would make
+ * the page's structure (and its nav) change shape per model. A section with
+ * nothing to show says so via `SectionAbsence` or `EmptyState`.
  *
- * Sections always render, including when they have no data. The first pass
- * returned `null` from each section when its fields were empty, which meant the
- * page's structure changed per model and, since only ~12 of the 45 response
- * fields are populated by ingestion, usually collapsed to a title and a file
- * list. Naming an absence is information; silently removing the section is not.
+ * Every section carries a top rule, including the first — which separates it
+ * from the page header above.
  */
 export function SectionCard({
   title,
@@ -46,10 +49,7 @@ export function SectionCard({
     <section
       id={sectionId(title)}
       // scroll-mt clears the 64px sticky navbar when an anchor is targeted.
-      className={cn(
-        'scroll-mt-20 border-t border-default-200 pt-8 first:border-t-0 first:pt-0',
-        className
-      )}
+      className={cn('scroll-mt-20 border-t border-default-200 pt-8', className)}
     >
       <div className="flex items-start justify-between gap-4 mb-4">
         <div className="min-w-0">
@@ -68,11 +68,43 @@ export function SectionCard({
 }
 
 /**
- * A sub-heading inside a section.
+ * Body for a field section that has no data at all.
  *
- * Previously every section hand-rolled `<h3 class="text-xs … text-default-800">`,
- * an `<h3>` rendered *smaller and fainter* than the body text beneath it — an
- * inverted hierarchy repeated in six places.
+ * One statement replaces a grid of per-field "Not recorded" cells: naming one
+ * absence is information, naming six in a row is a wall to scroll past. Field
+ * sections use this; collection sections (Files, Run history) use the centered
+ * `EmptyState`, because their emptiness is actionable and they only ever render
+ * one such state at a time.
+ */
+export function SectionAbsence({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-sm">
+      <NotRecorded>{children}</NotRecorded>
+    </p>
+  );
+}
+
+/**
+ * Absence inside a dense table cell.
+ *
+ * "Not recorded" repeated across every cell of a four-column table is noise, so
+ * this shows the conventional dash instead — but a bare em dash gives assistive
+ * tech nothing, so the words go in an `sr-only` span beside it.
+ */
+export function AbsentCell() {
+  return (
+    <>
+      <span aria-hidden="true" className="text-default-800">
+        —
+      </span>
+      <span className="sr-only">Not recorded</span>
+    </>
+  );
+}
+
+/**
+ * A sub-heading inside a section. `text-sm` semibold so it outranks the body
+ * text beneath it.
  */
 export function SubHeading({ children }: { children: React.ReactNode }) {
   return (
@@ -80,17 +112,29 @@ export function SubHeading({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Uppercase the first letter only.
+ *
+ * The characterization vocabularies are lowercase and hyphenated
+ * (`deterministic`, `event-driven`, `non-spatial`) while `spatial` also admits
+ * `1D`…`3D`. CSS `capitalize` breaks on both counts — it would yield
+ * "Non-Spatial" and leave the rest of the string alone.
+ */
+export function sentenceCase(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 export {
   DefinitionField as Field,
-  NotRecorded,
+  hasValue,
+  hasItems,
 } from '~/components/common/definition-field';
 
 type ChipTone = 'primary' | 'neutral' | 'secondary';
 
 /**
- * Chip backgrounds are all light, with dark foregrounds, so every tone clears
- * WCAG AA. The previous `secondary` tone put `text-secondary` on
- * `bg-secondary-100` at 10px bold — 3.09:1.
+ * Chip backgrounds are all light with dark foregrounds, so every tone clears
+ * WCAG AA — `text-secondary` on `bg-secondary-100` would be 3.09:1.
  */
 const CHIP_TONES: Record<ChipTone, string> = {
   primary: 'bg-primary-100 text-primary',

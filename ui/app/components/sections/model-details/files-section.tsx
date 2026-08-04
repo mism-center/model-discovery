@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Spinner, useDisclosure } from '@heroui/react';
+import { useDisclosure } from '@heroui/react';
 import {
   ArchiveBoxArrowDownIcon,
   ArrowDownTrayIcon,
@@ -24,6 +24,7 @@ import {
 } from '~/components/sections/search/search-results/file-preview-modal';
 import { formatBytes } from '~/utils/format';
 import { SectionCard } from './primitives';
+import { SectionListSkeleton } from './skeleton';
 
 const FILE_TYPE_ICONS: Array<{
   extensions: string[];
@@ -90,7 +91,7 @@ export function FilesSection({ modelId }: { modelId: string }) {
         ) : undefined
       }
     >
-      <div className="min-h-56">
+      <div>
         <FilesBody
           modelId={modelId}
           files={files}
@@ -134,12 +135,7 @@ function FilesBody({
     );
   }
   if (isLoading) {
-    return (
-      <div className="flex items-center gap-2 text-sm text-default-800 py-4">
-        <Spinner size="sm" classNames={{ wrapper: 'w-4 h-4' }} />
-        <span>Loading files…</span>
-      </div>
-    );
+    return <SectionListSkeleton rows={5} />;
   }
   if (files.length === 0) {
     return (
@@ -176,14 +172,20 @@ function FilesBody({
 
               return (
                 <li key={file.path}>
-                  {/* A div, not one big anchor: a button cannot nest inside an
-                      anchor, and previewable rows need both affordances. */}
+                  {/*
+                   * A div, not one big anchor: a button cannot nest inside an
+                   * anchor, and previewable rows need both affordances — the row
+                   * itself previews, and the eye icon makes that discoverable.
+                   *
+                   * The row button takes no aria-label, so its visible filename
+                   * names it: an explicit one would announce the same string as
+                   * the eye icon beside it, twice per row.
+                   */}
                   <div className="group flex items-center justify-between gap-4 py-2 px-2 -mx-2 rounded hover:bg-primary/4">
                     {category ? (
                       <button
                         type="button"
                         onClick={() => openPreview(file)}
-                        aria-label={`Preview ${file.path}`}
                         title={file.path}
                         className="flex items-center gap-2 min-w-0 text-default-900 group-hover:text-primary rounded outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                       >

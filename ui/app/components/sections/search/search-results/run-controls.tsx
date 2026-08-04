@@ -24,8 +24,8 @@ const SCALES = {
     className: 'px-5 py-2.5 rounded-lg text-sm font-bold',
   },
   page: {
-    size: 'lg' as const,
-    className: 'px-6 rounded-lg text-base font-bold',
+    size: 'md' as const,
+    className: 'px-6 rounded-lg text-[15px] font-bold',
   },
 };
 

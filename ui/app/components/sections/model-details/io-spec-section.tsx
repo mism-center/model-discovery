@@ -1,24 +1,21 @@
 import type { ModelDetailResponse } from '~/api/endpoints/models';
 import { IODetailBlocks } from './io-detail';
-import { NotRecorded, SectionCard, SubHeading, Chip } from './primitives';
+import { SectionAbsence, SectionCard, SubHeading, Chip } from './primitives';
 
 type IOSpec = NonNullable<ModelDetailResponse['io_spec']>;
 type IOSlot = NonNullable<IOSpec['inputs']>[number];
 
 /**
- * The model's inputs and outputs.
+ * The model's inputs and outputs, from two sources in priority order:
+ *   1. `model.io` — the Section C characterization (parameters with units and
+ *      biological meaning, initial conditions, data inputs, outputs, protocol).
+ *      This is what a researcher needs.
+ *   2. `model.io_spec` — the machine handshake (slot names + tags + JSON Schema)
+ *      used to validate a run. Secondary detail only.
  *
- * Two sources, in priority order:
- *   1. `model.io` — the rich Section C characterization (parameters with units
- *      and biological meaning, initial conditions, data inputs, outputs,
- *      experiment protocol). This is what a researcher actually needs.
- *   2. `model.io_spec` — the machine handshake (slot names + tags + JSON
- *      Schema) used to validate a run. Shown only as a secondary detail.
- *
- * Renders even when both are empty, which in practice is most models: nothing in
- * the ingestion path writes either, and a missing I/O contract is precisely what
- * someone deciding whether they can run this model needs to be told. The first
- * pass returned `null` here, so the question went unanswered.
+ * Both are empty for most models, and a missing I/O contract is exactly what
+ * someone deciding whether they can run this needs told — hence the explicit
+ * absence rather than a hidden section.
  */
 export function IOSpecSection({ model }: { model: ModelDetailResponse }) {
   const spec = model.io_spec;
@@ -46,12 +43,10 @@ export function IOSpecSection({ model }: { model: ModelDetailResponse }) {
       {hasIODetail && <IODetailBlocks io={io} />}
 
       {!hasIODetail && !hasSlots && !hasParams && (
-        <p className="text-sm">
-          <NotRecorded>
-            This model has not been characterized, so its inputs and outputs are
-            unknown.
-          </NotRecorded>
-        </p>
+        <SectionAbsence>
+          This model has not been characterized, so its inputs and outputs are
+          unknown.
+        </SectionAbsence>
       )}
 
       {hasSlots && (

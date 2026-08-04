@@ -1,53 +1,91 @@
 import type { ModelDetailResponse } from '~/api/endpoints/models';
-import { SectionCard, Field, ChipList, SubHeading } from './primitives';
+import {
+  Field,
+  SectionAbsence,
+  SectionCard,
+  SubHeading,
+  hasItems,
+  hasValue,
+} from './primitives';
+
+type Compute = NonNullable<ModelDetailResponse['compute']>;
 
 /**
- * Execution characterization (schema.md Section B) + model characterization
- * (Section A) + biology. These fields come from the metadata-package workflow
- * and are frequently empty, so each block only renders when it has content.
+ * Flatten compute requirements into label/value rows.
+ *
+ * Lifted out of the grid so the section can ask whether compute has anything to
+ * show before deciding it is empty — `compute` is often a present-but-blank
+ * object.
+ */
+function computeRows(
+  compute: Compute | null | undefined
+): Array<[string, string]> {
+  if (!compute) return [];
+
+  const rows: Array<[string, string]> = [];
+  if (typeof compute.cpu_cores === 'number')
+    rows.push(['CPU cores', String(compute.cpu_cores)]);
+  if (typeof compute.memory_gb === 'number')
+    rows.push(['Memory', `${compute.memory_gb} GB`]);
+  if (compute.gpu_required !== null && compute.gpu_required !== undefined)
+    rows.push(['GPU', compute.gpu_required ? 'Required' : 'Not required']);
+  if (compute.parallelism) rows.push(['Parallelism', compute.parallelism]);
+  if (typeof compute.typical_runtime === 'number') {
+    rows.push([
+      'Typical runtime',
+      `${compute.typical_runtime} ${compute.typical_runtime_unit || ''}`.trim(),
+    ]);
+  }
+  return rows;
+}
+
+function hasTests(tests: ModelDetailResponse['tests']): boolean {
+  return Boolean(tests && (tests.framework || tests.invocation));
+}
+
+/**
+ * Runtime environment, dependencies and compute requirements (schema.md
+ * Section B).
+ *
+ * Every field here defaults to `''`, `[]` or `None` server-side, so for a
+ * dataset or an un-characterized model all of them are absent at once — hence
+ * the explicit empty body rather than a grid that would render nothing under the
+ * heading.
+ *
+ * Does not show `execution_status`. Its values (`characterized`,
+ * `partially_characterized`, `not_determined`) describe how completely a curator
+ * filled this section in, not anything about the model — and the section already
+ * shows that structurally, by having fields or saying it has none.
  */
 export function ExecutionSection({ model }: { model: ModelDetailResponse }) {
-  return (
-    <>
-      <ModelCharacterization model={model} />
-      <ExecutionCharacterization model={model} />
-      <Biology model={model} />
-    </>
-  );
-}
-
-/** Render a nullable boolean as Yes / No, or '' so the field states the absence. */
-function formatTristate(value: boolean | null | undefined): string {
-  if (value === null || value === undefined) return '';
-  return value ? 'Yes' : 'No';
-}
-
-function ModelCharacterization({ model }: { model: ModelDetailResponse }) {
-  return (
-    <SectionCard
-      title="Model characterization"
-      description="How this model is classified mathematically and dynamically."
-    >
-      <dl className="grid gap-5 sm:grid-cols-2">
-        <Field label="Model class">
-          <ChipList values={model.model_class} tone="neutral" />
-        </Field>
-        <Field label="Formalism">
-          <ChipList values={model.formalism} tone="neutral" />
-        </Field>
-        <Field label="Determinism">{model.determinism}</Field>
-        <Field label="Time dynamics">{model.time_dynamics}</Field>
-        <Field label="Spatial">{model.spatial}</Field>
-        <Field label="Multiscale">{formatTristate(model.multiscale)}</Field>
-      </dl>
-    </SectionCard>
-  );
-}
-
-function ExecutionCharacterization({ model }: { model: ModelDetailResponse }) {
   const language = [model.language_name, model.language_version]
     .filter(Boolean)
     .join(' ');
+  const compute = computeRows(model.compute);
+
+  const hasContent =
+    Boolean(language) ||
+    hasValue(model.execution_type) ||
+    hasValue(model.execution_notes) ||
+    compute.length > 0 ||
+    hasItems(model.dependencies) ||
+    hasItems(model.containers) ||
+    hasItems(model.entry_points) ||
+    hasTests(model.tests);
+
+  if (!hasContent) {
+    return (
+      <SectionCard
+        title="Execution"
+        description="Runtime environment, dependencies, and compute requirements."
+      >
+        <SectionAbsence>
+          No execution environment has been recorded, so this model cannot be
+          run from the portal.
+        </SectionAbsence>
+      </SectionCard>
+    );
+  }
 
   return (
     <SectionCard
@@ -56,12 +94,7 @@ function ExecutionCharacterization({ model }: { model: ModelDetailResponse }) {
     >
       <dl className="grid gap-5 sm:grid-cols-2">
         {language && <Field label="Language">{language}</Field>}
-        {model.execution_status && (
-          <Field label="Characterization status">
-            {model.execution_status.replaceAll('_', ' ')}
-          </Field>
-        )}
-        {model.execution_type && (
+        {hasValue(model.execution_type) && (
           <Field label="Environment">{model.execution_type}</Field>
         )}
       </dl>
@@ -72,13 +105,24 @@ function ExecutionCharacterization({ model }: { model: ModelDetailResponse }) {
         </p>
       )}
 
-      {model.compute && <ComputeGrid compute={model.compute} />}
+      {compute.length > 0 && (
+        <div className="mt-6">
+          <SubHeading>Compute requirements</SubHeading>
+          <dl className="grid gap-4 sm:grid-cols-3">
+            {compute.map(([label, value]) => (
+              <Field key={label} label={label}>
+                {value}
+              </Field>
+            ))}
+          </dl>
+        </div>
+      )}
 
-      {model.dependencies && model.dependencies.length > 0 && (
+      {hasItems(model.dependencies) && (
         <Dependencies dependencies={model.dependencies} />
       )}
 
-      {model.containers && model.containers.length > 0 && (
+      {hasItems(model.containers) && (
         <div className="mt-6">
           <SubHeading>Containers</SubHeading>
           <ul className="flex flex-col gap-2">
@@ -100,11 +144,11 @@ function ExecutionCharacterization({ model }: { model: ModelDetailResponse }) {
         </div>
       )}
 
-      {model.entry_points && model.entry_points.length > 0 && (
+      {hasItems(model.entry_points) && (
         <EntryPoints entryPoints={model.entry_points} />
       )}
 
-      {model.tests && (model.tests.framework || model.tests.invocation) && (
+      {hasTests(model.tests) && model.tests && (
         <div className="mt-6">
           <SubHeading>Tests</SubHeading>
           <p className="text-sm text-default-900">
@@ -120,42 +164,6 @@ function ExecutionCharacterization({ model }: { model: ModelDetailResponse }) {
         </div>
       )}
     </SectionCard>
-  );
-}
-
-function ComputeGrid({
-  compute,
-}: {
-  compute: NonNullable<ModelDetailResponse['compute']>;
-}) {
-  const runtime =
-    typeof compute.typical_runtime === 'number'
-      ? `${compute.typical_runtime} ${compute.typical_runtime_unit || ''}`.trim()
-      : undefined;
-
-  const rows: Array<[string, string]> = [];
-  if (typeof compute.cpu_cores === 'number')
-    rows.push(['CPU cores', String(compute.cpu_cores)]);
-  if (typeof compute.memory_gb === 'number')
-    rows.push(['Memory', `${compute.memory_gb} GB`]);
-  if (compute.gpu_required !== null && compute.gpu_required !== undefined)
-    rows.push(['GPU', compute.gpu_required ? 'Required' : 'Not required']);
-  if (compute.parallelism) rows.push(['Parallelism', compute.parallelism]);
-  if (runtime) rows.push(['Typical runtime', runtime]);
-
-  if (rows.length === 0) return null;
-
-  return (
-    <div className="mt-6">
-      <SubHeading>Compute requirements</SubHeading>
-      <dl className="grid gap-4 sm:grid-cols-3">
-        {rows.map(([label, value]) => (
-          <Field key={label} label={label}>
-            {value}
-          </Field>
-        ))}
-      </dl>
-    </div>
   );
 }
 
@@ -221,7 +229,7 @@ function EntryPoints({
             {e.purpose && (
               <p className="mt-1 text-sm text-default-900">{e.purpose}</p>
             )}
-            {e.arguments && e.arguments.length > 0 && (
+            {hasItems(e.arguments) && (
               <ul className="mt-1 ml-3 flex flex-col gap-0.5">
                 {e.arguments.map((a) => (
                   <li key={a.name} className="text-xs text-default-900">
@@ -235,32 +243,5 @@ function EntryPoints({
         ))}
       </ul>
     </div>
-  );
-}
-
-function Biology({ model }: { model: ModelDetailResponse }) {
-  return (
-    <SectionCard
-      title="Biology"
-      description="Biological entities and processes this model represents."
-    >
-      <dl className="grid gap-5 sm:grid-cols-2">
-        <Field label="Infectious agents">
-          <ChipList values={model.infectious_agents} tone="neutral" />
-        </Field>
-        <Field label="Health conditions">
-          <ChipList values={model.health_conditions} tone="neutral" />
-        </Field>
-        <Field label="Biological processes">
-          <ChipList values={model.biological_processes} tone="neutral" />
-        </Field>
-        <Field label="Molecular entities">
-          <ChipList values={model.molecular_entities} tone="neutral" />
-        </Field>
-        <Field label="Proteins / genes">
-          <ChipList values={model.proteins_genes} tone="neutral" />
-        </Field>
-      </dl>
-    </SectionCard>
   );
 }

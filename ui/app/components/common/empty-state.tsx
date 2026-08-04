@@ -1,17 +1,16 @@
 import cn from 'classnames';
 
 /**
- * Inline "nothing here" state for a section body.
+ * Inline "nothing here" state for a collection section body.
  *
- * Deliberately mirrors `ApiErrorDisplay`'s composition — centered icon, title,
- * one line of description, optional action — so an empty section and a failed
- * section read as the same family instead of one being a designed state and the
- * other a stray gray sentence. The model detail page previously used bare
- * one-liners ("No files are stored with this model.", "This model hasn't been
- * run yet.") while every other surface in the app used the fuller pattern.
+ * Mirrors `ApiErrorDisplay`'s composition — centered icon, title, one line of
+ * description, optional action — so an empty section and a failed section read
+ * as the same family. Field sections use `SectionAbsence` instead; a centered
+ * icon block per empty field section would decorate the emptiness rather than
+ * get out of the way.
  *
- * `default-800` is the floor for text here: the project's `default` ramp is a
- * surface scale where 500/600 measure 1.48:1 and 2.19:1 on white.
+ * `default-800` is the floor for text: the project's `default` ramp is a surface
+ * scale where 500/600 measure 1.48:1 and 2.19:1 on white.
  */
 export function EmptyState({
   icon: Icon,
@@ -33,8 +32,10 @@ export function EmptyState({
         className
       )}
     >
+      {/* 700 (3.45:1) is the floor a 40px glyph needs to register; 600 is 2.19:1
+          and effectively invisible. */}
       <Icon
-        className="size-10 text-default-600"
+        className="size-10 text-default-700"
         aria-hidden="true"
         strokeWidth={1.25}
       />

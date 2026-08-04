@@ -1,34 +1,52 @@
+import cn from 'classnames';
 import { useQuery } from '@tanstack/react-query';
 
 import { ApiError } from '~/api';
 import type { ModelDetailResponse } from '~/api/endpoints/models';
 import { modelDetailQueryOptions } from '~/api/query/models';
 import { ApiErrorDisplay } from '~/components/common/api-error-display';
+import { BackToTop } from '~/components/common/back-to-top';
+import { BiologySection } from './biology-section';
 import { ExecutionSection } from './execution-section';
 import { FilesSection } from './files-section';
 import { IOSpecSection } from './io-spec-section';
-import { MetadataSidebar } from './metadata-sidebar';
+import { ModelCharacterizationSection } from './model-characterization-section';
 import { ModelHeader } from './model-header';
 import { sectionId } from './primitives';
+import { ProvenanceSection } from './provenance-section';
 import { RunHistorySection } from './run-history-section';
 import { SectionNav, type SectionLink } from './section-nav';
-import { ModelDetailsSkeleton } from './skeleton';
+import { ModelDetailsSkeleton, SectionNavSkeleton } from './skeleton';
 
 /**
  * Sections in reading order, and the source of truth for the nav rail.
  *
- * Fixed, not derived from which fields happen to be populated: the nav must not
- * change shape per model, and a section that has nothing to show says so rather
- * than disappearing.
+ * Ordered by the question each one answers, not by which fields ingestion
+ * happens to populate — otherwise the page's shape would track data gaps rather
+ * than what a reader needs:
+ *
+ *   what is this      → Model characterization, Biology
+ *   what does it take → Inputs & outputs
+ *   how do I run it   → Execution, Files, Run history
+ *   who made it       → Provenance
+ *
+ * Characterization leads because it orients everything below it. Biology follows
+ * it directly: the two are the same question (the mathematics, and what the
+ * mathematics is about), so an operational section must not split them.
+ * Provenance is reference material, so it trails.
+ *
+ * Fixed, not derived from which fields are populated: the nav must not change
+ * shape per model, and a section that has nothing to show says so rather than
+ * disappearing.
  */
 const SECTION_TITLES = [
-  'Inputs & outputs',
   'Model characterization',
-  'Execution',
   'Biology',
-  'Provenance',
+  'Inputs & outputs',
+  'Execution',
   'Files',
   'Run history',
+  'Provenance',
 ] as const;
 
 const SECTIONS: SectionLink[] = SECTION_TITLES.map((title) => ({
@@ -40,10 +58,8 @@ const SECTIONS: SectionLink[] = SECTION_TITLES.map((title) => ({
  * Model details page.
  *
  * Uses the app's established shell — full-bleed `[rail | white pane]` grid on a
- * `bg-default-50` gutter, content at `p-10` — the same structure as
- * `routes/search.tsx` and `my-runs.tsx`. The first pass invented a centered
- * `max-w-6xl` cards-on-gray layout with a right-hand rail, which made this the
- * only page in the app built that way.
+ * `bg-default-50` gutter — the same structure as `search.tsx` and `my-runs.tsx`,
+ * with the rail collapsing below `lg`.
  */
 export function ModelDetailsSection({ modelId }: { modelId: string }) {
   const {
@@ -53,19 +69,36 @@ export function ModelDetailsSection({ modelId }: { modelId: string }) {
     refetch,
   } = useQuery(modelDetailQueryOptions(modelId));
 
+  // The rail exists to navigate sections, so it has nothing to offer when the
+  // model failed to load. Collapsing to one column beats leaving a 280px empty
+  // gutter beside a "not found" message, which just reads as broken layout.
+  const showRail = !error;
+
   return (
     <main className="flex flex-col grow">
-      <div className="grid grid-cols-1 lg:grid-cols-[auto_minmax(0,1fr)] grow bg-default-50">
-        {/*
-         * The rail is hidden until lg, matching SectionNav's own breakpoint. It
-         * keeps its width while loading so the content pane doesn't jump when
-         * the nav appears, but it lists nothing when there are no sections to
-         * navigate — a not-found page advertising seven anchors is a lie.
-         */}
-        <div className="hidden lg:block lg:min-w-[280px]">
-          {model && !error && <SectionNav sections={SECTIONS} />}
-        </div>
-        <section className="col-start-1 lg:col-start-2 lg:border-l border-slate-200 bg-white">
+      <div
+        className={cn(
+          'grid grow bg-default-50',
+          showRail
+            ? 'grid-cols-1 lg:grid-cols-[auto_minmax(0,1fr)]'
+            : 'grid-cols-1'
+        )}
+      >
+        {showRail && (
+          <div className="hidden lg:block lg:min-w-[280px]">
+            {model ? (
+              <SectionNav sections={SECTIONS} />
+            ) : (
+              <SectionNavSkeleton items={SECTIONS.length} />
+            )}
+          </div>
+        )}
+        <section
+          className={cn(
+            'bg-white border-slate-200',
+            showRail && 'lg:col-start-2 lg:border-l'
+          )}
+        >
           <div className="p-6 lg:p-10">
             <Body
               modelId={modelId}
@@ -77,6 +110,7 @@ export function ModelDetailsSection({ modelId }: { modelId: string }) {
           </div>
         </section>
       </div>
+      <BackToTop />
     </main>
   );
 }
@@ -110,14 +144,17 @@ function Body({
   if (isLoading || !model) {
     return <ModelDetailsSkeleton />;
   }
+  // Order must match SECTION_TITLES — the nav's scroll-spy assumes DOM order.
   return (
     <div className="flex flex-col gap-8">
       <ModelHeader model={model} />
+      <ModelCharacterizationSection model={model} />
+      <BiologySection model={model} />
       <IOSpecSection model={model} />
       <ExecutionSection model={model} />
-      <MetadataSidebar model={model} />
       <FilesSection modelId={modelId} />
       <RunHistorySection modelId={modelId} />
+      <ProvenanceSection model={model} />
     </div>
   );
 }

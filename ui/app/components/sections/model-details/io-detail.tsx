@@ -1,16 +1,11 @@
 import type { ModelDetailResponse } from '~/api/endpoints/models';
-import { Chip, NotRecorded, SubHeading } from './primitives';
+import { AbsentCell, Chip, SubHeading } from './primitives';
 
 type IODetail = NonNullable<ModelDetailResponse['io']>;
 
 /**
- * The model's I/O characterization (schema.md Section C) rendered for humans.
- *
- * This is the data that replaces the old `JSON.stringify(parameters_schema)`
- * dump: real names, units, defaults and biological meaning, laid out as tables.
- * `io_spec` (slot names + a JSON Schema) is the machine handshake used to
- * validate a run; it is not a product surface, and nothing in the ingestion path
- * populates it anyway.
+ * The model's I/O characterization (schema.md Section C) rendered for humans:
+ * real names, units, defaults and biological meaning, laid out as tables.
  */
 export function IODetailBlocks({ io }: { io: IODetail | null | undefined }) {
   if (!io) return null;
@@ -30,10 +25,8 @@ export function IODetailBlocks({ io }: { io: IODetail | null | undefined }) {
                 {p.name}
               </span>,
               formatValue(p.default_value),
-              p.unit || <NotRecorded>—</NotRecorded>,
-              p.biological_meaning || p.description || (
-                <NotRecorded>—</NotRecorded>
-              ),
+              p.unit || <AbsentCell />,
+              p.biological_meaning || p.description || <AbsentCell />,
             ])}
           />
         </div>
@@ -49,7 +42,7 @@ export function IODetailBlocks({ io }: { io: IODetail | null | undefined }) {
                 {c.name}
               </span>,
               formatValue(c.value),
-              c.unit || <NotRecorded>—</NotRecorded>,
+              c.unit || <AbsentCell />,
             ])}
           />
         </div>
@@ -64,9 +57,9 @@ export function IODetailBlocks({ io }: { io: IODetail | null | undefined }) {
               <span key="n" className="font-mono">
                 {d.name}
               </span>,
-              d.format || <NotRecorded>—</NotRecorded>,
+              d.format || <AbsentCell />,
               d.required ? <Chip tone="secondary">Required</Chip> : 'Optional',
-              d.purpose || <NotRecorded>—</NotRecorded>,
+              d.purpose || <AbsentCell />,
             ])}
           />
         </div>
@@ -81,9 +74,9 @@ export function IODetailBlocks({ io }: { io: IODetail | null | undefined }) {
               <span key="n" className="font-mono">
                 {o.name}
               </span>,
-              o.quantity_kind || o.description || <NotRecorded>—</NotRecorded>,
-              o.unit || <NotRecorded>—</NotRecorded>,
-              o.format || <NotRecorded>—</NotRecorded>,
+              o.quantity_kind || o.description || <AbsentCell />,
+              o.unit || <AbsentCell />,
+              o.format || <AbsentCell />,
             ])}
           />
         </div>
@@ -144,11 +137,8 @@ function Protocol({
 }
 
 /**
- * A compact data table.
- *
- * Wrapped in its own `overflow-x-auto` so a wide table scrolls itself rather
- * than forcing the whole page to scroll sideways — the failure mode long
- * dependency names and file paths already caused elsewhere on this page.
+ * A compact data table. Wrapped in its own `overflow-x-auto` so a wide table
+ * scrolls itself rather than forcing the page to scroll sideways.
  */
 function DataTable({
   columns,
@@ -192,7 +182,7 @@ function DataTable({
 /** Render an arbitrary JSON default without leaking `[object Object]`. */
 function formatValue(value: unknown): React.ReactNode {
   if (value === null || value === undefined || value === '') {
-    return <NotRecorded>—</NotRecorded>;
+    return <AbsentCell />;
   }
   if (typeof value === 'object') {
     return <code className="font-mono text-xs">{JSON.stringify(value)}</code>;
