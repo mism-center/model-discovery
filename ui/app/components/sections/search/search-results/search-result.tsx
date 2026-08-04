@@ -64,23 +64,32 @@ export function SearchResult({ result }: SearchResultProps) {
           </div>
         )}
 
-        {/* Title */}
-        <h3
-          className={cn(
-            'relative w-fit text-xl font-bold font-headline text-primary',
-            'after:absolute after:w-full after:h-0.5 after:-bottom-px after:left-0',
-            'after:bg-primary after:content-[""]',
-            'after:scale-x-0 after:origin-right after:transition-transform after:duration-150 after:ease-in-out',
-            'group-hover:after:scale-x-100 group-hover:after:origin-left',
-            'after:delay-0 group-hover:after:delay-150'
-          )}
-        >
+        {/*
+         * Title. Deliberately *not* `relative`: the overlay below is
+         * `absolute inset-0`, so it resolves against the nearest positioned
+         * ancestor — and while that was this `h3` (which is `w-fit`) the overlay
+         * only ever covered the title text, not the card. The underline's
+         * positioning context moved to an inner span so the card can be the one
+         * that counts.
+         */}
+        <h3 className="w-fit text-xl font-bold font-headline text-primary">
           {detailsPath ? (
             <Link to={detailsPath} className="outline-none">
-              {/* Cover the whole card so anywhere in it navigates to details,
-                  while the action buttons on the right sit above via z-index. */}
+              {/* Covers the whole card, so clicking anywhere in it opens details.
+                  The action buttons sit above it via `relative z-10`. */}
               <span className="absolute inset-0 z-0" aria-hidden="true" />
-              {result.name}
+              <span
+                className={cn(
+                  'relative inline-block',
+                  'after:absolute after:w-full after:h-0.5 after:-bottom-px after:left-0',
+                  'after:bg-primary after:content-[""]',
+                  'after:scale-x-0 after:origin-right after:transition-transform after:duration-150 after:ease-in-out',
+                  'group-hover:after:scale-x-100 group-hover:after:origin-left',
+                  'after:delay-0 group-hover:after:delay-150'
+                )}
+              >
+                {result.name}
+              </span>
             </Link>
           ) : (
             result.name
@@ -177,6 +186,7 @@ export function SearchResult({ result }: SearchResultProps) {
           variant="flat"
           size="sm"
           isIconOnly
+          aria-label={`Bookmark ${result.name}`}
           className={cn(
             'bg-transparent rounded-lg hover:opacity-100! active:opacity-90!',
             'text-primary hover:bg-primary hover:text-white'
@@ -188,20 +198,14 @@ export function SearchResult({ result }: SearchResultProps) {
           <BookmarkIcon className="size-5" />
         </Button>
 
-        <div className="flex items-center gap-2">
-          {detailsPath && (
-            <Button
-              as={Link}
-              to={detailsPath}
-              size="sm"
-              variant="bordered"
-              className="px-5 py-2.5 rounded-lg text-sm font-bold border-primary/40 text-primary"
-            >
-              View details
-            </Button>
-          )}
-          {executable && <RunControls model={result} />}
-        </div>
+        {/*
+         * No "View details" button. The card is the link — the title's overlay
+         * covers it, the title underlines on hover and the card tints and lifts —
+         * so an explicit button was a second tab stop to the same place, and
+         * every comparable result list treats the row itself as the link. That
+         * leaves the row one action, which is the consequential one.
+         */}
+        {executable && <RunControls model={result} />}
       </div>
     </div>
   );

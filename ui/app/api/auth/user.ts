@@ -4,7 +4,6 @@ import type { Client } from 'openapi-fetch';
 import type { components, paths } from '~/api/generated/schema';
 import { apiClient } from '~/api/client/client';
 import { ApiError } from '~/api/client/errors';
-import { getQueryClient } from '~/api/query/query-client';
 
 export type CurrentUser = components['schemas']['CurrentUser'];
 
@@ -86,9 +85,18 @@ export function signIn(): void {
 }
 
 /**
- * Clear the local session and, if the IdP supports RP-initiated logout,
- * navigate top-level to its `end_session_endpoint` so the IdP can clear
- * its own session. Otherwise land on `/`.
+ * End the session and, if the IdP supports RP-initiated logout, navigate
+ * top-level to its `end_session_endpoint` so the IdP can clear its own session.
+ * Otherwise land on `/`.
+ *
+ * Deliberately does *not* write `null` into the user query first. This always
+ * ends in a full-page navigation, so the cache is about to be discarded with the
+ * document — but `location.assign` doesn't block, so flipping the cache first
+ * gave React time to commit a signed-out render and repaint it for the whole
+ * duration of the navigation. That was invisible while logging out only removed
+ * a button; once it also unmounted the run-history section, dropped a nav-rail
+ * entry and hid two navbar links, it became a visible 0.5–1s rearrangement
+ * before the redirect.
  */
 export async function signOut(): Promise<void> {
   let endSessionUrl: string | null = null;
@@ -96,12 +104,12 @@ export async function signOut(): Promise<void> {
     const { data } = await apiClient.POST('/api/auth/logout');
     endSessionUrl = data?.end_session_url ?? null;
   } catch (error) {
-    // Even if logout fails server-side, drop local state and bounce.
+    // Even if logout fails server-side, bounce anyway — the server has already
+    // deleted the session cookie in every case it reaches.
     if (!(error instanceof ApiError) || !error.isAuthError) {
       console.warn('logout request failed', error);
     }
   }
-  getQueryClient().setQueryData<CurrentUser | null>(userQueryKey, null);
   globalThis.location.assign(endSessionUrl ?? '/');
 }
 

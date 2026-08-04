@@ -26,22 +26,24 @@ function SignInToRunPrompt({ executable }: { executable: boolean }) {
   const { user, isLoading } = useUser();
   if (!executable || isLoading || user) return null;
 
+  // Filled, not bordered, and identical in size and padding to `RunControls`'
+  // `page` scale: this stands in for that button, so it should carry the same
+  // weight rather than looking like a lesser version of it. An outline next to
+  // nothing reads as unfinished, and for an anonymous visitor this *is* the
+  // page's primary action.
+  //
+  // No caption underneath either — "Running a model requires an account" only
+  // restated the label, and stacking it turned one control into a two-line block.
   return (
-    <div className="flex flex-col items-start sm:items-end gap-1.5">
-      <Button
-        size="md"
-        color="primary"
-        variant="bordered"
-        className="px-6 rounded-lg text-[15px] font-bold"
-        startContent={<ArrowRightEndOnRectangleIcon className="size-4" />}
-        onPress={() => signIn()}
-      >
-        Sign in to run
-      </Button>
-      <p className="text-xs text-default-800">
-        Running a model requires an account.
-      </p>
-    </div>
+    <Button
+      size="md"
+      color="primary"
+      className="px-6 rounded-lg text-[15px] font-bold"
+      startContent={<ArrowRightEndOnRectangleIcon className="size-4" />}
+      onPress={() => signIn()}
+    >
+      Sign in to run
+    </Button>
   );
 }
 
