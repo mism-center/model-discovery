@@ -1,4 +1,6 @@
-import type { components } from '~/api/generated/schema';
+import type { Client } from 'openapi-fetch';
+
+import type { components, paths } from '~/api/generated/schema';
 import { apiClient } from '~/api/client/client';
 import { browserApiBaseUrl } from '~/utils/env';
 
@@ -8,9 +10,9 @@ export type ResourceFilesResponse =
 
 export async function listResourceFiles(
   resourceId: string,
-  options: { signal?: AbortSignal } = {}
+  options: { signal?: AbortSignal; client?: Client<paths> } = {}
 ): Promise<ResourceFilesResponse> {
-  const { data } = await apiClient.GET(
+  const { data } = await (options.client ?? apiClient).GET(
     '/api/v1/resources/{resource_id}/files',
     {
       params: { path: { resource_id: resourceId } },

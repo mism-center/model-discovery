@@ -1,9 +1,11 @@
 import { Spinner } from '@heroui/react';
+import { PlayCircleIcon } from '@heroicons/react/24/outline';
 import { useQuery } from '@tanstack/react-query';
 
 import type { UserRunItem } from '~/api/endpoints/runs';
 import { modelRunsQueryOptions } from '~/api/query/runs';
 import { ApiErrorDisplay } from '~/components/common/api-error-display';
+import { EmptyState } from '~/components/common/empty-state';
 import { RunRow } from '~/components/sections/runs/run-row';
 import { SectionCard } from './primitives';
 
@@ -60,7 +62,7 @@ function RunHistoryBody({
   }
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 text-sm text-default-600 py-4">
+      <div className="flex items-center gap-2 text-sm text-default-800 py-4">
         <Spinner size="sm" classNames={{ wrapper: 'w-4 h-4' }} />
         <span>Loading runs…</span>
       </div>
@@ -68,16 +70,18 @@ function RunHistoryBody({
   }
   if (items.length === 0) {
     return (
-      <p className="text-sm text-default-500 py-2">
-        This model hasn&apos;t been run yet.
-      </p>
+      <EmptyState
+        icon={PlayCircleIcon}
+        title="No runs yet"
+        description="Launch this model to see its execution history here."
+      />
     );
   }
   return (
     <ul className="flex flex-col gap-2">
       {items.map((item) => (
         <li key={item.run.id}>
-          <RunRow item={item} />
+          <RunRow item={item} context="single-model" />
         </li>
       ))}
     </ul>

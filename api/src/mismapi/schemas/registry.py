@@ -5,12 +5,15 @@ from mism_registry import ExecutionType
 from mism_registry.types import (
     Author,
     Compute,
+    Contact,
     Container,
     Dependency,
     EntryPoint,
+    IODetail,
     IOSlot,
     IOSpec,
     Publication,
+    RelatedResource,
     TestSpec,
 )
 from pydantic import BaseModel, Field, field_validator
@@ -30,8 +33,30 @@ class AuthorDTO(BaseModel):
 class PublicationDTO(BaseModel):
     title: str
     doi: str = ""
+    pmid: str = ""
     url: str = ""
     citation: str = ""
+
+
+class ContactDTO(BaseModel):
+    """How to reach someone about the model now (`Resource.contacts`)."""
+
+    name: str
+    role: str = ""
+    email: str = ""
+    affiliation: str = ""
+
+
+class RelatedResourceDTO(BaseModel):
+    """A linked prior model or data source (`Resource.related_resources`).
+
+    The only provenance link the registry stores — `qualifier` carries the
+    relationship (e.g. `bqmodel:isDerivedFrom`, `bqbiol:isVersionOf`).
+    """
+
+    qualifier: str
+    scheme: str = ""
+    value: str = ""
 
 
 class IOSlotDTO(BaseModel):
@@ -73,6 +98,69 @@ class ArgumentDTO(BaseModel):
     name: str
     description: str = ""
     default: Any = None
+    # Restored — these were dropped from the response, which cost the UI the
+    # ability to render an argument's allowed values, its type, or whether the
+    # caller is even permitted to change it at run time.
+    enums: list[str] | None = None
+    data_type: str = ""
+    position: int | None = None
+    user_can_override: bool | None = None
+
+
+# ── Section C: rich I/O characterization (`Resource.io`) ─────────────
+#
+# Distinct from `io_spec`, which is the machine handshake used to validate a run
+# (slot names + tags + a JSON Schema). This is the *human* description of what
+# the model consumes and produces — units, biological meaning, protocol — and it
+# is the richest metadata a characterized model carries. It was absent from the
+# detail response entirely, so the page had nothing real to show under I/O.
+
+
+class ParameterDTO(BaseModel):
+    name: str
+    description: str = ""
+    default_value: Any = None
+    unit: str = ""
+    biological_meaning: str = ""
+
+
+class InitialConditionDTO(BaseModel):
+    name: str
+    value: Any = None
+    unit: str = ""
+
+
+class DataInputDTO(BaseModel):
+    name: str
+    purpose: str = ""
+    format: str = ""
+    required: bool = True
+
+
+class OutputDTO(BaseModel):
+    name: str
+    description: str = ""
+    quantity_kind: str = ""
+    unit: str = ""
+    format: str = ""
+    destination: str = ""
+
+
+class ExperimentProtocolDTO(BaseModel):
+    description: str = ""
+    timestep: float | None = None
+    timestep_unit: str = ""
+    duration: float | None = None
+    duration_unit: str = ""
+    observables: list[str] = Field(default_factory=list)
+
+
+class IODetailDTO(BaseModel):
+    parameters: list[ParameterDTO] = Field(default_factory=list)
+    initial_conditions: list[InitialConditionDTO] = Field(default_factory=list)
+    data_inputs: list[DataInputDTO] = Field(default_factory=list)
+    outputs: list[OutputDTO] = Field(default_factory=list)
+    experiment_protocol: ExperimentProtocolDTO | None = None
 
 
 class EntryPointDTO(BaseModel):
@@ -94,7 +182,9 @@ def author_from_dto(dto: AuthorDTO) -> Author:
 
 
 def pub_from_dto(dto: PublicationDTO) -> Publication:
-    return Publication(title=dto.title, doi=dto.doi, url=dto.url, citation=dto.citation)
+    return Publication(
+        title=dto.title, doi=dto.doi, pmid=dto.pmid, url=dto.url, citation=dto.citation
+    )
 
 
 def io_slot_from_dto(dto: IOSlotDTO) -> IOSlot:
@@ -116,7 +206,62 @@ def author_to_dto(a: Author) -> AuthorDTO:
 
 
 def pub_to_dto(p: Publication) -> PublicationDTO:
-    return PublicationDTO(title=p.title, doi=p.doi, url=p.url, citation=p.citation)
+    return PublicationDTO(title=p.title, doi=p.doi, pmid=p.pmid, url=p.url, citation=p.citation)
+
+
+def contact_to_dto(c: Contact) -> ContactDTO:
+    return ContactDTO(name=c.name, role=c.role, email=c.email, affiliation=c.affiliation)
+
+
+def related_resource_to_dto(r: RelatedResource) -> RelatedResourceDTO:
+    return RelatedResourceDTO(qualifier=r.qualifier, scheme=r.scheme, value=r.value)
+
+
+def io_detail_to_dto(io: IODetail) -> IODetailDTO:
+    protocol = io.experiment_protocol
+    return IODetailDTO(
+        parameters=[
+            ParameterDTO(
+                name=p.name,
+                description=p.description,
+                default_value=p.default_value,
+                unit=p.unit,
+                biological_meaning=p.biological_meaning,
+            )
+            for p in io.parameters
+        ],
+        initial_conditions=[
+            InitialConditionDTO(name=c.name, value=c.value, unit=c.unit)
+            for c in io.initial_conditions
+        ],
+        data_inputs=[
+            DataInputDTO(name=d.name, purpose=d.purpose, format=d.format, required=d.required)
+            for d in io.data_inputs
+        ],
+        outputs=[
+            OutputDTO(
+                name=o.name,
+                description=o.description,
+                quantity_kind=o.quantity_kind,
+                unit=o.unit,
+                format=o.format,
+                destination=o.destination,
+            )
+            for o in io.outputs
+        ],
+        experiment_protocol=(
+            ExperimentProtocolDTO(
+                description=protocol.description,
+                timestep=protocol.timestep,
+                timestep_unit=protocol.timestep_unit,
+                duration=protocol.duration,
+                duration_unit=protocol.duration_unit,
+                observables=list(protocol.observables),
+            )
+            if protocol is not None
+            else None
+        ),
+    )
 
 
 def io_slot_to_dto(s: IOSlot) -> IOSlotDTO:
@@ -161,7 +306,21 @@ def entry_point_to_dto(e: EntryPoint) -> EntryPointDTO:
         command=e.command,
         purpose=e.purpose,
         arguments=[
-            ArgumentDTO(name=a.name, description=a.description, default=a.default)
+            ArgumentDTO(
+                name=a.name,
+                description=a.description,
+                default=a.default,
+                # getattr, not attribute access: these four fields exist on
+                # `Argument` in the metadata-schema working tree but NOT in the
+                # DAL revision `api/pyproject.toml` currently pins
+                # (`default-draft`). Reading them directly makes the endpoint
+                # raise AttributeError under the pinned dependency, which is what
+                # CI installs. Remove the getattr once the pinned ref is bumped.
+                enums=list(getattr(a, "enums", None) or []) or None,
+                data_type=getattr(a, "data_type", "") or "",
+                position=getattr(a, "position", None),
+                user_can_override=getattr(a, "user_can_override", None),
+            )
             for a in e.arguments
         ],
     )
@@ -293,6 +452,13 @@ class ModelDetailResponse(RegisterModelResponse):
     compute: ComputeDTO | None = None
     entry_points: list[EntryPointDTO] = Field(default_factory=list)
     tests: TestSpecDTO | None = None
+    # Rich I/O characterization (schema.md Section C) — the human-readable
+    # counterpart to `io_spec`, and the richest data a characterized model has.
+    io: IODetailDTO | None = None
+    # Attribution and provenance the response previously dropped.
+    # `related_resources` is the registry's only "derived from / version of" link.
+    contacts: list[ContactDTO] = Field(default_factory=list)
+    related_resources: list[RelatedResourceDTO] = Field(default_factory=list)
 
 
 class UpdateModelRequest(_AttributionFields, _ScientificFields, _IntegrityFields):

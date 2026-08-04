@@ -306,6 +306,37 @@ class RegistryService:
 
     # ── Resource file access ────────────────────────────────────────
 
+    def find_resource_directory(self, resource_id: str) -> tuple[Resource, Path | None]:
+        """Like ``get_resource_directory``, but yields ``None`` for a directory
+        that isn't on the mount yet instead of raising 404.
+
+        For *listing*, "this resource has no files on disk" is an empty result,
+        not a failure — a registered model that was never uploaded, or whose
+        upload is still pending, legitimately has nothing to list. Raising 404
+        there forces every client to treat emptiness as an error, which is what
+        stopped the detail page's Files section from server-rendering: the query
+        errored, so `dehydrate()` dropped it and the browser refetched.
+
+        Download keeps using the strict variant — there a missing directory
+        really is a 404.
+        """
+        try:
+            resource = self._registry.get_resource(resource_id)
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+        mount = get_settings().irods_mount_path
+        directory = resolve_location_uri(resource.location_uri, mount, missing_ok=True)
+        if not directory.exists():
+            return resource, None
+        if not directory.is_dir():
+            raise APIError(
+                status_code=400,
+                code="not_a_directory",
+                detail=f"Resource location is not a directory: {resource.location_uri}",
+            )
+        return resource, directory
+
     def get_resource_directory(self, resource_id: str) -> tuple[Resource, Path]:
         """Return the resource and its on-disk artifact directory.
 
@@ -517,17 +548,42 @@ class RegistryService:
         *,
         model_id: str,
         status: RunStatus | None = None,
+        triggered_by: str | None = None,
     ) -> ModelRunSummary:
-        """Return the model plus all of its runs with hydrated I/O resources.
+        """Return the model plus its runs with hydrated I/O resources.
 
-        Used by the UI's "Model Runs" page to populate the view in a single call.
+        Used by the model detail page's run history. Pass ``triggered_by`` to
+        scope the result to one user's runs.
+
+        Preferred path pushes ``triggered_by`` into the query so other users'
+        runs are never hydrated. That parameter only exists in the
+        metadata-schema working tree, not in the DAL revision
+        ``api/pyproject.toml`` pins, so there is a compatibility fallback that
+        filters after the fact. The fallback is strictly less efficient — it
+        hydrates rows it then discards — but it must never be less *safe*: both
+        paths return only the caller's runs. Delete the fallback once the pinned
+        DAL ref is bumped.
         """
         try:
-            return get_model_run_details(
-                self._registry,
-                model_id=model_id,
-                status=status,
-            )
+            try:
+                summary = get_model_run_details(  # type: ignore[call-arg]
+                    self._registry,
+                    model_id=model_id,
+                    status=status,
+                    triggered_by=triggered_by,
+                )
+            except TypeError:
+                summary = get_model_run_details(self._registry, model_id=model_id, status=status)
+                if triggered_by is not None:
+                    summary = dataclasses.replace(
+                        summary,
+                        runs=[
+                            detail
+                            for detail in summary.runs
+                            if detail.run.triggered_by == triggered_by
+                        ],
+                    )
+            return summary
         except ResourceNotFoundError as exc:
             raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
         except RegistryValidationError as exc:
@@ -539,9 +595,21 @@ class RegistryService:
         triggered_by: str,
         status: RunStatus | None = None,
     ) -> list[Run]:
-        """All runs triggered by a user, across every model, optionally by status."""
-        runs = self._registry.find_runs(status=status)
-        return [run for run in runs if run.triggered_by == triggered_by]
+        """All runs triggered by a user, across every model, optionally by status.
+
+        Prefers the DAL's `triggered_by` filter so the database does the work.
+        That parameter does not exist in the DAL revision `pyproject.toml`
+        currently pins, so there is a fallback that filters in Python — slower,
+        but never less selective. Both paths return only this user's runs.
+        Remove the fallback (and the `type: ignore`) when the pin moves.
+        """
+        try:
+            return self._registry.find_runs(  # type: ignore[call-arg]
+                status=status, triggered_by=triggered_by
+            )
+        except TypeError:
+            runs = self._registry.find_runs(status=status)
+            return [run for run in runs if run.triggered_by == triggered_by]
 
     def find_user_run_details(
         self,

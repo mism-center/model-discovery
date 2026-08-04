@@ -37,15 +37,45 @@ const RETURN_TO_KEYS: Record<string, string> = {
 };
 
 /**
+ * Parameterized routes, matched by prefix, that can be returned to after login.
+ *
+ * The client sends a route *key* plus the id as a separate value — never a path.
+ * The server resolves the key against its own allowlist and validates the id as a
+ * UUID before substituting it (`mismapi/auth/return_to.py`), so a hostile id
+ * can't graft segments or an origin onto the redirect. Keep in sync with
+ * `PARAMETERIZED_ROUTE_PATHS` there.
+ */
+const RETURN_TO_ID_ROUTES: Array<{ prefix: string; key: string }> = [
+  { prefix: '/models/', key: 'model' },
+];
+
+/**
  * Trigger an OIDC login. Top-level navigation so the browser follows the
  * 302 chain to the IdP and back through `/api/auth/callback` cleanly. Sends
  * the current route key + query so the callback can return the user here.
  */
 export function signIn(): void {
-  const key = RETURN_TO_KEYS[globalThis.location.pathname];
+  const pathname = globalThis.location.pathname;
+  let key = RETURN_TO_KEYS[pathname];
+  let id: string | undefined;
+
+  if (!key) {
+    const match = RETURN_TO_ID_ROUTES.find((route) =>
+      pathname.startsWith(route.prefix)
+    );
+    const candidate = match ? pathname.slice(match.prefix.length) : undefined;
+    // Only a single trailing segment is a candidate id; anything with a further
+    // `/` is a different route and is left unmapped (server falls back too).
+    if (match && candidate && !candidate.includes('/')) {
+      key = match.key;
+      id = candidate;
+    }
+  }
+
   const params = new URLSearchParams();
   if (key) {
     params.set('return_to_key', key);
+    if (id) params.set('return_to_id', id);
     const query = globalThis.location.search.replace(/^\?/, '');
     if (query) params.set('return_to_query', query);
   }

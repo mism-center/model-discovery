@@ -2,17 +2,19 @@ from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
-from mism_registry.enums import ExecutionType, ResourceType, ResourceVersionStatus
+from mism_registry.enums import (
+    ExecutionType,
+    ResourceRegistrationStatus,
+    ResourceType,
+    ResourceVersionStatus,
+)
 from mism_registry.resource import Resource
 from mism_registry.search import SearchResult
 
-from mismapi.auth.base import (
-    AuthenticatedPrincipal,
-    require_principal,
-)
 from mismapi.core.deps import _get_registry_service
 from mismapi.main import create_app
 from mismapi.services.registry_service import RegistryService
+from tests.conftest import override_anonymous, override_principal
 
 
 def _make_resource(
@@ -21,6 +23,7 @@ def _make_resource(
     name: str = "Example Model",
     description: str = "A test model",
     owner: str = "user-1",
+    registration_status: ResourceRegistrationStatus = ResourceRegistrationStatus.APPROVED,
 ) -> Resource:
     return Resource(
         id=id,
@@ -32,22 +35,14 @@ def _make_resource(
         version="1.0",
         version_status=ResourceVersionStatus.ACTIVE,
         owner=owner,
+        registration_status=registration_status,
         created_at=datetime(2025, 1, 1, tzinfo=UTC),
-    )
-
-
-async def _allow_principal() -> AuthenticatedPrincipal:
-    return AuthenticatedPrincipal(
-        subject="user-1",
-        issuer="test",
-        audience="mism-api",
-        scopes=set(),
     )
 
 
 def _make_app_with_service(service: RegistryService) -> TestClient:
     app = create_app()
-    app.dependency_overrides[require_principal] = _allow_principal
+    override_principal(app)
     app.dependency_overrides[_get_registry_service] = lambda: service
     return TestClient(app)
 
@@ -274,7 +269,9 @@ def test_search_result_with_rich_resource() -> None:
     ]
     assert item["organization"] == "RENCI"
     assert item["contact_email"] == "jane@renci.org"
-    assert item["publications"] == [{"title": "Paper", "doi": "10.1/x", "url": "", "citation": ""}]
+    assert item["publications"] == [
+        {"title": "Paper", "doi": "10.1/x", "pmid": "", "url": "", "citation": ""}
+    ]
     assert item["funding"] == ["NIH"]
     assert item["model_scales"] == ["cellular"]
     assert item["organisms"] == ["human"]
@@ -316,3 +313,79 @@ def test_list_models_response_includes_new_fields() -> None:
     assert "execution_ref" in item
     assert "io_spec" in item
     assert "metadata" in item
+
+
+# ── Visibility gate on the list endpoint ─────────────────────────────
+#
+# GET /models/{id} and the search path both restrict unapproved models to their
+# owner. The list endpoint did not, so a draft model's name, description and
+# owner were still enumerable by an anonymous caller even though its detail page
+# 404'd.
+
+
+def _anonymous_client(service: RegistryService) -> TestClient:
+    app = create_app()
+    override_anonymous(app)
+    app.dependency_overrides[_get_registry_service] = lambda: service
+    return TestClient(app)
+
+
+def test_list_models_hides_unapproved_from_anonymous_callers() -> None:
+    service = MagicMock(spec=RegistryService)
+    service.list_models.return_value = [
+        _make_resource(id="approved", name="Public"),
+        _make_resource(
+            id="draft",
+            name="Secret",
+            registration_status=ResourceRegistrationStatus.DRAFT,
+        ),
+    ]
+
+    response = _anonymous_client(service).get("/api/v1/models")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [r["id"] for r in payload["results"]] == ["approved"]
+    # `total` must reflect the filtered set — a count of 2 would betray the
+    # hidden model's existence on its own.
+    assert payload["total"] == 1
+
+
+def test_list_models_shows_owner_their_own_unapproved_models() -> None:
+    service = MagicMock(spec=RegistryService)
+    service.list_models.return_value = [
+        _make_resource(
+            id="mine",
+            owner="user-1",
+            registration_status=ResourceRegistrationStatus.PENDING_REVIEW,
+        ),
+        _make_resource(
+            id="theirs",
+            owner="someone-else",
+            registration_status=ResourceRegistrationStatus.PENDING_REVIEW,
+        ),
+    ]
+
+    # override_principal installs subject "user-1".
+    response = _make_app_with_service(service).get("/api/v1/models")
+
+    assert response.status_code == 200
+    assert [r["id"] for r in response.json()["results"]] == ["mine"]
+
+
+def test_list_models_pagination_applies_after_the_visibility_filter() -> None:
+    service = MagicMock(spec=RegistryService)
+    service.list_models.return_value = [
+        _make_resource(id="draft", registration_status=ResourceRegistrationStatus.DRAFT),
+        _make_resource(id="a"),
+        _make_resource(id="b"),
+    ]
+
+    response = _anonymous_client(service).get("/api/v1/models?limit=1&offset=0")
+
+    assert response.status_code == 200
+    payload = response.json()
+    # Without filter-before-paginate the hidden draft would consume the page and
+    # return an empty result set for a page the client was told exists.
+    assert [r["id"] for r in payload["results"]] == ["a"]
+    assert payload["total"] == 2

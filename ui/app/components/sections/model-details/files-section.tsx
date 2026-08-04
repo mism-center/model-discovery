@@ -15,6 +15,7 @@ import type { ResourceFileItem } from '~/api';
 import { resourceDownloadUrl } from '~/api';
 import { resourceFilesQueryOptions } from '~/api/query/resources';
 import { ApiErrorDisplay } from '~/components/common/api-error-display';
+import { EmptyState } from '~/components/common/empty-state';
 import { formatBytes } from '~/utils/format';
 import { SectionCard } from './primitives';
 
@@ -83,13 +84,15 @@ export function FilesSection({ modelId }: { modelId: string }) {
         ) : undefined
       }
     >
-      <FilesBody
-        modelId={modelId}
-        files={files}
-        isLoading={isLoading}
-        error={error}
-        refetch={refetch}
-      />
+      <div className="min-h-56">
+        <FilesBody
+          modelId={modelId}
+          files={files}
+          isLoading={isLoading}
+          error={error}
+          refetch={refetch}
+        />
+      </div>
     </SectionCard>
   );
 }
@@ -118,7 +121,7 @@ function FilesBody({
   }
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 text-sm text-default-600 py-4">
+      <div className="flex items-center gap-2 text-sm text-default-800 py-4">
         <Spinner size="sm" classNames={{ wrapper: 'w-4 h-4' }} />
         <span>Loading files…</span>
       </div>
@@ -126,43 +129,102 @@ function FilesBody({
   }
   if (files.length === 0) {
     return (
-      <p className="text-sm text-default-500 py-2">
-        No files are stored with this model.
-      </p>
+      <EmptyState
+        icon={FolderIcon}
+        title="No files"
+        description="Nothing has been stored with this model yet."
+      />
     );
   }
   return (
-    <ul className="flex flex-col divide-y divide-default-100">
-      {files.map((file) => (
-        <li
-          key={file.path}
-          className="group flex items-center justify-between gap-4 py-2"
-        >
-          <div className="flex items-center gap-2 min-w-0 text-default-800">
-            <FileTypeIcon file={file} />
-            <span className="truncate text-[13px]" title={file.path}>
-              {file.path}
-            </span>
-          </div>
-          <div className="flex items-center gap-4 shrink-0">
-            {!file.is_dir && typeof file.size_bytes === 'number' && (
-              <span className="text-[12px] text-default-500 tabular-nums">
-                {formatBytes(file.size_bytes)}
+    <div className="flex flex-col gap-4">
+      {groupByDirectory(files).map(({ directory, entries }) => (
+        <div key={directory}>
+          {directory !== '' && (
+            <p className="flex items-center gap-1.5 mb-1 text-xs font-bold uppercase tracking-wider text-default-800">
+              <FolderIcon aria-hidden="true" className="size-3.5 shrink-0" />
+              <span className="truncate font-mono normal-case tracking-normal">
+                {directory}
               </span>
-            )}
-            {!file.is_dir && (
-              <a
-                href={resourceDownloadUrl(modelId, file.path)}
-                download
-                aria-label={`Download ${file.path}`}
-                className="text-default-500 hover:text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded"
+            </p>
+          )}
+          <ul className="flex flex-col divide-y divide-default-100">
+            {entries.map((file) => (
+              <li
+                key={file.path}
+                className="group flex items-center justify-between gap-4 py-2 px-2 -mx-2 rounded hover:bg-primary/4"
               >
-                <ArrowDownTrayIcon className="size-4" />
-              </a>
-            )}
-          </div>
-        </li>
+                <div className="flex items-center gap-2 min-w-0 text-default-900">
+                  <FileTypeIcon file={file} />
+                  <span
+                    className="truncate text-sm group-hover:text-primary"
+                    title={file.path}
+                  >
+                    {basename(file.path)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-4 shrink-0">
+                  {!file.is_dir && (
+                    <span className="text-xs text-default-800 tabular-nums">
+                      {formatBytes(file.size_bytes)}
+                    </span>
+                  )}
+                  {!file.is_dir && (
+                    <a
+                      href={resourceDownloadUrl(modelId, file.path)}
+                      download
+                      aria-label={`Download ${file.path}`}
+                      className="text-default-800 group-hover:text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded"
+                    >
+                      <ArrowDownTrayIcon className="size-4" />
+                    </a>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
       ))}
-    </ul>
+    </div>
+  );
+}
+
+/** Trailing path segment — the listing is flat, so paths carry the directory. */
+function basename(path: string): string {
+  const index = path.lastIndexOf('/');
+  return index === -1 ? path : path.slice(index + 1);
+}
+
+/**
+ * Group a flat listing into directory blocks.
+ *
+ * The API returns one flat array of full paths (and `is_dir` is currently always
+ * false), so a real collapsible tree has nothing to expand. Grouping by parent
+ * directory gets the structural readability of a tree — you can see the repo's
+ * shape and file names stop being long duplicated path strings — without
+ * pretending to a hierarchy the endpoint doesn't describe.
+ *
+ * Root-level files come first (directory `''`), then directories alphabetically.
+ */
+function groupByDirectory(
+  files: ResourceFileItem[]
+): Array<{ directory: string; entries: ResourceFileItem[] }> {
+  const groups = new Map<string, ResourceFileItem[]>();
+  for (const file of files) {
+    const index = file.path.lastIndexOf('/');
+    const directory = index === -1 ? '' : file.path.slice(0, index);
+    const entries = groups.get(directory) ?? [];
+    entries.push(file);
+    groups.set(directory, entries);
+  }
+  return (
+    [...groups.entries()]
+      .map(([directory, entries]) => ({ directory, entries }))
+      // eslint-disable-next-line unicorn/no-array-sort -- toSorted needs a newer lib target than tsconfig sets; the array is freshly built above so mutating it is safe
+      .sort((a, b) => {
+        if (a.directory === '') return -1;
+        if (b.directory === '') return 1;
+        return a.directory.localeCompare(b.directory);
+      })
   );
 }

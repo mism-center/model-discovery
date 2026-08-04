@@ -37,8 +37,13 @@ TEST_SETTINGS_DEFAULTS: dict[str, Any] = {
 for _key, _value in TEST_SETTINGS_DEFAULTS.items():
     os.environ.setdefault(_key, str(_value))
 
-from mismapi.auth.base import AuthenticatedPrincipal, require_principal  # noqa: E402
+from mismapi.auth.base import (  # noqa: E402
+    AuthenticatedPrincipal,
+    optional_principal,
+    require_principal,
+)
 from mismapi.core.container import AppContainer  # noqa: E402
+from mismapi.core.errors import APIError  # noqa: E402
 from mismapi.core.settings import Settings  # noqa: E402
 from mismapi.main import create_app  # noqa: E402
 
@@ -102,11 +107,41 @@ def override_principal(
     app: FastAPI,
     principal: AuthenticatedPrincipal | None = None,
 ) -> AuthenticatedPrincipal:
-    """Register a `require_principal` override that returns a fixed principal."""
+    """Register a fixed principal for both `require_principal` and `optional_principal`.
+
+    Every authenticated *and* optionally-authenticated dependency resolves to
+    this same principal — a test that only overrides `require_principal`
+    leaves `optional_principal` running for real, which blows up outside a
+    live request context (`'State' object has no attribute 'container'`).
+    This is the one seam tests should use to simulate "there is a logged-in
+    caller"; use `override_anonymous` for "there is no caller".
+    """
     effective = principal if principal is not None else default_principal()
 
-    async def _override() -> AuthenticatedPrincipal:
+    async def _require() -> AuthenticatedPrincipal:
         return effective
 
-    app.dependency_overrides[require_principal] = _override
+    async def _optional() -> AuthenticatedPrincipal | None:
+        return effective
+
+    app.dependency_overrides[require_principal] = _require
+    app.dependency_overrides[optional_principal] = _optional
     return effective
+
+
+def override_anonymous(app: FastAPI) -> None:
+    """Register overrides that simulate an anonymous (unauthenticated) caller.
+
+    `require_principal` raises the same 401 `APIError` the real dependency
+    raises when there is no session/bearer token; `optional_principal` mirrors
+    the real dependency's behavior of swallowing that into `None`.
+    """
+
+    async def _require() -> AuthenticatedPrincipal:
+        raise APIError(status_code=401, code="auth_missing", detail="Missing credentials.")
+
+    async def _optional() -> AuthenticatedPrincipal | None:
+        return None
+
+    app.dependency_overrides[require_principal] = _require
+    app.dependency_overrides[optional_principal] = _optional

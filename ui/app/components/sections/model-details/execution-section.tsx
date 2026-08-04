@@ -1,5 +1,5 @@
 import type { ModelDetailResponse } from '~/api/endpoints/models';
-import { SectionCard, Field, ChipList } from './primitives';
+import { SectionCard, Field, ChipList, SubHeading } from './primitives';
 
 /**
  * Execution characterization (schema.md Section B) + model characterization
@@ -16,29 +16,13 @@ export function ExecutionSection({ model }: { model: ModelDetailResponse }) {
   );
 }
 
-function hasAny(...values: unknown[]): boolean {
-  return values.some((v) =>
-    Array.isArray(v) ? v.length > 0 : v !== null && v !== undefined && v !== ''
-  );
-}
-
-/** Render a nullable boolean as Yes / No / — (unknown). */
+/** Render a nullable boolean as Yes / No, or '' so the field states the absence. */
 function formatTristate(value: boolean | null | undefined): string {
-  if (value === null || value === undefined) return '—';
+  if (value === null || value === undefined) return '';
   return value ? 'Yes' : 'No';
 }
 
 function ModelCharacterization({ model }: { model: ModelDetailResponse }) {
-  const show = hasAny(
-    model.model_class,
-    model.formalism,
-    model.multiscale,
-    model.determinism === 'unknown' ? '' : model.determinism,
-    model.time_dynamics === 'unknown' ? '' : model.time_dynamics,
-    model.spatial === 'unknown' ? '' : model.spatial
-  );
-  if (!show) return null;
-
   return (
     <SectionCard
       title="Model characterization"
@@ -61,18 +45,6 @@ function ModelCharacterization({ model }: { model: ModelDetailResponse }) {
 }
 
 function ExecutionCharacterization({ model }: { model: ModelDetailResponse }) {
-  const show = hasAny(
-    model.language_name,
-    model.execution_status,
-    model.execution_notes,
-    model.dependencies,
-    model.containers,
-    model.compute,
-    model.entry_points,
-    model.tests
-  );
-  if (!show) return null;
-
   const language = [model.language_name, model.language_version]
     .filter(Boolean)
     .join(' ');
@@ -95,7 +67,7 @@ function ExecutionCharacterization({ model }: { model: ModelDetailResponse }) {
       </dl>
 
       {model.execution_notes && (
-        <p className="mt-4 text-[13px] text-default-700 leading-relaxed">
+        <p className="mt-4 text-sm text-default-900 leading-relaxed">
           {model.execution_notes}
         </p>
       )}
@@ -108,21 +80,19 @@ function ExecutionCharacterization({ model }: { model: ModelDetailResponse }) {
 
       {model.containers && model.containers.length > 0 && (
         <div className="mt-6">
-          <h3 className="text-[11px] font-bold uppercase tracking-wider text-default-600 mb-2">
-            Containers
-          </h3>
+          <SubHeading>Containers</SubHeading>
           <ul className="flex flex-col gap-2">
             {model.containers.map((c, i) => (
               <li
                 key={`${c.kind}-${c.image_name || c.file || i}`}
-                className="text-[13px] text-default-900"
+                className="text-sm text-default-900"
               >
                 <span className="font-semibold capitalize">{c.kind}</span>
                 {c.image_name && (
                   <span className="font-mono"> · {c.image_name}</span>
                 )}
                 {c.file && (
-                  <span className="text-default-600"> ({c.file})</span>
+                  <span className="text-default-800"> ({c.file})</span>
                 )}
               </li>
             ))}
@@ -136,15 +106,13 @@ function ExecutionCharacterization({ model }: { model: ModelDetailResponse }) {
 
       {model.tests && (model.tests.framework || model.tests.invocation) && (
         <div className="mt-6">
-          <h3 className="text-[11px] font-bold uppercase tracking-wider text-default-600 mb-2">
-            Tests
-          </h3>
-          <p className="text-[13px] text-default-900">
+          <SubHeading>Tests</SubHeading>
+          <p className="text-sm text-default-900">
             {model.tests.framework && (
               <span className="font-semibold">{model.tests.framework}</span>
             )}
             {model.tests.invocation && (
-              <code className="ml-2 rounded bg-default-100 px-1.5 py-0.5 font-mono text-[12px]">
+              <code className="ml-2 rounded bg-default-100 px-1.5 py-0.5 font-mono text-xs">
                 {model.tests.invocation}
               </code>
             )}
@@ -179,9 +147,7 @@ function ComputeGrid({
 
   return (
     <div className="mt-6">
-      <h3 className="text-[11px] font-bold uppercase tracking-wider text-default-600 mb-2">
-        Compute requirements
-      </h3>
+      <SubHeading>Compute requirements</SubHeading>
       <dl className="grid gap-4 sm:grid-cols-3">
         {rows.map(([label, value]) => (
           <Field key={label} label={label}>
@@ -208,24 +174,22 @@ function Dependencies({
 
   return (
     <div className="mt-6">
-      <h3 className="text-[11px] font-bold uppercase tracking-wider text-default-600 mb-2">
-        Dependencies
-      </h3>
+      <SubHeading>Dependencies</SubHeading>
       <div className="flex flex-col gap-3">
         {[...byKind.entries()].map(([kind, deps]) => (
           <div key={kind}>
-            <p className="text-[12px] font-semibold text-default-700 capitalize mb-1">
+            <p className="text-sm font-semibold text-default-900 capitalize mb-1">
               {kind}
             </p>
             <ul className="flex flex-wrap gap-x-4 gap-y-1">
               {deps.map((d) => (
                 <li
                   key={`${d.name}-${d.group}`}
-                  className="text-[13px] font-mono text-default-900"
+                  className="text-sm font-mono text-default-900"
                 >
                   {d.name}
                   {d.version_constraint && (
-                    <span className="text-default-600">
+                    <span className="text-default-800">
                       {' '}
                       {d.version_constraint}
                     </span>
@@ -247,22 +211,20 @@ function EntryPoints({
 }) {
   return (
     <div className="mt-6">
-      <h3 className="text-[11px] font-bold uppercase tracking-wider text-default-600 mb-2">
-        Entry points
-      </h3>
+      <SubHeading>Entry points</SubHeading>
       <ul className="flex flex-col gap-3">
         {entryPoints.map((e, i) => (
           <li key={`${e.command}-${i}`}>
-            <code className="block rounded bg-default-100 px-2 py-1 font-mono text-[12px] text-default-900">
+            <code className="block rounded bg-default-100 px-2 py-1 font-mono text-xs text-default-900">
               {e.command}
             </code>
             {e.purpose && (
-              <p className="mt-1 text-[13px] text-default-700">{e.purpose}</p>
+              <p className="mt-1 text-sm text-default-900">{e.purpose}</p>
             )}
             {e.arguments && e.arguments.length > 0 && (
               <ul className="mt-1 ml-3 flex flex-col gap-0.5">
                 {e.arguments.map((a) => (
-                  <li key={a.name} className="text-[12px] text-default-700">
+                  <li key={a.name} className="text-xs text-default-900">
                     <span className="font-mono">{a.name}</span>
                     {a.description && <span> — {a.description}</span>}
                   </li>
@@ -277,15 +239,6 @@ function EntryPoints({
 }
 
 function Biology({ model }: { model: ModelDetailResponse }) {
-  const show = hasAny(
-    model.infectious_agents,
-    model.health_conditions,
-    model.biological_processes,
-    model.molecular_entities,
-    model.proteins_genes
-  );
-  if (!show) return null;
-
   return (
     <SectionCard
       title="Biology"

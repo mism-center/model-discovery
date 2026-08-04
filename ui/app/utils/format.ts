@@ -3,12 +3,28 @@
  * Falls back to the raw input for unparseable values.
  */
 export function formatMonthYear(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.valueOf())) return iso;
+  const date = parseLoose(iso);
+  if (!date) return iso;
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     year: 'numeric',
+    // Pin the zone for date-only values. Without this, `new Date('2024-01-01')`
+    // is parsed as UTC midnight and then rendered in the viewer's local zone, so
+    // anyone west of Greenwich sees "Dec 2023" — and the server (UTC) and client
+    // disagree, which React 19 reports as a hydration mismatch.
+    timeZone: isDateOnly(iso) ? 'UTC' : undefined,
   }).format(date);
+}
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+function isDateOnly(value: string): boolean {
+  return DATE_ONLY.test(value.trim());
+}
+
+function parseLoose(value: string): Date | undefined {
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf()) ? undefined : date;
 }
 
 /**

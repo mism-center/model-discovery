@@ -118,6 +118,13 @@ export interface paths {
      *
      *     Returns the full detail view, including the characterization fields
      *     populated by the metadata-package workflow.
+     *
+     *     Anonymous reads are allowed for approved models only. Anything still in
+     *     draft / annotating / pending_review / rejected is visible solely to its
+     *     owner, matching the gate the search path already applies — so an
+     *     unapproved model's characterization can't be read by url-guessing. The
+     *     uploader keeps polling their own draft because ``create_model`` stores
+     *     ``owner = principal.subject``.
      */
     get: operations['get_model_api_v1_models__model_id__get'];
     /** Update Model */
@@ -203,9 +210,18 @@ export interface paths {
     };
     /**
      * List Model Runs
-     * @description Fetch all runs for a model, enriched with hydrated input/output resources.
+     * @description Fetch the calling user's runs for a model, with hydrated I/O resources.
      *
-     *     Designed to populate the UI's "Model Runs" page in a single call.
+     *     Populates the run history on the model detail page in a single call.
+     *
+     *     Scoped to the caller: this returns only runs the requesting user triggered,
+     *     filtered in the query rather than after hydration. It previously required no
+     *     authentication and returned *every* user's runs for the model, which —
+     *     paired with the run controls the detail page renders — exposed other
+     *     people's run ids, output downloads, and cancel actions to anonymous
+     *     visitors.
+     *
+     *     Runs arrive newest-first from the registry; the order is not re-derived here.
      */
     get: operations['list_model_runs_api_v1_models__model_id__runs_get'];
     put?: never;
@@ -329,23 +345,20 @@ export interface paths {
      *
      *     If the Execution call fails we surface the error to the caller; if it
      *     times out the client gets a 504 (see ExecutionClient.get_status).
+     *
+     *     Requires authentication, and only the user who triggered the run may read
+     *     it (404 otherwise — see ``_authz``).
      */
     get: operations['get_run_api_v1_runs__run_id__get'];
     put?: never;
-    /**
-     * Post Run
-     * @description Submit an annotation job to the Execution service for the given resource.
-     *
-     *     All job configuration (image, resources, prompt) comes from server-side
-     *     settings. The LLM API key is injected by the execution-platform from its
-     *     own environment — it is never passed through this request.
-     */
-    post: operations['post_run_api_v1_runs__run_id__post'];
+    post?: never;
     /**
      * Cancel Run
      * @description Cancel a run by proxying DELETE to the Execution service.
      *
      *     Order matters:
+     *       0. Read the Run and verify the caller triggered it — this precedes the
+     *          Execution call because cancelling is destructive and irreversible.
      *       1. Call Execution API DELETE → it stops the run and updates DAL status
      *          to CANCELLED.
      *       2. Read the now-updated Run record from the DAL → reflects the cancel.
@@ -354,6 +367,41 @@ export interface paths {
      *     response without a second round-trip.
      */
     delete: operations['cancel_run_api_v1_runs__run_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/resources/{resource_id}/annotate': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Annotate Resource
+     * @description Submit an annotation job to the Execution service for a resource.
+     *
+     *     All job configuration (image, resources, prompt) comes from server-side
+     *     settings. The LLM API key is injected by the execution-platform from its
+     *     own environment — it is never passed through this request.
+     *
+     *     Requires authentication *and* ownership of the target resource. This endpoint
+     *     spends the deployment's LLM budget, so it must be reachable neither
+     *     anonymously nor by a signed-in user pointing it at someone else's resource.
+     *
+     *     Was `POST /runs/{run_id}`, whose path param was forwarded to the Execution
+     *     service as `resource_id` — so despite the name it never identified a run.
+     *     That misnaming is what made the ownership rule look ambiguous and left the
+     *     endpoint unguarded. The URL now matches the id space it actually takes, and
+     *     sits alongside the other `/resources/{id}/...` routes. Safe to move: nothing
+     *     called it — the UI uses only GET and DELETE `/runs/{run_id}`.
+     */
+    post: operations['annotate_resource_api_v1_resources__resource_id__annotate_post'];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -461,10 +509,10 @@ export interface components {
       /** Buckets */
       buckets: components['schemas']['AggBucketDTO'][];
     };
-    /** AnnotateRunResponse */
-    AnnotateRunResponse: {
-      /** Run Id */
-      run_id: string;
+    /** AnnotateResourceResponse */
+    AnnotateResourceResponse: {
+      /** Resource Id */
+      resource_id: string;
       /**
        * Execution Status
        * @default {}
@@ -484,6 +532,17 @@ export interface components {
       description: string;
       /** Default */
       default?: unknown;
+      /** Enums */
+      enums?: string[] | null;
+      /**
+       * Data Type
+       * @default
+       */
+      data_type: string;
+      /** Position */
+      position?: number | null;
+      /** User Can Override */
+      user_can_override?: boolean | null;
     };
     /** AuthorDTO */
     AuthorDTO: {
@@ -531,6 +590,29 @@ export interface components {
        */
       typical_runtime_unit: string;
     };
+    /**
+     * ContactDTO
+     * @description How to reach someone about the model now (`Resource.contacts`).
+     */
+    ContactDTO: {
+      /** Name */
+      name: string;
+      /**
+       * Role
+       * @default
+       */
+      role: string;
+      /**
+       * Email
+       * @default
+       */
+      email: string;
+      /**
+       * Affiliation
+       * @default
+       */
+      affiliation: string;
+    };
     /** ContainerDTO */
     ContainerDTO: {
       /** Kind */
@@ -563,6 +645,26 @@ export interface components {
       name?: string | null;
       /** Preferred Username */
       preferred_username?: string | null;
+    };
+    /** DataInputDTO */
+    DataInputDTO: {
+      /** Name */
+      name: string;
+      /**
+       * Purpose
+       * @default
+       */
+      purpose: string;
+      /**
+       * Format
+       * @default
+       */
+      format: string;
+      /**
+       * Required
+       * @default true
+       */
+      required: boolean;
     };
     /** DependencyDTO */
     DependencyDTO: {
@@ -669,6 +771,30 @@ export interface components {
       | 'jupyter'
       | 'native'
       | 'other';
+    /** ExperimentProtocolDTO */
+    ExperimentProtocolDTO: {
+      /**
+       * Description
+       * @default
+       */
+      description: string;
+      /** Timestep */
+      timestep?: number | null;
+      /**
+       * Timestep Unit
+       * @default
+       */
+      timestep_unit: string;
+      /** Duration */
+      duration?: number | null;
+      /**
+       * Duration Unit
+       * @default
+       */
+      duration_unit: string;
+      /** Observables */
+      observables?: string[];
+    };
     /**
      * GitHubImportRequest
      * @description Request body for importing a GitHub repository.
@@ -700,6 +826,20 @@ export interface components {
       /** Detail */
       detail?: components['schemas']['ValidationError'][];
     };
+    /** IODetailDTO */
+    IODetailDTO: {
+      /** Parameters */
+      parameters?: components['schemas']['ParameterDTO'][];
+      /** Initial Conditions */
+      initial_conditions?: components['schemas']['InitialConditionDTO'][];
+      /** Data Inputs */
+      data_inputs?: components['schemas']['DataInputDTO'][];
+      /** Outputs */
+      outputs?: components['schemas']['OutputDTO'][];
+      experiment_protocol?:
+        | components['schemas']['ExperimentProtocolDTO']
+        | null;
+    };
     /** IOSlotDTO */
     IOSlotDTO: {
       /** Name */
@@ -727,6 +867,18 @@ export interface components {
       parameters_schema?: {
         [key: string]: unknown;
       } | null;
+    };
+    /** InitialConditionDTO */
+    InitialConditionDTO: {
+      /** Name */
+      name: string;
+      /** Value */
+      value?: unknown;
+      /**
+       * Unit
+       * @default
+       */
+      unit: string;
     };
     /**
      * LogoutResponse
@@ -940,6 +1092,11 @@ export interface components {
       /** Entry Points */
       entry_points?: components['schemas']['EntryPointDTO'][];
       tests?: components['schemas']['TestSpecDTO'] | null;
+      io?: components['schemas']['IODetailDTO'] | null;
+      /** Contacts */
+      contacts?: components['schemas']['ContactDTO'][];
+      /** Related Resources */
+      related_resources?: components['schemas']['RelatedResourceDTO'][];
     };
     /** ModelListItem */
     ModelListItem: {
@@ -1062,6 +1219,58 @@ export interface components {
       /** Total */
       total: number;
     };
+    /** OutputDTO */
+    OutputDTO: {
+      /** Name */
+      name: string;
+      /**
+       * Description
+       * @default
+       */
+      description: string;
+      /**
+       * Quantity Kind
+       * @default
+       */
+      quantity_kind: string;
+      /**
+       * Unit
+       * @default
+       */
+      unit: string;
+      /**
+       * Format
+       * @default
+       */
+      format: string;
+      /**
+       * Destination
+       * @default
+       */
+      destination: string;
+    };
+    /** ParameterDTO */
+    ParameterDTO: {
+      /** Name */
+      name: string;
+      /**
+       * Description
+       * @default
+       */
+      description: string;
+      /** Default Value */
+      default_value?: unknown;
+      /**
+       * Unit
+       * @default
+       */
+      unit: string;
+      /**
+       * Biological Meaning
+       * @default
+       */
+      biological_meaning: string;
+    };
     /** PublicationDTO */
     PublicationDTO: {
       /** Title */
@@ -1071,6 +1280,11 @@ export interface components {
        * @default
        */
       doi: string;
+      /**
+       * Pmid
+       * @default
+       */
+      pmid: string;
       /**
        * Url
        * @default
@@ -1399,6 +1613,27 @@ export interface components {
        * Format: date-time
        */
       updated_at: string;
+    };
+    /**
+     * RelatedResourceDTO
+     * @description A linked prior model or data source (`Resource.related_resources`).
+     *
+     *     The only provenance link the registry stores — `qualifier` carries the
+     *     relationship (e.g. `bqmodel:isDerivedFrom`, `bqbiol:isVersionOf`).
+     */
+    RelatedResourceDTO: {
+      /** Qualifier */
+      qualifier: string;
+      /**
+       * Scheme
+       * @default
+       */
+      scheme: string;
+      /**
+       * Value
+       * @default
+       */
+      value: string;
     };
     /**
      * ResourceFileItem
@@ -2410,6 +2645,15 @@ export interface operations {
           'application/json': components['schemas']['ModelRunDetailsResponse'];
         };
       };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
       /** @description Validation Error */
       422: {
         headers: {
@@ -2701,35 +2945,13 @@ export interface operations {
           'application/json': components['schemas']['RunDetailResponse'];
         };
       };
-      /** @description Validation Error */
-      422: {
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  post_run_api_v1_runs__run_id__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        run_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['AnnotateRunResponse'];
+          'application/json': components['schemas']['ErrorResponse'];
         };
       };
       /** @description Validation Error */
@@ -2761,6 +2983,55 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['RunDetailResponse'];
+        };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  annotate_resource_api_v1_resources__resource_id__annotate_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        resource_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AnnotateResourceResponse'];
+        };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
         };
       };
       /** @description Validation Error */

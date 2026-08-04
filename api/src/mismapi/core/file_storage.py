@@ -78,11 +78,13 @@ def validate_location_uri(location_uri: str) -> str:
     return location_uri
 
 
-def resolve_location_uri(location_uri: str, mount_path: str) -> Path:
+def resolve_location_uri(location_uri: str, mount_path: str, *, missing_ok: bool = False) -> Path:
     """Translate a resource ``location_uri`` to an absolute on-disk Path.
 
     Raises APIError(400) for unsupported schemes or paths that escape the mount.
-    Raises APIError(404) if the resolved directory doesn't exist on disk.
+    Raises APIError(404) if the resolved directory doesn't exist on disk, unless
+    ``missing_ok`` — the traversal check above still applies either way, so a
+    tolerated absence never widens what a caller can address.
     """
     if not location_uri:
         raise APIError(
@@ -127,7 +129,7 @@ def resolve_location_uri(location_uri: str, mount_path: str) -> Path:
         )
 
     # 3. Existence check (the registry knows about resources we never wrote).
-    if not candidate.exists():
+    if not candidate.exists() and not missing_ok:
         raise APIError(
             status_code=404,
             code="resource_files_not_found",

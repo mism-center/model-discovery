@@ -11,14 +11,15 @@ from fastapi import APIRouter, Query
 from mism_registry import RunStatus
 from pydantic import BaseModel
 
+from mismapi.api.v1._authz import assert_resource_owner, assert_run_owner
 from mismapi.api.v1._run_helpers import resource_summary, run_detail
 from mismapi.auth.base import AuthenticatedPrincipalDep
 from mismapi.core.deps import ExecutionClientDep, RegistryServiceDep, SettingsDep
 from mismapi.schemas.registry import RunDetailResponse, UserRunItem, UserRunsResponse
 
 
-class AnnotateRunResponse(BaseModel):
-    run_id: str
+class AnnotateResourceResponse(BaseModel):
+    resource_id: str
     execution_status: dict[str, Any] = {}
 
 
@@ -65,6 +66,7 @@ async def get_run(
     run_id: str,
     service: RegistryServiceDep,
     execution_client: ExecutionClientDep,
+    principal: AuthenticatedPrincipalDep,
     refresh: bool = Query(
         default=True,
         description=(
@@ -84,14 +86,22 @@ async def get_run(
 
     If the Execution call fails we surface the error to the caller; if it
     times out the client gets a 504 (see ExecutionClient.get_status).
+
+    Requires authentication, and only the user who triggered the run may read
+    it (404 otherwise — see ``_authz``).
     """
+    # Check ownership *before* the refresh round-trip: calling the Execution
+    # service for someone else's run would fire a side effect on it and leak
+    # its existence through timing and error shape.
+    run, input_resources, output_resources = service.get_run(run_id)
+    assert_run_owner(run, principal)
+
     execution_status: dict[str, Any] = {}
     if refresh:
         # 1. Trigger lazy refresh on the execution side.
         execution_status = await execution_client.get_status(run_id)
-
-    # 2. Read the (now-fresh, if refreshed) Run record + hydrate referenced resources.
-    run, input_resources, output_resources = service.get_run(run_id)
+        # 2. Re-read so the record reflects the status Execution just wrote.
+        run, input_resources, output_resources = service.get_run(run_id)
 
     return RunDetailResponse(
         run=run_detail(run),
@@ -101,20 +111,41 @@ async def get_run(
     )
 
 
-@router.post("/runs/{run_id}", response_model=AnnotateRunResponse, status_code=200)
-async def post_run(
-    run_id: str,
+@router.post(
+    "/resources/{resource_id}/annotate",
+    response_model=AnnotateResourceResponse,
+    status_code=200,
+)
+async def annotate_resource(
+    resource_id: str,
+    service: RegistryServiceDep,
     execution_client: ExecutionClientDep,
     settings: SettingsDep,
-) -> AnnotateRunResponse:
-    """Submit an annotation job to the Execution service for the given resource.
+    principal: AuthenticatedPrincipalDep,
+) -> AnnotateResourceResponse:
+    """Submit an annotation job to the Execution service for a resource.
 
     All job configuration (image, resources, prompt) comes from server-side
     settings. The LLM API key is injected by the execution-platform from its
     own environment — it is never passed through this request.
+
+    Requires authentication *and* ownership of the target resource. This endpoint
+    spends the deployment's LLM budget, so it must be reachable neither
+    anonymously nor by a signed-in user pointing it at someone else's resource.
+
+    Was `POST /runs/{run_id}`, whose path param was forwarded to the Execution
+    service as `resource_id` — so despite the name it never identified a run.
+    That misnaming is what made the ownership rule look ambiguous and left the
+    endpoint unguarded. The URL now matches the id space it actually takes, and
+    sits alongside the other `/resources/{id}/...` routes. Safe to move: nothing
+    called it — the UI uses only GET and DELETE `/runs/{run_id}`.
     """
+    resource = service.get_model(resource_id)
+    assert_resource_owner(resource, principal)
+
+    logger.info("Annotation requested for %s by %s", resource_id, principal.subject)
     execution_status = await execution_client.annotate(
-        resource_id=run_id,
+        resource_id=resource_id,
         image=settings.annotation_job_image,
         prompt=settings.annotation_job_prompt,
         cpus=settings.annotation_job_cpus,
@@ -122,7 +153,7 @@ async def post_run(
         openai_base_url=settings.annotation_openai_base_url,
         model=settings.annotation_model,
     )
-    return AnnotateRunResponse(run_id=run_id, execution_status=execution_status)
+    return AnnotateResourceResponse(resource_id=resource_id, execution_status=execution_status)
 
 
 @router.delete("/runs/{run_id}", response_model=RunDetailResponse)
@@ -130,10 +161,13 @@ async def cancel_run(
     run_id: str,
     service: RegistryServiceDep,
     execution_client: ExecutionClientDep,
+    principal: AuthenticatedPrincipalDep,
 ) -> RunDetailResponse:
     """Cancel a run by proxying DELETE to the Execution service.
 
     Order matters:
+      0. Read the Run and verify the caller triggered it — this precedes the
+         Execution call because cancelling is destructive and irreversible.
       1. Call Execution API DELETE → it stops the run and updates DAL status
          to CANCELLED.
       2. Read the now-updated Run record from the DAL → reflects the cancel.
@@ -141,6 +175,10 @@ async def cancel_run(
     Returns the same shape as GET /runs/{run_id} so the UI can swap-in the
     response without a second round-trip.
     """
+    # 0. Authorize before the side effect: only the triggering user may cancel.
+    existing, _, _ = service.get_run(run_id)
+    assert_run_owner(existing, principal)
+
     # 1. Ask exec to actually cancel — it owns the running container/process.
     execution_status = await execution_client.cancel_run(run_id)
 

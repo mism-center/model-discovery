@@ -3,14 +3,18 @@ from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
-from mism_registry.enums import ExecutionType, ResourceType, ResourceVersionStatus
+from mism_registry.enums import (
+    ExecutionType,
+    ResourceRegistrationStatus,
+    ResourceType,
+    ResourceVersionStatus,
+)
 from mism_registry.resource import Resource
 
-from mismapi.auth.base import AuthenticatedPrincipal, require_principal
 from mismapi.core.deps import _get_registry_service
 from mismapi.main import create_app
 from mismapi.services.registry_service import RegistryService
-from tests.conftest import minimal_oidc_settings
+from tests.conftest import minimal_oidc_settings, override_anonymous, override_principal
 
 
 def _make_model(
@@ -22,6 +26,7 @@ def _make_model(
     execution_type: ExecutionType = ExecutionType.PYTHON,
     execution_ref: str = "",
     version: str = "0.1.0",
+    registration_status: ResourceRegistrationStatus = ResourceRegistrationStatus.APPROVED,
 ) -> Resource:
     return Resource(
         id=id,
@@ -33,23 +38,18 @@ def _make_model(
         description=description,
         version=version,
         version_status=ResourceVersionStatus.ACTIVE,
+        registration_status=registration_status,
         owner=owner,
         created_at=datetime(2025, 1, 1, tzinfo=UTC),
     )
 
 
-async def _allow_principal() -> AuthenticatedPrincipal:
-    return AuthenticatedPrincipal(
-        subject="user-1",
-        issuer="test",
-        audience="mism-api",
-        scopes=set(),
-    )
-
-
-def _make_app_with_service(service: RegistryService) -> TestClient:
+def _make_app_with_service(service: RegistryService, *, authenticated: bool = True) -> TestClient:
     app = create_app(settings=minimal_oidc_settings())
-    app.dependency_overrides[require_principal] = _allow_principal
+    if authenticated:
+        override_principal(app)
+    else:
+        override_anonymous(app)
     app.dependency_overrides[_get_registry_service] = lambda: service
     return TestClient(app)
 
@@ -593,6 +593,86 @@ def test_get_model_detail_empty_characterization_defaults() -> None:
     assert payload["compute"] is None
     assert payload["tests"] is None
     assert payload["determinism"] == "unknown"
+
+
+# ── GET /models/{id} visibility ──────────────────────────────────
+# approved models are public; anything still in the registration workflow
+# (draft/annotating/pending_review/rejected) is visible only to its owner.
+# A mismatch must 404 (not 403) so the endpoint isn't an id oracle.
+
+
+@pytest.mark.parametrize(
+    "registration_status",
+    [
+        ResourceRegistrationStatus.DRAFT,
+        ResourceRegistrationStatus.ANNOTATING,
+        ResourceRegistrationStatus.PENDING_REVIEW,
+        ResourceRegistrationStatus.REJECTED,
+    ],
+)
+def test_get_model_detail_unapproved_model_404s_for_anonymous_caller(
+    registration_status: ResourceRegistrationStatus,
+) -> None:
+    service = MagicMock(spec=RegistryService)
+    service.get_model.return_value = _make_model(
+        owner="user-1", registration_status=registration_status
+    )
+
+    client = _make_app_with_service(service, authenticated=False)
+    response = client.get("/api/v1/models/m-1")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.parametrize(
+    "registration_status",
+    [
+        ResourceRegistrationStatus.DRAFT,
+        ResourceRegistrationStatus.ANNOTATING,
+        ResourceRegistrationStatus.PENDING_REVIEW,
+        ResourceRegistrationStatus.REJECTED,
+    ],
+)
+def test_get_model_detail_unapproved_model_404s_for_non_owner(
+    registration_status: ResourceRegistrationStatus,
+) -> None:
+    service = MagicMock(spec=RegistryService)
+    service.get_model.return_value = _make_model(
+        owner="someone-else", registration_status=registration_status
+    )
+
+    # override_principal defaults to subject "user-1" — not the owner above.
+    client = _make_app_with_service(service, authenticated=True)
+    response = client.get("/api/v1/models/m-1")
+
+    assert response.status_code == 404
+
+
+def test_get_model_detail_unapproved_model_visible_to_owner() -> None:
+    service = MagicMock(spec=RegistryService)
+    service.get_model.return_value = _make_model(
+        owner="user-1", registration_status=ResourceRegistrationStatus.PENDING_REVIEW
+    )
+
+    # override_principal's default principal subject is "user-1" — the owner.
+    client = _make_app_with_service(service, authenticated=True)
+    response = client.get("/api/v1/models/m-1")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "m-1"
+
+
+def test_get_model_detail_approved_model_visible_anonymously() -> None:
+    service = MagicMock(spec=RegistryService)
+    service.get_model.return_value = _make_model(
+        owner="user-1", registration_status=ResourceRegistrationStatus.APPROVED
+    )
+
+    client = _make_app_with_service(service, authenticated=False)
+    response = client.get("/api/v1/models/m-1")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "m-1"
 
 
 # ── metadata-package raw review ─────────────────────────────────

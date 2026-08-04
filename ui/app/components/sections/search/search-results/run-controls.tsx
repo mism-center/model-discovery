@@ -7,7 +7,27 @@ import { RunModelModal } from './run-model-modal';
 
 interface RunControlsProps {
   model: RunnableModel;
+  /**
+   * Visual scale of the launch button.
+   *
+   * `'card'` (the default) is the original row-action sizing used by search
+   * results. `'page'` is for the detail page, where this is the page's primary
+   * verb sitting beside a `text-3xl` heading — at card scale it read as an
+   * incidental row action. Defaulted so the search page is untouched.
+   */
+  scale?: 'card' | 'page';
 }
+
+const SCALES = {
+  card: {
+    size: 'sm' as const,
+    className: 'px-5 py-2.5 rounded-lg text-sm font-bold',
+  },
+  page: {
+    size: 'lg' as const,
+    className: 'px-6 rounded-lg text-base font-bold',
+  },
+};
 
 /**
  * Launch affordance for an executable model in the search results.
@@ -22,19 +42,21 @@ interface RunControlsProps {
  * so nothing renders until a user is present. `isUserLoading` avoids flashing
  * the button during the initial `/api/auth/me` fetch.
  */
-export function RunControls({ model }: RunControlsProps) {
+export function RunControls({ model, scale = 'card' }: RunControlsProps) {
   const isExecutable = Boolean(model.execution_type);
   const launchModal = useDisclosure();
   const { user, isLoading: isUserLoading } = useUser();
 
   if (!isExecutable || isUserLoading || !user) return null;
 
+  const { size, className } = SCALES[scale];
+
   return (
     <>
       <Button
-        size="sm"
+        size={size}
         color="primary"
-        className="px-5 py-2.5 rounded-lg text-sm font-bold"
+        className={className}
         startContent={<PlayIcon className="size-4" />}
         onPress={launchModal.onOpen}
       >

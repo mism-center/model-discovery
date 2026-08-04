@@ -1,6 +1,8 @@
 import { HydrationBoundary, dehydrate } from '@tanstack/react-query';
+import { data } from 'react-router';
 import type { ShouldRevalidateFunctionArgs } from 'react-router';
 
+import { ApiError } from '~/api';
 import { prefetchUser } from '~/api/auth/user';
 import { serverApiClient } from '~/api/client/server-client';
 import { getQueryClient } from '~/api/query/query-client';
@@ -12,9 +14,14 @@ import type { Route } from './+types/model-details';
 
 export function meta({ data }: Route.MetaArgs) {
   const name = data?.modelName;
-  const title = name
-    ? `${name} | Model | MISM`
-    : 'Model | Multiscale Model Portal | MISM';
+  // A wrong id is the likeliest way to land here, and titling that page
+  // "Model | Multiscale Model Portal" claims a model exists. The response is
+  // still HTTP 200 — making it a real 404 means throwing from the loader and
+  // teaching the root ErrorBoundary to render a not-found page, which is a
+  // separate change.
+  let title = 'Model | Multiscale Model Portal | MISM';
+  if (data?.notFound) title = 'Model not found | MISM';
+  else if (name) title = `${name} | Model | MISM`;
   return [
     { title },
     {
@@ -51,11 +58,28 @@ export async function loader({ params, request }: Route.LoaderArgs) {
       })
       .catch(() => {}),
     queryClient.prefetchQuery(modelRunsQueryOptions(modelId, client)),
-    queryClient.prefetchQuery(resourceFilesQueryOptions(modelId)),
+    queryClient.prefetchQuery(resourceFilesQueryOptions(modelId, client)),
     prefetchUser(queryClient, client),
   ]);
 
-  return { dehydratedState: dehydrate(queryClient), modelId, modelName };
+  // `prefetchQuery` never rejects — it swallows the failure and records it on the
+  // query instead — so the `.catch` above cannot observe a 404. Read the error the
+  // query recorded to decide whether this id exists.
+  const prefetchError = queryClient.getQueryState(
+    modelDetailQueryOptions(modelId, client).queryKey
+  )?.error;
+
+  const notFound =
+    prefetchError instanceof ApiError && prefetchError.status === 404;
+
+  // `data()` sets the response status without throwing, so a missing model
+  // answers a real HTTP 404 to crawlers and monitoring while still rendering the
+  // styled in-page "Model not found" state (throwing would hand the whole route
+  // to the root ErrorBoundary and lose both the layout and the title).
+  return data(
+    { dehydratedState: dehydrate(queryClient), modelId, modelName, notFound },
+    { status: notFound ? 404 : 200 }
+  );
 }
 
 /**

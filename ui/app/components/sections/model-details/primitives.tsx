@@ -1,6 +1,34 @@
 import cn from 'classnames';
 
-/** A titled content card used for each stacked detail section. */
+import { NotRecorded } from '~/components/common/definition-field';
+
+export { FIELD_LABEL } from '~/components/common/definition-field';
+
+/** Stable anchor id for a section, so `/models/:id#execution` deep-links. */
+export function sectionId(title: string): string {
+  return title
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, '-')
+    .replaceAll(/^-|-$/g, '');
+}
+
+/**
+ * One titled region of the detail page.
+ *
+ * Deliberately flat — a rule and a heading, not a bordered elevated card. None
+ * of the registries this page competes with (Hugging Face, BioModels, nf-core,
+ * Zenodo, Bioconductor) wraps each metadata group in its own card; they use one
+ * continuous surface with lightweight group headings. Stacking six rounded
+ * cards on a gray page made every group look equally important and left the
+ * metadata rail — which used the *same* background as the page — looking like
+ * unstyled floating text.
+ *
+ * Sections always render, including when they have no data. The first pass
+ * returned `null` from each section when its fields were empty, which meant the
+ * page's structure changed per model and, since only ~12 of the 45 response
+ * fields are populated by ingestion, usually collapsed to a title and a file
+ * list. Naming an absence is information; silently removing the section is not.
+ */
 export function SectionCard({
   title,
   description,
@@ -16,8 +44,10 @@ export function SectionCard({
 }) {
   return (
     <section
+      id={sectionId(title)}
+      // scroll-mt clears the 64px sticky navbar when an anchor is targeted.
       className={cn(
-        'rounded-2xl border border-default-200 bg-white p-6',
+        'scroll-mt-20 border-t border-default-200 pt-8 first:border-t-0 first:pt-0',
         className
       )}
     >
@@ -27,7 +57,7 @@ export function SectionCard({
             {title}
           </h2>
           {description && (
-            <p className="mt-1 text-sm text-default-600">{description}</p>
+            <p className="mt-1 text-sm text-default-800">{description}</p>
           )}
         </div>
         {action}
@@ -37,39 +67,38 @@ export function SectionCard({
   );
 }
 
-/** Uppercase field label, matching the runs panel style. */
-export const FIELD_LABEL =
-  'text-[11px] font-bold uppercase tracking-wider text-default-600';
-
-/** A label / value pair in a definition list. */
-export function Field({
-  label,
-  children,
-  className,
-}: {
-  label: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
+/**
+ * A sub-heading inside a section.
+ *
+ * Previously every section hand-rolled `<h3 class="text-xs … text-default-800">`,
+ * an `<h3>` rendered *smaller and fainter* than the body text beneath it — an
+ * inverted hierarchy repeated in six places.
+ */
+export function SubHeading({ children }: { children: React.ReactNode }) {
   return (
-    <div className={cn('min-w-0', className)}>
-      <dt className={FIELD_LABEL}>{label}</dt>
-      <dd className="mt-1 text-[13px] text-default-900 break-words">
-        {children}
-      </dd>
-    </div>
+    <h3 className="text-sm font-semibold text-default-900 mb-2">{children}</h3>
   );
 }
 
+export {
+  DefinitionField as Field,
+  NotRecorded,
+} from '~/components/common/definition-field';
+
 type ChipTone = 'primary' | 'neutral' | 'secondary';
 
+/**
+ * Chip backgrounds are all light, with dark foregrounds, so every tone clears
+ * WCAG AA. The previous `secondary` tone put `text-secondary` on
+ * `bg-secondary-100` at 10px bold — 3.09:1.
+ */
 const CHIP_TONES: Record<ChipTone, string> = {
-  primary: 'bg-primary-100 text-primary/80',
-  neutral: 'bg-default-200 text-default-900/90',
-  secondary: 'bg-secondary-100 text-secondary',
+  primary: 'bg-primary-100 text-primary',
+  neutral: 'bg-default-100 text-default-900',
+  secondary: 'bg-secondary-100 text-default-900',
 };
 
-/** Small uppercase tag chip, matching the search-result card styling. */
+/** Small tag chip. `text-xs` from the type scale, not an arbitrary 10px. */
 export function Chip({
   children,
   tone = 'primary',
@@ -80,7 +109,7 @@ export function Chip({
   return (
     <span
       className={cn(
-        'px-2 py-0.5 rounded-xs text-[10px] font-bold uppercase tracking-tighter',
+        'px-2 py-0.5 rounded-sm text-xs font-semibold',
         CHIP_TONES[tone]
       )}
     >
@@ -89,7 +118,7 @@ export function Chip({
   );
 }
 
-/** Render a list of string values as chips, or an em dash when empty. */
+/** Render values as chips, or state the absence. */
 export function ChipList({
   values,
   tone = 'primary',
@@ -98,7 +127,7 @@ export function ChipList({
   tone?: ChipTone;
 }) {
   if (!values || values.length === 0) {
-    return <span className="text-default-500">—</span>;
+    return <NotRecorded />;
   }
   return (
     <div className="flex flex-wrap gap-1.5">

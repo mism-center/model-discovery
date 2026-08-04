@@ -6,9 +6,10 @@ from fastapi import APIRouter, Query
 from mism_registry.enums import RunStatus
 from mism_registry.resource import Resource
 
+from mismapi.api.v1._authz import assert_model_visible, model_visible_to
 from mismapi.api.v1._run_helpers import resource_summary as _resource_summary
 from mismapi.api.v1._run_helpers import run_detail as _run_detail
-from mismapi.auth.base import AuthenticatedPrincipalDep
+from mismapi.auth.base import AuthenticatedPrincipalDep, OptionalPrincipalDep
 from mismapi.core.deps import (
     ExecutionClientDep,
     RegistryServiceDep,
@@ -30,13 +31,16 @@ from mismapi.schemas.registry import (
     author_from_dto,
     author_to_dto,
     compute_to_dto,
+    contact_to_dto,
     container_to_dto,
     dependency_to_dto,
     entry_point_to_dto,
+    io_detail_to_dto,
     io_spec_from_dto,
     io_spec_to_dto,
     pub_from_dto,
     pub_to_dto,
+    related_resource_to_dto,
     test_spec_to_dto,
 )
 from mismapi.schemas.search import ModelListItem, ModelListResponse
@@ -143,12 +147,18 @@ def _model_detail_response(r: Resource) -> ModelDetailResponse:
         compute=compute_to_dto(r.compute) if r.compute else None,
         entry_points=[entry_point_to_dto(e) for e in r.entry_points],
         tests=test_spec_to_dto(r.tests) if r.tests else None,
+        # Rich I/O characterization (schema.md Section C) + the attribution and
+        # provenance links the response previously dropped on the floor.
+        io=io_detail_to_dto(r.io) if r.io else None,
+        contacts=[contact_to_dto(c) for c in r.contacts],
+        related_resources=[related_resource_to_dto(x) for x in r.related_resources],
     )
 
 
 @router.get("/models", response_model=ModelListResponse)
 async def list_models(
     service: RegistryServiceDep,
+    principal: OptionalPrincipalDep,
     name: str | None = Query(default=None, description="Substring match on model name"),
     owner: str | None = Query(default=None, description="Exact match on owner"),
     tags: list[str] | None = Query(default=None, description="Format tags (all must match)"),
@@ -165,8 +175,15 @@ async def list_models(
         scales=scales,
     )
 
-    total = len(resources)
-    page = resources[offset : offset + limit]
+    # Same visibility rule as GET /models/{model_id} and the search gate:
+    # approved models are public, anything still in draft / annotating /
+    # pending_review / rejected is visible only to its owner. Filtering before
+    # pagination keeps `total` and the page contents consistent — counting
+    # hidden rows would leak their existence through the count alone.
+    visible = [r for r in resources if model_visible_to(r, principal)]
+
+    total = len(visible)
+    page = visible[offset : offset + limit]
 
     return ModelListResponse(total=total, results=[_model_list_item(r) for r in page])
 
@@ -175,6 +192,7 @@ async def list_models(
 async def get_model(
     model_id: str,
     service: RegistryServiceDep,
+    principal: OptionalPrincipalDep,
 ) -> ModelDetailResponse:
     """Fetch a single model by ID.
 
@@ -185,8 +203,16 @@ async def get_model(
 
     Returns the full detail view, including the characterization fields
     populated by the metadata-package workflow.
+
+    Anonymous reads are allowed for approved models only. Anything still in
+    draft / annotating / pending_review / rejected is visible solely to its
+    owner, matching the gate the search path already applies — so an
+    unapproved model's characterization can't be read by url-guessing. The
+    uploader keeps polling their own draft because ``create_model`` stores
+    ``owner = principal.subject``.
     """
     resource = service.get_model(model_id)
+    assert_model_visible(resource, principal)
     return _model_detail_response(resource)
 
 
@@ -396,15 +422,31 @@ async def execute_run(
 async def list_model_runs(
     model_id: str,
     service: RegistryServiceDep,
+    principal: AuthenticatedPrincipalDep,
     status: RunStatus | None = Query(
         default=None, description="Optional filter — only include runs with this status."
     ),
 ) -> ModelRunDetailsResponse:
-    """Fetch all runs for a model, enriched with hydrated input/output resources.
+    """Fetch the calling user's runs for a model, with hydrated I/O resources.
 
-    Designed to populate the UI's "Model Runs" page in a single call.
+    Populates the run history on the model detail page in a single call.
+
+    Scoped to the caller: this returns only runs the requesting user triggered,
+    filtered in the query rather than after hydration. It previously required no
+    authentication and returned *every* user's runs for the model, which —
+    paired with the run controls the detail page renders — exposed other
+    people's run ids, output downloads, and cancel actions to anonymous
+    visitors.
+
+    Runs arrive newest-first from the registry; the order is not re-derived here.
     """
-    summary = service.get_model_run_details(model_id=model_id, status=status)
+    assert_model_visible(service.get_model(model_id), principal)
+
+    summary = service.get_model_run_details(
+        model_id=model_id,
+        status=status,
+        triggered_by=principal.subject,
+    )
 
     runs = [
         ModelRunDetailItem(
