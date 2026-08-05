@@ -482,7 +482,7 @@ def test_create_model_with_full_fields_roundtrip(api: httpx.Client) -> None:
     assert m["organization"] == "RENCI"
     assert m["contact_email"] == "jane@renci.org"
     assert m["publications"] == [
-        {"title": "A paper", "doi": "10.1234/test", "url": "", "citation": ""}
+        {"title": "A paper", "doi": "10.1234/test", "pmid": "", "url": "", "citation": ""}
     ]
     assert m["funding"] == ["NIH R01", "NSF 2345"]
     assert set(m["model_scales"]) == {"cellular", "tissue"}
@@ -537,7 +537,7 @@ def test_create_dataset_with_full_fields_roundtrip(api: httpx.Client) -> None:
     assert d["organization"] == "UNC"
     assert d["contact_email"] == "bob@unc.edu"
     assert d["publications"] == [
-        {"title": "Dataset paper", "doi": "10.5678/data", "url": "", "citation": ""}
+        {"title": "Dataset paper", "doi": "10.5678/data", "pmid": "", "url": "", "citation": ""}
     ]
     assert d["funding"] == ["NIH P41"]
     assert d["organisms"] == ["rat"]
