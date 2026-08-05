@@ -170,7 +170,9 @@ export interface paths {
      *
      *     Looks for ``<model_id>/<version>/metadata-package/`` on the storage mount and
      *     maps its ``metadata.yaml`` + ``execution.yaml`` onto a Resource (values only,
-     *     not persisted). 404 if the package is absent, 400 if it can't be parsed.
+     *     not persisted). 404 if the package is absent, 400 if it can't be parsed at
+     *     all; individual missing/empty fields are tolerated and reported in
+     *     ``warnings`` instead.
      */
     get: operations['get_model_metadata_package_api_v1_models__model_id__metadata_package_get'];
     put?: never;
@@ -196,6 +198,12 @@ export interface paths {
     /**
      * Update Model Metadata Package Raw
      * @description Write edited raw YAML back to the metadata-package and return the result.
+     *
+     *     Missing/empty fields on individual entries (an author with no name,
+     *     etc.) are tolerated and reported in ``warnings``, not raised — see
+     *     ``RegistryService.write_metadata_package_raw``. If the package fails to
+     *     parse at all (the top-level ``model``/``execution`` structure itself is
+     *     broken), this raises a 400 and does not approve the model.
      */
     put: operations['update_model_metadata_package_raw_api_v1_models__model_id__metadata_package_raw_put'];
     post?: never;
@@ -361,7 +369,26 @@ export interface paths {
      */
     get: operations['get_run_api_v1_runs__run_id__get'];
     put?: never;
-    post?: never;
+    /**
+     * Post Run
+     * @description Submit an annotation job to the Execution service for the given resource.
+     *
+     *     All job configuration (image, resources, prompt) comes from server-side
+     *     settings. The LLM API key is injected by the execution-platform from its
+     *     own environment — it is never passed through this request.
+     *
+     *     Requires authentication *and* ownership of the target resource. This endpoint
+     *     spends the deployment's LLM budget, so it must be reachable neither
+     *     anonymously nor by a signed-in user pointing it at someone else's resource.
+     *
+     *     Note the id space: despite the `/runs/{run_id}` path, the path param is a
+     *     *resource* id — it is forwarded to Execution as `resource_id`, and the
+     *     ownership check is a resource check. The upload flow calls this as
+     *     `POST /api/v1/runs/{modelId}` (see `initiateAnnotation` in
+     *     `ui/app/routes/upload.tsx`), so the path is load-bearing; renaming it needs
+     *     that call site changed in the same breath.
+     */
+    post: operations['post_run_api_v1_runs__run_id__post'];
     /**
      * Cancel Run
      * @description Cancel a run by proxying DELETE to the Execution service.
@@ -377,41 +404,6 @@ export interface paths {
      *     response without a second round-trip.
      */
     delete: operations['cancel_run_api_v1_runs__run_id__delete'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/resources/{resource_id}/annotate': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Annotate Resource
-     * @description Submit an annotation job to the Execution service for a resource.
-     *
-     *     All job configuration (image, resources, prompt) comes from server-side
-     *     settings. The LLM API key is injected by the execution-platform from its
-     *     own environment — it is never passed through this request.
-     *
-     *     Requires authentication *and* ownership of the target resource. This endpoint
-     *     spends the deployment's LLM budget, so it must be reachable neither
-     *     anonymously nor by a signed-in user pointing it at someone else's resource.
-     *
-     *     Was `POST /runs/{run_id}`, whose path param was forwarded to the Execution
-     *     service as `resource_id` — so despite the name it never identified a run.
-     *     That misnaming is what made the ownership rule look ambiguous and left the
-     *     endpoint unguarded. The URL now matches the id space it actually takes, and
-     *     sits alongside the other `/resources/{id}/...` routes. Safe to move: nothing
-     *     called it — the UI uses only GET and DELETE `/runs/{run_id}`.
-     */
-    post: operations['annotate_resource_api_v1_resources__resource_id__annotate_post'];
-    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -522,10 +514,10 @@ export interface components {
       /** Buckets */
       buckets: components['schemas']['AggBucketDTO'][];
     };
-    /** AnnotateResourceResponse */
-    AnnotateResourceResponse: {
-      /** Resource Id */
-      resource_id: string;
+    /** AnnotateRunResponse */
+    AnnotateRunResponse: {
+      /** Run Id */
+      run_id: string;
       /**
        * Execution Status
        * @default {}
@@ -944,6 +936,11 @@ export interface components {
       model_id: string;
       /** Files */
       files?: components['schemas']['MetadataPackageFile'][];
+      /**
+       * Warnings
+       * @description Non-blocking issues found while parsing the metadata-package (missing/empty required fields); approval still succeeded.
+       */
+      warnings?: string[];
     };
     /**
      * MetadataPackageUpdateRequest
@@ -3054,7 +3051,7 @@ export interface operations {
       };
     };
   };
-  cancel_run_api_v1_runs__run_id__delete: {
+  post_run_api_v1_runs__run_id__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -3071,7 +3068,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['RunDetailResponse'];
+          'application/json': components['schemas']['AnnotateRunResponse'];
         };
       };
       /** @description Authentication is required and was missing or invalid. */
@@ -3094,12 +3091,12 @@ export interface operations {
       };
     };
   };
-  annotate_resource_api_v1_resources__resource_id__annotate_post: {
+  cancel_run_api_v1_runs__run_id__delete: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        resource_id: string;
+        run_id: string;
       };
       cookie?: never;
     };
@@ -3111,7 +3108,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['AnnotateResourceResponse'];
+          'application/json': components['schemas']['RunDetailResponse'];
         };
       };
       /** @description Authentication is required and was missing or invalid. */

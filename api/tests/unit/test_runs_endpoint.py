@@ -474,7 +474,7 @@ def test_cancel_run_empty_triggered_by_is_owned_by_nobody() -> None:
 # ── POST /runs/{run_id} (annotate) ──────────────────────────────
 
 
-def test_annotate_resource_requires_auth() -> None:
+def test_post_run_requires_auth() -> None:
     # This endpoint also depends on SettingsDep, which (unlike the
     # RegistryService/ExecutionClient overrides used elsewhere in this file)
     # resolves through the real app container — so it needs the lifespan to
@@ -489,13 +489,13 @@ def test_annotate_resource_requires_auth() -> None:
     app.dependency_overrides[_get_execution_client] = lambda: exec_client
 
     with TestClient(app) as client:
-        response = client.post("/api/v1/resources/run-1/annotate")
+        response = client.post("/api/v1/runs/run-1")
 
     assert response.status_code == 401
     exec_client.annotate.assert_not_called()
 
 
-def test_annotate_resource_authenticated_triggers_annotation() -> None:
+def test_post_run_authenticated_triggers_annotation() -> None:
     service = MagicMock(spec=RegistryService)
     # The path param is a *resource* id (forwarded as `resource_id`), and the
     # caller must own it — `_make_dataset` is owned by "user-1", the subject
@@ -510,17 +510,17 @@ def test_annotate_resource_authenticated_triggers_annotation() -> None:
     app.dependency_overrides[_get_execution_client] = lambda: exec_client
 
     with TestClient(app) as client:
-        response = client.post("/api/v1/resources/run-1/annotate")
+        response = client.post("/api/v1/runs/run-1")
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["resource_id"] == "run-1"
+    assert payload["run_id"] == "run-1"
     assert payload["execution_status"] == {"job_id": "job-1", "status": "queued"}
     exec_client.annotate.assert_awaited_once()
     assert exec_client.annotate.call_args.kwargs["resource_id"] == "run-1"
 
 
-def test_annotate_resource_someone_elses_resource_returns_404_and_never_annotates() -> None:
+def test_post_run_someone_elses_resource_returns_404_and_never_annotates() -> None:
     """Annotation spends the deployment's LLM budget — visibility isn't enough."""
     resource = _make_dataset(id="res-1")
     resource.owner = "someone-else"
@@ -535,13 +535,13 @@ def test_annotate_resource_someone_elses_resource_returns_404_and_never_annotate
     app.dependency_overrides[_get_execution_client] = lambda: exec_client
 
     with TestClient(app) as client:
-        response = client.post("/api/v1/resources/res-1/annotate")
+        response = client.post("/api/v1/runs/res-1")
 
     assert response.status_code == 404
     exec_client.annotate.assert_not_awaited()
 
 
-def test_annotate_resource_unowned_resource_is_owned_by_nobody() -> None:
+def test_post_run_unowned_resource_is_owned_by_nobody() -> None:
     """An empty `owner` must not be treated as "owned by whoever asks"."""
     resource = _make_dataset(id="res-1")
     resource.owner = ""
@@ -556,7 +556,7 @@ def test_annotate_resource_unowned_resource_is_owned_by_nobody() -> None:
     app.dependency_overrides[_get_execution_client] = lambda: exec_client
 
     with TestClient(app) as client:
-        response = client.post("/api/v1/resources/res-1/annotate")
+        response = client.post("/api/v1/runs/res-1")
 
     assert response.status_code == 404
     exec_client.annotate.assert_not_awaited()

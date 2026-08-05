@@ -19,8 +19,8 @@ from mismapi.core.deps import ExecutionClientDep, RegistryServiceDep, SettingsDe
 from mismapi.schemas.registry import RunDetailResponse, UserRunItem, UserRunsResponse
 
 
-class AnnotateResourceResponse(BaseModel):
-    resource_id: str
+class AnnotateRunResponse(BaseModel):
+    run_id: str
     execution_status: dict[str, Any] = {}
 
 
@@ -148,19 +148,15 @@ async def get_run(
     )
 
 
-@router.post(
-    "/resources/{resource_id}/annotate",
-    response_model=AnnotateResourceResponse,
-    status_code=200,
-)
-async def annotate_resource(
-    resource_id: str,
+@router.post("/runs/{run_id}", response_model=AnnotateRunResponse, status_code=200)
+async def post_run(
+    run_id: str,
     service: RegistryServiceDep,
     execution_client: ExecutionClientDep,
     settings: SettingsDep,
     principal: AuthenticatedPrincipalDep,
-) -> AnnotateResourceResponse:
-    """Submit an annotation job to the Execution service for a resource.
+) -> AnnotateRunResponse:
+    """Submit an annotation job to the Execution service for the given resource.
 
     All job configuration (image, resources, prompt) comes from server-side
     settings. The LLM API key is injected by the execution-platform from its
@@ -170,19 +166,19 @@ async def annotate_resource(
     spends the deployment's LLM budget, so it must be reachable neither
     anonymously nor by a signed-in user pointing it at someone else's resource.
 
-    Was `POST /runs/{run_id}`, whose path param was forwarded to the Execution
-    service as `resource_id` — so despite the name it never identified a run.
-    That misnaming is what made the ownership rule look ambiguous and left the
-    endpoint unguarded. The URL now matches the id space it actually takes, and
-    sits alongside the other `/resources/{id}/...` routes. Safe to move: nothing
-    called it — the UI uses only GET and DELETE `/runs/{run_id}`.
+    Note the id space: despite the `/runs/{run_id}` path, the path param is a
+    *resource* id — it is forwarded to Execution as `resource_id`, and the
+    ownership check is a resource check. The upload flow calls this as
+    `POST /api/v1/runs/{modelId}` (see `initiateAnnotation` in
+    `ui/app/routes/upload.tsx`), so the path is load-bearing; renaming it needs
+    that call site changed in the same breath.
     """
-    resource = service.get_model(resource_id)
+    resource = service.get_model(run_id)
     assert_resource_owner(resource, principal)
 
-    logger.info("Annotation requested for %s by %s", resource_id, principal.subject)
+    logger.info("Annotation requested for %s by %s", run_id, principal.subject)
     execution_status = await execution_client.annotate(
-        resource_id=resource_id,
+        resource_id=run_id,
         image=settings.annotation_job_image,
         prompt=settings.annotation_job_prompt,
         cpus=settings.annotation_job_cpus,
@@ -190,7 +186,7 @@ async def annotate_resource(
         openai_base_url=settings.annotation_openai_base_url,
         model=settings.annotation_model,
     )
-    return AnnotateResourceResponse(resource_id=resource_id, execution_status=execution_status)
+    return AnnotateRunResponse(run_id=run_id, execution_status=execution_status)
 
 
 @router.delete("/runs/{run_id}", response_model=RunDetailResponse)
