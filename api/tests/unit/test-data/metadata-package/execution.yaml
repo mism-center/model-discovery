@@ -1,0 +1,189 @@
+schema_version: "0.1"
+execution:
+  status: characterized
+  language:
+    name: Python
+    version_constraint: null
+    iri: "http://www.ebi.ac.uk/swo/SWO_0000118"
+    ontology: swo
+    source: "setup.py:1-4"
+  environment_kind:
+    value: pip
+    source: "README.md:18-28; setup.py:17-21"
+  dependencies:
+    runtime:
+      - {name: vivarium-cell, version_constraint: "==0.0.23", source: "setup.py:19"}
+      - {name: vivarium-core, version_constraint: "==0.0.34", source: "setup.py:20"}
+      - {name: pymunk, version_constraint: "==5.6.0", source: "setup.py:21"}
+      - {name: numpy, version_constraint: null, source: "README.md:22"}
+      - {name: scipy, version_constraint: null, source: "chemotaxis/processes/membrane_potential.py:9"}
+    optional: []
+    system:
+      - {name: MongoDB, version_constraint: null, source: "README.md:30-32"}
+  containers: []
+  compute:
+    cpu_cores: {value: null, source: "README.md:18-32", confidence: none}
+    memory_gb: {value: null, source: "README.md:18-32", confidence: none}
+    gpu_required: {value: false, source: "README.md:18-32", confidence: inferred}
+    parallelism: multi-process
+    typical_runtime: {value: null, unit: null, source: "README.md:18-32", confidence: none}
+  entry_points:
+    - command: "python chemotaxis/processes/chemoreceptor_cluster.py"
+      purpose: "Run the chemoreceptor cluster process examples."
+      arguments: []
+      default_output_location: "out/processes/chemoreceptor_cluster/"
+      source: "chemotaxis/processes/chemoreceptor_cluster.py"
+      confidence: high
+    - command: "python chemotaxis/processes/coarse_motor.py"
+      purpose: "Run the coarse motor variable-receptor analysis."
+      arguments: []
+      default_output_location: "out/processes/coarse_motor/"
+      source: "chemotaxis/processes/coarse_motor.py"
+      confidence: high
+    - command: "python chemotaxis/processes/flagella_motor.py"
+      purpose: "Run the flagella motor variable-flagella simulation."
+      arguments: []
+      default_output_location: "out/processes/flagella_motor/"
+      source: "chemotaxis/processes/flagella_motor.py"
+      confidence: high
+    - command: "python chemotaxis/processes/membrane_potential.py"
+      purpose: "Run the membrane potential process test."
+      arguments: []
+      default_output_location: "out/processes/membrane_potential/"
+      source: "chemotaxis/processes/membrane_potential.py"
+      confidence: high
+    - command: "python chemotaxis/composites/chemotaxis_master.py"
+      purpose: "Run the complete chemotaxis master composite or save its topology."
+      arguments:
+        - {name: "--topology", description: "Save the compartment topology instead of running the simulation.", default: false, enums: null, data_type: bool, position: 0, user_can_override: true}
+      default_output_location: "out/composites/chemotaxis_master/"
+      source: "chemotaxis/composites/chemotaxis_master.py"
+      confidence: high
+    - command: "python chemotaxis/composites/chemotaxis_minimal.py"
+      purpose: "Run the minimal receptor-and-motor chemotaxis composite."
+      arguments: []
+      default_output_location: "out/composites/chemotaxis_minimal/"
+      source: "chemotaxis/composites/chemotaxis_minimal.py"
+      confidence: high
+    - command: "python chemotaxis/composites/chemotaxis_flagella.py"
+      purpose: "Run the variable-flagella or expression chemotaxis composite."
+      arguments:
+        - {name: "--variable", description: "Run the variable-flagella mode; mutually exclusive with --expression.", default: false, enums: null, data_type: bool, position: 0, user_can_override: true}
+        - {name: "--expression", description: "Run the expression mode; mutually exclusive with --variable.", default: false, enums: null, data_type: bool, position: 0, user_can_override: true}
+        - {name: "--flagella", description: "Number of flagella.", default: 5, enums: null, data_type: int, position: 0, user_can_override: true}
+      default_output_location: "out/composites/chemotaxis_flagella/"
+      source: "chemotaxis/composites/chemotaxis_flagella.py"
+      confidence: high
+    - command: "python chemotaxis/composites/transport_metabolism.py"
+      purpose: "Run the transport, metabolism, and gene-expression composite."
+      arguments:
+        - {name: "--shift", description: "Run the glucose/lactose shift configuration.", default: false, enums: null, data_type: bool, position: 0, user_can_override: true}
+      default_output_location: "out/composites/transport_metabolism/"
+      source: "chemotaxis/composites/transport_metabolism.py"
+      confidence: high
+    - command: "python chemotaxis/composites/flagella_expression.py"
+      purpose: "Run the flagella expression or expression-with-metabolism composite."
+      arguments:
+        - {name: "--metabolism", description: "Run expression with metabolism.", default: false, enums: null, data_type: bool, position: 0, user_can_override: true}
+        - {name: "--expression", description: "Run the expression mode.", default: true, enums: null, data_type: bool, position: 0, user_can_override: true}
+      default_output_location: "out/composites/flagella_gene_expression/"
+      source: "chemotaxis/composites/flagella_expression.py"
+      confidence: high
+    - command: "python chemotaxis/experiments/paper_experiments.py <experiment_id>"
+      purpose: "Run one of the paper experiments by figure identifier."
+      arguments:
+        - {name: experiment_id, description: "Experiment ID corresponding to a paper figure.", default: null, enums: [3b, 5a, 5b, 5c, 5d, 6a, 6b, 6c, 7a, 7b, 7c, 7d], data_type: str, position: 1, user_can_override: true}
+      default_output_location: "out/experiments/chemotaxis/"
+      source: "chemotaxis/experiments/control.py"
+      confidence: high
+  tests:
+    framework: pytest
+    invocation: "pytest"
+    source: "README.md:38-45; pytest.ini"
+  notes: "README also documents pytest -m 'not slow'. Larger paper experiments may require MongoDB."
+io:
+  inputs:
+    parameters:
+      - name: initial_ligand
+        description: "Initial external ligand concentration for receptor initialization."
+        default_value: 5.0
+        unit: {value: millimolar, iri: "http://purl.obolibrary.org/obo/UO_0000063", ontology_label: millimolar, ontology: uo, mapping_confidence: high}
+        biological_meaning: {value: ligand concentration, iri: "http://semanticscience.org/resource/SIO_001088", ontology_label: concentration, ontology: sio, mapping_confidence: medium}
+        source: "chemotaxis/processes/chemoreceptor_cluster.py:89-91"
+        confidence: high
+      - name: n_flagella
+        description: "Number of flagella represented by the motor process."
+        default_value: 4
+        unit: null
+        biological_meaning: {value: flagellar count, iri: null, ontology: sbo, mapping_confidence: none}
+        source: "chemotaxis/processes/flagella_motor.py:43-47"
+        confidence: high
+      - name: time_step
+        description: "Vivarium process update interval."
+        default_value: 0.01
+        unit: {value: seconds, iri: null, ontology: uo, mapping_confidence: none}
+        biological_meaning: {value: simulation timestep, iri: null, ontology: sio, mapping_confidence: none}
+        source: "chemotaxis/processes/flagella_motor.py:45"
+        confidence: high
+      - name: k_meth
+        description: "Catalytic methylation rate in the receptor adaptation model."
+        default_value: 0.0625
+        unit: {value: per second, iri: null, ontology: uo, mapping_confidence: none}
+        biological_meaning: {value: methylation rate, iri: null, ontology: go, mapping_confidence: none}
+        source: "chemotaxis/processes/chemoreceptor_cluster.py:102"
+        confidence: high
+      - name: environment_volume
+        description: "Environment volume used by transport/metabolism experiments."
+        default_value: "1e-6 L (default); 1e-13 L with --shift"
+        unit: {value: liter, iri: null, ontology: uo, mapping_confidence: none}
+        biological_meaning: {value: environment volume, iri: null, ontology: sio, mapping_confidence: none}
+        source: "chemotaxis/composites/transport_metabolism.py:350-357"
+        confidence: high
+    initial_conditions:
+      - name: receptor_internal_state
+        value: "n_methyl=2.0; chemoreceptor_activity=1/3; CheR=0.00016; CheB=0.00028; CheB_P=0.0"
+        unit: null
+        source: "chemotaxis/processes/chemoreceptor_cluster.py:92-99"
+        confidence: high
+      - name: flagella_expression_state
+        value: "transcripts initialized to zero; proteins include flagella=4, unbound ribosomes=20, unbound RNAP=10"
+        unit: null
+        source: "chemotaxis/composites/flagella_expression.py:126-146"
+        confidence: high
+    data_inputs:
+      - name: transport_metabolism_reference
+        purpose: "Reference timeseries used by the transport/metabolism test."
+        format: {value: CSV, iri: "http://edamontology.org/format_3752", ontology_label: CSV, ontology: edam, mapping_confidence: high}
+        required: true
+        source: "chemotaxis/composites/transport_metabolism.py:344-346; chemotaxis/reference_data/transport_metabolism.csv"
+  outputs:
+    - name: emitted_timeseries
+      description: "Vivarium emitted state timeseries including receptor activity, methylation, motor state, membrane potential, metabolism, transport, and expression state."
+      quantity_kind: {value: concentration, iri: "http://semanticscience.org/resource/SIO_001088", ontology_label: concentration, ontology: sio, mapping_confidence: medium}
+      unit: null
+      format: {value: CSV, iri: "http://edamontology.org/format_3752", ontology_label: CSV, ontology: edam, mapping_confidence: high}
+      destination: "out/"
+      source: "chemotaxis/composites/transport_metabolism.py:344-346; chemotaxis/composites/flagella_expression.py:396-431"
+    - name: simulation_plots
+      description: "Simulation-output, gene-expression, receptor, motor-activity, topology, and trajectory plots."
+      quantity_kind: {value: spatial specification, iri: "http://semanticscience.org/resource/SIO_000317", ontology_label: spatial specification, ontology: sio, mapping_confidence: medium}
+      unit: null
+      format: {value: plot image, iri: null, ontology: edam, mapping_confidence: none}
+      destination: "out/processes/ or out/composites/ or out/experiments/"
+      source: "chemotaxis/__init__.py:7-9; chemotaxis/experiments/control.py:65-89"
+  experiment_protocol:
+    description: "Vivarium experiments initialize process/composite state, apply ligand or environmental timelines, advance in discrete updates, and emit timeseries for plotting or comparison."
+    timestep: {value: "process-specific; examples 0.01, 0.1, 1, and 10", unit: seconds, source: "chemotaxis/processes/flagella_motor.py:45; chemotaxis/composites/chemotaxis_minimal.py:72-74", confidence: high}
+    duration: {value: "experiment-specific; examples 60, 500, 2500, and 4000", unit: seconds, source: "chemotaxis/composites/chemotaxis_master.py:281; chemotaxis/composites/flagella_expression.py:499-540", confidence: high}
+    observables: [chemoreceptor_activity, n_methyl, CheY_P, motile_state, thrust, torque, PMF, volume, mass, transcripts, proteins, internal metabolites]
+    source: "chemotaxis/processes/chemoreceptor_cluster.py:113-131; chemotaxis/processes/flagella_motor.py:79-121"
+provenance:
+  annotated_at: "2026-07-28T17:18:05Z"
+  annotated_by: "biomodel-annotator/0.1"
+  source_root: "/workspace"
+  validation:
+    method: cli
+    status: pass
+    flagged_fields: []
+  human_review_required: true
+  notes: "Unit and quantity-kind mappings are first-pass mappings; imported Vivarium process schemas are not expanded."
