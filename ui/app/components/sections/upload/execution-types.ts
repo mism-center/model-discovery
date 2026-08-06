@@ -152,13 +152,13 @@ export type ParsedExecutionYaml = {
       description?: string | null;
       timestep?: {
         value?: unknown;
-        unit?: string | null;
+        unit?: OntologyLeaf | string | null;
         source?: string;
         confidence?: string;
       } | null;
       duration?: {
         value?: unknown;
-        unit?: string | null;
+        unit?: OntologyLeaf | string | null;
         source?: string;
         confidence?: string;
       } | null;

@@ -1,5 +1,11 @@
 import type { ParsedExecutionYaml } from './execution-types';
-import type { FormValues, SchemaLeaf } from './metadata-types';
+import type { FormValues, OntologyLeaf, SchemaLeaf } from './metadata-types';
+
+function resolveUnit(unit: OntologyLeaf | string | null | undefined): string {
+  if (!unit) return '';
+  if (typeof unit === 'string') return unit;
+  return unit.ontology_label ?? unit.value ?? '';
+}
 
 // ── Extract FormValues from parsed execution YAML ─────────────────────────────
 // Normalises both schema versions:
@@ -194,11 +200,21 @@ export function extractExecutionFormValues(
   // timestep and duration: display as "value unit" compound strings
   const ts = io.experiment_protocol?.timestep;
   values['io.experiment_protocol.timestep'] = ts
-    ? [ts.value, ts.unit].filter(Boolean).join(' ')
+    ? [
+        ts.value !== null && ts.value !== undefined ? String(ts.value) : '',
+        resolveUnit(ts.unit),
+      ]
+        .filter(Boolean)
+        .join(' ')
     : '';
   const dur = io.experiment_protocol?.duration;
   values['io.experiment_protocol.duration'] = dur
-    ? [dur.value, dur.unit].filter(Boolean).join(' ')
+    ? [
+        dur.value !== null && dur.value !== undefined ? String(dur.value) : '',
+        resolveUnit(dur.unit),
+      ]
+        .filter(Boolean)
+        .join(' ')
     : '';
   values['io.experiment_protocol.observables'] = (
     io.experiment_protocol?.observables ?? []
