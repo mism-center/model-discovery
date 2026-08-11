@@ -31,12 +31,21 @@ export function SearchResultsHeader() {
           <h1 className="text-3xl font-headline font-extrabold text-primary tracking-tight">
             {isCompact ? 'Search Results' : 'Featured Submissions'}
           </h1>
+          {/* The `for "…"` clause is conditional: a filter-only search reaches
+              this header with no query — arriving from a tag on a model page,
+              say — and quoting an empty string read as though the search itself
+              were blank. */}
           {isCompact && activeTotal !== undefined && (
             <p className="mt-3 text-[16px] font-medium text-default-800/90">
-              Found {activeTotal} results for{' '}
-              <span className="text-secondary font-bold">
-                &quot;{state.query}&quot;
-              </span>
+              Found {activeTotal} {activeTotal === 1 ? 'result' : 'results'}
+              {state.query && (
+                <>
+                  {' for '}
+                  <span className="text-secondary font-bold">
+                    &quot;{state.query}&quot;
+                  </span>
+                </>
+              )}
             </p>
           )}
         </div>

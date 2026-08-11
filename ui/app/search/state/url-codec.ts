@@ -95,6 +95,21 @@ export function searchStateToParams(state: SearchState): URLSearchParams {
 }
 
 /**
+ * Whether the URL carries an explicit facet selection.
+ *
+ * Read from params, not from `SearchState.facets`, which is never empty on the
+ * models tab: `searchStateFromParams` injects the default
+ * `model_status=executable` there, so a state-based check reports "filtered" even
+ * on a bare `/search`.
+ */
+export function hasExplicitFacetParams(params: URLSearchParams): boolean {
+  for (const key of params.keys()) {
+    if (!RESERVED_PARAMS.has(key)) return true;
+  }
+  return false;
+}
+
+/**
  * Remove all params for a given facet.
  * Mutates and returns a clone of the input params.
  */
