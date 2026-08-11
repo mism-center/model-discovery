@@ -1,3 +1,5 @@
+import { Fragment } from 'react';
+
 import type { ModelDetailResponse } from '~/api/endpoints/models';
 import {
   Field,
@@ -251,25 +253,40 @@ function EntryPointsBody({
 }: {
   entryPoints: ModelDetailResponse['entry_points'];
 }) {
+  // The command bar reads as a header because everything belonging to it hangs
+  // indented underneath, rather than continuing at the same left edge where it
+  // could equally have belonged to the next command down.
   return (
-    <ul className="flex flex-col gap-3">
+    <ul className="flex flex-col gap-6">
       {(entryPoints ?? []).map((e, i) => (
         <li key={`${e.command}-${i}`}>
           <code className="block rounded bg-default-100 px-2 py-1 font-mono text-xs text-default-900">
             {e.command}
           </code>
-          {e.purpose && (
-            <p className="mt-1 text-sm text-default-900">{e.purpose}</p>
-          )}
-          {hasItems(e.arguments) && (
-            <ul className="mt-1 ml-3 flex flex-col gap-0.5">
-              {e.arguments.map((a) => (
-                <li key={a.name} className="text-xs text-default-900">
-                  <span className="font-mono">{a.name}</span>
-                  {a.description && <span> — {a.description}</span>}
-                </li>
-              ))}
-            </ul>
+          {(e.purpose || hasItems(e.arguments)) && (
+            // `space-y-2` rather than a margin on the list, so an entry with
+            // arguments but no purpose gets no stray leading gap.
+            <div className="mt-1.5 ml-4 space-y-2">
+              {e.purpose && (
+                <p className="text-sm text-default-900">{e.purpose}</p>
+              )}
+              {hasItems(e.arguments) && (
+                // Two columns, the first sized to the widest flag in this entry,
+                // so descriptions start on a common left edge however long the
+                // names are.
+                <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-xs">
+                  {e.arguments.map((a) => (
+                    <Fragment key={a.name}>
+                      <dt className="font-mono text-default-900">{a.name}</dt>
+                      {/* Always rendered, empty description or not: a skipped
+                          cell would slide the next flag into the description
+                          column. */}
+                      <dd className="text-default-800">{a.description}</dd>
+                    </Fragment>
+                  ))}
+                </dl>
+              )}
+            </div>
           )}
         </li>
       ))}
