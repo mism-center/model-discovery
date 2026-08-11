@@ -80,7 +80,7 @@ const IO_BLOCKS: Array<
             {d.name}
           </span>,
           d.format || <AbsentCell />,
-          d.required ? <Chip tone="secondary">Required</Chip> : 'Optional',
+          d.required ? 'Required' : 'Optional',
           d.purpose || <AbsentCell />,
         ])}
       />
@@ -235,9 +235,9 @@ function formatValue(value: unknown): React.ReactNode {
     return <AbsentCell />;
   }
   if (typeof value === 'object') {
-    return <code className="font-mono text-xs">{JSON.stringify(value)}</code>;
+    return <code className="font-mono">{JSON.stringify(value)}</code>;
   }
-  return <span className="font-mono text-xs">{String(value)}</span>;
+  return <span className="font-mono">{String(value)}</span>;
 }
 
 function joinQuantity(
