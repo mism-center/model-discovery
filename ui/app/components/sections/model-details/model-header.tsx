@@ -7,7 +7,7 @@ import { signIn, useUser } from '~/api/auth/user';
 import { CompactBreadcrumbs } from '~/components/layout/breadcrumbs';
 import { RunControls } from '~/components/sections/search/search-results/run-controls';
 import { ModelByline } from './model-byline';
-import { Chip, hasItems } from './primitives';
+import { Chip, OVERVIEW_TITLE, hasItems, sectionId } from './primitives';
 
 /**
  * Sign-in affordance for an anonymous visitor looking at an executable model.
@@ -74,7 +74,11 @@ export function ModelHeader({ model }: { model: ModelDetailResponse }) {
   const shortName = truncateBreadcrumb(model.name);
 
   return (
-    <header className="flex flex-col gap-4">
+    // `scroll-mt-20` matches SectionCard, so every nav anchor lands alike.
+    <header
+      id={sectionId(OVERVIEW_TITLE)}
+      className="scroll-mt-20 flex flex-col gap-4"
+    >
       <CompactBreadcrumbs>
         <BreadcrumbItem href="/">Home</BreadcrumbItem>
         <BreadcrumbItem href="/search">Search</BreadcrumbItem>

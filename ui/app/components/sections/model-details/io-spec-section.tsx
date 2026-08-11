@@ -1,9 +1,32 @@
 import type { ModelDetailResponse } from '~/api/endpoints/models';
-import { IODetailBlocks } from './io-detail';
-import { SectionAbsence, SectionCard, SubHeading, Chip } from './primitives';
+import { IODetailBlocks, ioDetailSubsections } from './io-detail';
+import {
+  SectionAbsence,
+  SectionCard,
+  SubHeading,
+  Chip,
+  type Subsection,
+} from './primitives';
 
 type IOSpec = NonNullable<ModelDetailResponse['io_spec']>;
 type IOSlot = NonNullable<IOSpec['inputs']>[number];
+
+/**
+ * What this section renders as subheadings, for the nav. Mirrors the render
+ * conditions below — `hasIODetail` gates the handshake's own heading, so an
+ * unlabelled block never gets an entry.
+ */
+export function ioSectionSubsections(model: ModelDetailResponse): Subsection[] {
+  const detail = ioDetailSubsections(model.io);
+  const spec = model.io_spec;
+  const hasSlots = Boolean(
+    (spec?.inputs?.length ?? 0) > 0 || (spec?.outputs?.length ?? 0) > 0
+  );
+  if (detail.length > 0 && hasSlots) {
+    return [...detail, { id: 'run-handshake', label: 'Run handshake' }];
+  }
+  return detail;
+}
 
 /**
  * The model's inputs and outputs, from two sources in priority order:
@@ -51,7 +74,9 @@ export function IOSpecSection({ model }: { model: ModelDetailResponse }) {
 
       {hasSlots && (
         <div className={hasIODetail ? 'mt-6' : undefined}>
-          {hasIODetail && <SubHeading>Run handshake</SubHeading>}
+          {hasIODetail && (
+            <SubHeading id="run-handshake">Run handshake</SubHeading>
+          )}
           <div className="grid gap-6 sm:grid-cols-2">
             <SlotColumn title="Inputs" slots={inputs} />
             <SlotColumn title="Outputs" slots={outputs} />

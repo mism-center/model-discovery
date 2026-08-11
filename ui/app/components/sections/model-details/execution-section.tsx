@@ -4,6 +4,7 @@ import {
   SectionAbsence,
   SectionCard,
   SubHeading,
+  type Subsection,
   hasItems,
   hasValue,
 } from './primitives';
@@ -105,75 +106,110 @@ export function ExecutionSection({ model }: { model: ModelDetailResponse }) {
         </p>
       )}
 
-      {compute.length > 0 && (
-        <div className="mt-6">
-          <SubHeading>Compute requirements</SubHeading>
-          <dl className="grid gap-4 sm:grid-cols-3">
-            {compute.map(([label, value]) => (
-              <Field key={label} label={label}>
-                {value}
-              </Field>
-            ))}
-          </dl>
+      {EXECUTION_BLOCKS.filter((block) => block.present(model)).map((block) => (
+        <div key={block.id} className="mt-6">
+          <SubHeading id={block.id}>{block.label}</SubHeading>
+          {block.render(model)}
         </div>
-      )}
-
-      {hasItems(model.dependencies) && (
-        <Dependencies dependencies={model.dependencies} />
-      )}
-
-      {hasItems(model.containers) && (
-        <div className="mt-6">
-          <SubHeading>Containers</SubHeading>
-          <ul className="flex flex-col gap-2">
-            {model.containers.map((c, i) => (
-              <li
-                key={`${c.kind}-${c.image_name || c.file || i}`}
-                className="text-sm text-default-900"
-              >
-                <span className="font-semibold capitalize">{c.kind}</span>
-                {c.image_name && (
-                  <span className="font-mono"> · {c.image_name}</span>
-                )}
-                {c.file && (
-                  <span className="text-default-800"> ({c.file})</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {hasItems(model.entry_points) && (
-        <EntryPoints entryPoints={model.entry_points} />
-      )}
-
-      {hasTests(model.tests) && model.tests && (
-        <div className="mt-6">
-          <SubHeading>Tests</SubHeading>
-          <p className="text-sm text-default-900">
-            {model.tests.framework && (
-              <span className="font-semibold">{model.tests.framework}</span>
-            )}
-            {model.tests.invocation && (
-              <code className="ml-2 rounded bg-default-100 px-1.5 py-0.5 font-mono text-xs">
-                {model.tests.invocation}
-              </code>
-            )}
-          </p>
-        </div>
-      )}
+      ))}
     </SectionCard>
   );
 }
 
-function Dependencies({
+/**
+ * The subheaded blocks of this section, in render order. One list drives both the
+ * rendered subheadings and the nav's subsection entries — see `IO_BLOCKS` for why
+ * the nav needs these from data rather than from the DOM.
+ *
+ * The Language/Environment grid and execution notes above are deliberately not
+ * here: they carry no subheading, so there is nothing to anchor to.
+ */
+const EXECUTION_BLOCKS: Array<
+  Subsection & {
+    present: (model: ModelDetailResponse) => boolean;
+    render: (model: ModelDetailResponse) => React.ReactNode;
+  }
+> = [
+  {
+    id: 'compute-requirements',
+    label: 'Compute requirements',
+    present: (model) => computeRows(model.compute).length > 0,
+    render: (model) => (
+      <dl className="grid gap-4 sm:grid-cols-3">
+        {computeRows(model.compute).map(([label, value]) => (
+          <Field key={label} label={label}>
+            {value}
+          </Field>
+        ))}
+      </dl>
+    ),
+  },
+  {
+    id: 'dependencies',
+    label: 'Dependencies',
+    present: (model) => hasItems(model.dependencies),
+    render: (model) => <DependenciesBody dependencies={model.dependencies} />,
+  },
+  {
+    id: 'containers',
+    label: 'Containers',
+    present: (model) => hasItems(model.containers),
+    render: (model) => (
+      <ul className="flex flex-col gap-2">
+        {(model.containers ?? []).map((c, i) => (
+          <li
+            key={`${c.kind}-${c.image_name || c.file || i}`}
+            className="text-sm text-default-900"
+          >
+            <span className="font-semibold capitalize">{c.kind}</span>
+            {c.image_name && (
+              <span className="font-mono"> · {c.image_name}</span>
+            )}
+            {c.file && <span className="text-default-800"> ({c.file})</span>}
+          </li>
+        ))}
+      </ul>
+    ),
+  },
+  {
+    id: 'entry-points',
+    label: 'Entry points',
+    present: (model) => hasItems(model.entry_points),
+    render: (model) => <EntryPointsBody entryPoints={model.entry_points} />,
+  },
+  {
+    id: 'tests',
+    label: 'Tests',
+    present: (model) => hasTests(model.tests),
+    render: (model) => (
+      <p className="text-sm text-default-900">
+        {model.tests?.framework && (
+          <span className="font-semibold">{model.tests.framework}</span>
+        )}
+        {model.tests?.invocation && (
+          <code className="ml-2 rounded bg-default-100 px-1.5 py-0.5 font-mono text-xs">
+            {model.tests.invocation}
+          </code>
+        )}
+      </p>
+    ),
+  },
+];
+
+/** Subsection entries for whichever execution blocks this model populates. */
+export function executionSubsections(model: ModelDetailResponse): Subsection[] {
+  return EXECUTION_BLOCKS.filter((block) => block.present(model)).map(
+    ({ id, label }) => ({ id, label })
+  );
+}
+
+function DependenciesBody({
   dependencies,
 }: {
-  dependencies: NonNullable<ModelDetailResponse['dependencies']>;
+  dependencies: ModelDetailResponse['dependencies'];
 }) {
-  const byKind = new Map<string, typeof dependencies>();
-  for (const d of dependencies) {
+  const byKind = new Map<string, NonNullable<typeof dependencies>>();
+  for (const d of dependencies ?? []) {
     const kind = d.kind || 'runtime';
     const list = byKind.get(kind) ?? [];
     list.push(d);
@@ -181,67 +217,61 @@ function Dependencies({
   }
 
   return (
-    <div className="mt-6">
-      <SubHeading>Dependencies</SubHeading>
-      <div className="flex flex-col gap-3">
-        {[...byKind.entries()].map(([kind, deps]) => (
-          <div key={kind}>
-            <p className="text-sm font-semibold text-default-900 capitalize mb-1">
-              {kind}
-            </p>
-            <ul className="flex flex-wrap gap-x-4 gap-y-1">
-              {deps.map((d) => (
-                <li
-                  key={`${d.name}-${d.group}`}
-                  className="text-sm font-mono text-default-900"
-                >
-                  {d.name}
-                  {d.version_constraint && (
-                    <span className="text-default-800">
-                      {' '}
-                      {d.version_constraint}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </div>
+    <div className="flex flex-col gap-3">
+      {[...byKind.entries()].map(([kind, deps]) => (
+        <div key={kind}>
+          <p className="text-sm font-semibold text-default-900 capitalize mb-1">
+            {kind}
+          </p>
+          <ul className="flex flex-wrap gap-x-4 gap-y-1">
+            {deps.map((d) => (
+              <li
+                key={`${d.name}-${d.group}`}
+                className="text-sm font-mono text-default-900"
+              >
+                {d.name}
+                {d.version_constraint && (
+                  <span className="text-default-800">
+                    {' '}
+                    {d.version_constraint}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
     </div>
   );
 }
 
-function EntryPoints({
+function EntryPointsBody({
   entryPoints,
 }: {
-  entryPoints: NonNullable<ModelDetailResponse['entry_points']>;
+  entryPoints: ModelDetailResponse['entry_points'];
 }) {
   return (
-    <div className="mt-6">
-      <SubHeading>Entry points</SubHeading>
-      <ul className="flex flex-col gap-3">
-        {entryPoints.map((e, i) => (
-          <li key={`${e.command}-${i}`}>
-            <code className="block rounded bg-default-100 px-2 py-1 font-mono text-xs text-default-900">
-              {e.command}
-            </code>
-            {e.purpose && (
-              <p className="mt-1 text-sm text-default-900">{e.purpose}</p>
-            )}
-            {hasItems(e.arguments) && (
-              <ul className="mt-1 ml-3 flex flex-col gap-0.5">
-                {e.arguments.map((a) => (
-                  <li key={a.name} className="text-xs text-default-900">
-                    <span className="font-mono">{a.name}</span>
-                    {a.description && <span> — {a.description}</span>}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </li>
-        ))}
-      </ul>
-    </div>
+    <ul className="flex flex-col gap-3">
+      {(entryPoints ?? []).map((e, i) => (
+        <li key={`${e.command}-${i}`}>
+          <code className="block rounded bg-default-100 px-2 py-1 font-mono text-xs text-default-900">
+            {e.command}
+          </code>
+          {e.purpose && (
+            <p className="mt-1 text-sm text-default-900">{e.purpose}</p>
+          )}
+          {hasItems(e.arguments) && (
+            <ul className="mt-1 ml-3 flex flex-col gap-0.5">
+              {e.arguments.map((a) => (
+                <li key={a.name} className="text-xs text-default-900">
+                  <span className="font-mono">{a.name}</span>
+                  {a.description && <span> — {a.description}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }

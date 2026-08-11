@@ -8,14 +8,15 @@ import { modelDetailQueryOptions } from '~/api/query/models';
 import { ApiErrorDisplay } from '~/components/common/api-error-display';
 import { BackToTop } from '~/components/common/back-to-top';
 import { BiologySection } from './biology-section';
-import { ExecutionSection } from './execution-section';
+import { ExecutionSection, executionSubsections } from './execution-section';
 import { FilesSection } from './files-section';
-import { IOSpecSection } from './io-spec-section';
+import { IOSpecSection, ioSectionSubsections } from './io-spec-section';
 import { ModelCharacterizationSection } from './model-characterization-section';
 import { ModelHeader } from './model-header';
-import { sectionId } from './primitives';
+import { OVERVIEW_TITLE, sectionId, type Subsection } from './primitives';
 import { ProvenanceSection } from './provenance-section';
 import { RunHistorySection } from './run-history-section';
+import { SectionCollapseProvider } from './section-collapse';
 import { SectionNav, type SectionLink } from './section-nav';
 import { ModelDetailsSkeleton, SectionNavSkeleton } from './skeleton';
 
@@ -26,15 +27,15 @@ import { ModelDetailsSkeleton, SectionNavSkeleton } from './skeleton';
  * happens to populate — otherwise the page's shape would track data gaps rather
  * than what a reader needs:
  *
- *   what is this      → Model characterization, Biology
+ *   what is this      → Overview, Model characterization, Biology
  *   what does it take → Inputs & outputs
  *   how do I run it   → Execution, Files, Run history
  *   who made it       → Provenance
  *
- * Characterization leads because it orients everything below it. Biology follows
- * it directly: the two are the same question (the mathematics, and what the
- * mathematics is about), so an operational section must not split them.
- * Provenance is reference material, so it trails.
+ * Characterization leads the titled sections because it orients everything below
+ * it. Biology follows it directly: the two are the same question (the
+ * mathematics, and what the mathematics is about), so an operational section must
+ * not split them. Provenance is reference material, so it trails.
  *
  * Not derived from which fields are populated: the nav must not change shape per
  * model, and a section with nothing to show says so rather than disappearing.
@@ -48,6 +49,7 @@ import { ModelDetailsSkeleton, SectionNavSkeleton } from './skeleton';
  * the page changing shape from one model to the next.
  */
 const SECTION_DEFS = [
+  { title: OVERVIEW_TITLE },
   { title: 'Model characterization' },
   { title: 'Biology' },
   { title: 'Inputs & outputs' },
@@ -57,10 +59,37 @@ const SECTION_DEFS = [
   { title: 'Provenance' },
 ] as const;
 
-function sectionsFor(hasUser: boolean): SectionLink[] {
+/**
+ * Subsection entries per section, keyed by section id.
+ *
+ * Only the two long sections have subheadings worth navigating; the rest are flat
+ * field grids. Each source function lives beside the component that renders those
+ * subheadings and is derived from the same block list, so the nav cannot offer an
+ * anchor the page did not render.
+ *
+ * Empty until the model loads, which is also when the nav is still a skeleton.
+ */
+function subsectionsFor(
+  model: ModelDetailResponse | undefined
+): Record<string, Subsection[]> {
+  if (!model) return {};
+  return {
+    [sectionId('Inputs & outputs')]: ioSectionSubsections(model),
+    [sectionId('Execution')]: executionSubsections(model),
+  };
+}
+
+function sectionsFor(
+  hasUser: boolean,
+  model: ModelDetailResponse | undefined
+): SectionLink[] {
+  const subsections = subsectionsFor(model);
   return SECTION_DEFS.filter(
     (section) => !('requiresUser' in section) || hasUser
-  ).map(({ title }) => ({ id: sectionId(title), label: title }));
+  ).map(({ title }) => {
+    const id = sectionId(title);
+    return { id, label: title, children: subsections[id] };
+  });
 }
 
 /**
@@ -83,7 +112,7 @@ export function ModelDetailsSection({ modelId }: { modelId: string }) {
   // as "no user" only until the session resolves — it is hydrated from the
   // loader, so in practice it is known on first paint.
   const { user } = useUser();
-  const sections = sectionsFor(Boolean(user));
+  const sections = sectionsFor(Boolean(user), model);
 
   // The rail exists to navigate sections, so it has nothing to offer when the
   // model failed to load. Collapsing to one column beats leaving a 280px empty
@@ -91,44 +120,47 @@ export function ModelDetailsSection({ modelId }: { modelId: string }) {
   const showRail = !error;
 
   return (
-    <main className="flex flex-col grow">
-      <div
-        className={cn(
-          'grid grow bg-default-50',
-          showRail
-            ? 'grid-cols-1 lg:grid-cols-[auto_minmax(0,1fr)]'
-            : 'grid-cols-1'
-        )}
-      >
-        {showRail && (
-          <div className="hidden lg:block lg:min-w-[280px]">
-            {model ? (
-              <SectionNav sections={sections} />
-            ) : (
-              <SectionNavSkeleton items={sections.length} />
-            )}
-          </div>
-        )}
-        <section
+    // Spans rail and pane both, since the nav re-opens sections it jumps to.
+    <SectionCollapseProvider>
+      <main className="flex flex-col grow">
+        <div
           className={cn(
-            'bg-white border-slate-200',
-            showRail && 'lg:col-start-2 lg:border-l'
+            'grid grow bg-default-50',
+            showRail
+              ? 'grid-cols-1 lg:grid-cols-[auto_minmax(0,1fr)]'
+              : 'grid-cols-1'
           )}
         >
-          <div className="p-6 lg:p-10">
-            <Body
-              modelId={modelId}
-              model={model}
-              isLoading={isLoading}
-              error={error}
-              refetch={refetch}
-              showRunHistory={Boolean(user)}
-            />
-          </div>
-        </section>
-      </div>
-      <BackToTop />
-    </main>
+          {showRail && (
+            <div className="hidden lg:block lg:min-w-70">
+              {model ? (
+                <SectionNav sections={sections} />
+              ) : (
+                <SectionNavSkeleton items={sections.length} />
+              )}
+            </div>
+          )}
+          <section
+            className={cn(
+              'bg-white border-slate-200',
+              showRail && 'lg:col-start-2 lg:border-l'
+            )}
+          >
+            <div className="p-6 lg:p-10">
+              <Body
+                modelId={modelId}
+                model={model}
+                isLoading={isLoading}
+                error={error}
+                refetch={refetch}
+                showRunHistory={Boolean(user)}
+              />
+            </div>
+          </section>
+        </div>
+        <BackToTop />
+      </main>
+    </SectionCollapseProvider>
   );
 }
 

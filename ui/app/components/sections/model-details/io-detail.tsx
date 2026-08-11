@@ -1,7 +1,132 @@
 import type { ModelDetailResponse } from '~/api/endpoints/models';
-import { AbsentCell, Chip, SubHeading } from './primitives';
+import { AbsentCell, Chip, SubHeading, type Subsection } from './primitives';
 
 type IODetail = NonNullable<ModelDetailResponse['io']>;
+
+function hasRows(rows: unknown[] | null | undefined): boolean {
+  return Boolean(rows && rows.length > 0);
+}
+
+function protocolHasContent(io: IODetail): boolean {
+  const p = io.experiment_protocol;
+  if (!p) return false;
+  return Boolean(
+    p.description ||
+    typeof p.timestep === 'number' ||
+    typeof p.duration === 'number' ||
+    hasRows(p.observables)
+  );
+}
+
+/**
+ * The blocks of the I/O characterization, in render order.
+ *
+ * One list drives both the rendered subheadings and the nav's subsection
+ * entries, so the two cannot disagree about which blocks this model has. The nav
+ * needs them derived from data rather than from the DOM: a collapsed section
+ * unmounts its subheadings, but its entries must stay listed so they can be
+ * jumped to.
+ */
+const IO_BLOCKS: Array<
+  Subsection & {
+    present: (io: IODetail) => boolean;
+    render: (io: IODetail) => React.ReactNode;
+  }
+> = [
+  {
+    id: 'parameters',
+    label: 'Parameters',
+    present: (io) => hasRows(io.parameters),
+    render: (io) => (
+      <DataTable
+        columns={['Name', 'Default', 'Unit', 'Meaning']}
+        rows={(io.parameters ?? []).map((p) => [
+          <span key="n" className="font-mono">
+            {p.name}
+          </span>,
+          formatValue(p.default_value),
+          p.unit || <AbsentCell />,
+          p.biological_meaning || p.description || <AbsentCell />,
+        ])}
+      />
+    ),
+  },
+  {
+    id: 'initial-conditions',
+    label: 'Initial conditions',
+    present: (io) => hasRows(io.initial_conditions),
+    render: (io) => (
+      <DataTable
+        columns={['Name', 'Value', 'Unit']}
+        rows={(io.initial_conditions ?? []).map((c) => [
+          <span key="n" className="font-mono">
+            {c.name}
+          </span>,
+          formatValue(c.value),
+          c.unit || <AbsentCell />,
+        ])}
+      />
+    ),
+  },
+  {
+    id: 'data-inputs',
+    label: 'Data inputs',
+    present: (io) => hasRows(io.data_inputs),
+    render: (io) => (
+      <DataTable
+        columns={['Name', 'Format', 'Required', 'Purpose']}
+        rows={(io.data_inputs ?? []).map((d) => [
+          <span key="n" className="font-mono">
+            {d.name}
+          </span>,
+          d.format || <AbsentCell />,
+          d.required ? <Chip tone="secondary">Required</Chip> : 'Optional',
+          d.purpose || <AbsentCell />,
+        ])}
+      />
+    ),
+  },
+  {
+    id: 'outputs',
+    label: 'Outputs',
+    present: (io) => hasRows(io.outputs),
+    render: (io) => (
+      <DataTable
+        columns={['Name', 'Quantity', 'Unit', 'Format']}
+        rows={(io.outputs ?? []).map((o) => [
+          <span key="n" className="font-mono">
+            {o.name}
+          </span>,
+          o.quantity_kind || o.description || <AbsentCell />,
+          o.unit || <AbsentCell />,
+          o.format || <AbsentCell />,
+        ])}
+      />
+    ),
+  },
+  {
+    id: 'experiment-protocol',
+    label: 'Experiment protocol',
+    present: protocolHasContent,
+    render: (io) =>
+      io.experiment_protocol ? (
+        <ProtocolBody protocol={io.experiment_protocol} />
+      ) : null,
+  },
+];
+
+/** Subsection entries for whichever I/O blocks this model populates. */
+export function ioDetailSubsections(
+  io: IODetail | null | undefined
+): Subsection[] {
+  if (!io) return [];
+  return IO_BLOCKS.filter((block) => block.present(io)).map(
+    ({ id, label }) => ({
+      id,
+      label,
+    })
+  );
+}
 
 /**
  * The model's I/O characterization (schema.md Section C) rendered for humans:
@@ -10,84 +135,19 @@ type IODetail = NonNullable<ModelDetailResponse['io']>;
 export function IODetailBlocks({ io }: { io: IODetail | null | undefined }) {
   if (!io) return null;
 
-  const { parameters, initial_conditions, data_inputs, outputs } = io;
-  const protocol = io.experiment_protocol;
-
   return (
     <div className="flex flex-col gap-6">
-      {parameters && parameters.length > 0 && (
-        <div>
-          <SubHeading>Parameters</SubHeading>
-          <DataTable
-            columns={['Name', 'Default', 'Unit', 'Meaning']}
-            rows={parameters.map((p) => [
-              <span key="n" className="font-mono">
-                {p.name}
-              </span>,
-              formatValue(p.default_value),
-              p.unit || <AbsentCell />,
-              p.biological_meaning || p.description || <AbsentCell />,
-            ])}
-          />
+      {IO_BLOCKS.filter((block) => block.present(io)).map((block) => (
+        <div key={block.id}>
+          <SubHeading id={block.id}>{block.label}</SubHeading>
+          {block.render(io)}
         </div>
-      )}
-
-      {initial_conditions && initial_conditions.length > 0 && (
-        <div>
-          <SubHeading>Initial conditions</SubHeading>
-          <DataTable
-            columns={['Name', 'Value', 'Unit']}
-            rows={initial_conditions.map((c) => [
-              <span key="n" className="font-mono">
-                {c.name}
-              </span>,
-              formatValue(c.value),
-              c.unit || <AbsentCell />,
-            ])}
-          />
-        </div>
-      )}
-
-      {data_inputs && data_inputs.length > 0 && (
-        <div>
-          <SubHeading>Data inputs</SubHeading>
-          <DataTable
-            columns={['Name', 'Format', 'Required', 'Purpose']}
-            rows={data_inputs.map((d) => [
-              <span key="n" className="font-mono">
-                {d.name}
-              </span>,
-              d.format || <AbsentCell />,
-              d.required ? <Chip tone="secondary">Required</Chip> : 'Optional',
-              d.purpose || <AbsentCell />,
-            ])}
-          />
-        </div>
-      )}
-
-      {outputs && outputs.length > 0 && (
-        <div>
-          <SubHeading>Outputs</SubHeading>
-          <DataTable
-            columns={['Name', 'Quantity', 'Unit', 'Format']}
-            rows={outputs.map((o) => [
-              <span key="n" className="font-mono">
-                {o.name}
-              </span>,
-              o.quantity_kind || o.description || <AbsentCell />,
-              o.unit || <AbsentCell />,
-              o.format || <AbsentCell />,
-            ])}
-          />
-        </div>
-      )}
-
-      {protocol && <Protocol protocol={protocol} />}
+      ))}
     </div>
   );
 }
 
-function Protocol({
+function ProtocolBody({
   protocol,
 }: {
   protocol: NonNullable<IODetail['experiment_protocol']>;
@@ -96,18 +156,8 @@ function Protocol({
   const duration = joinQuantity(protocol.duration, protocol.duration_unit);
   const observables = protocol.observables ?? [];
 
-  if (
-    !protocol.description &&
-    !timestep &&
-    !duration &&
-    observables.length === 0
-  ) {
-    return null;
-  }
-
   return (
-    <div>
-      <SubHeading>Experiment protocol</SubHeading>
+    <>
       {protocol.description && (
         <p className="text-sm text-default-900 mb-3">{protocol.description}</p>
       )}
@@ -132,7 +182,7 @@ function Protocol({
           ))}
         </div>
       )}
-    </div>
+    </>
   );
 }
 

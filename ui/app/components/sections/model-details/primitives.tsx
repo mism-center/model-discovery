@@ -1,6 +1,8 @@
 import cn from 'classnames';
+import { ChevronDownIcon } from '@heroicons/react/24/outline';
 
 import { NotRecorded } from '~/components/common/definition-field';
+import { useSectionCollapse } from './section-collapse';
 
 export { FIELD_LABEL } from '~/components/common/definition-field';
 
@@ -19,6 +21,11 @@ export function sectionId(title: string): string {
     .replaceAll(/^-|-$/g, '');
 }
 
+/** Nav label for the page header, which anchors itself rather than via SectionCard. */
+export const OVERVIEW_TITLE = 'Overview';
+
+const SECTION_HEADING = 'text-lg font-headline font-bold text-primary';
+
 /**
  * One titled region of the detail page: a rule and a heading, not an elevated
  * card. Stacking cards makes every metadata group look equally important; a
@@ -31,6 +38,8 @@ export function sectionId(title: string): string {
  *
  * Every section carries a top rule, including the first — which separates it
  * from the page header above.
+ *
+ * Collapsible under a `SectionCollapseProvider`, plain headings without one.
  */
 export function SectionCard({
   title,
@@ -45,24 +54,70 @@ export function SectionCard({
   children: React.ReactNode;
   className?: string;
 }) {
+  const collapse = useSectionCollapse();
+  const id = sectionId(title);
+  const expanded = collapse ? collapse.isExpanded(id) : true;
+  const panelId = `${id}-panel`;
+
   return (
     <section
-      id={sectionId(title)}
+      id={id}
       // scroll-mt clears the 64px sticky navbar when an anchor is targeted.
       className={cn('scroll-mt-20 border-t border-default-200 pt-8', className)}
     >
-      <div className="flex items-start justify-between gap-4 mb-4">
-        <div className="min-w-0">
-          <h2 className="text-lg font-headline font-bold text-primary">
-            {title}
+      {/* `group` is on the row, not the button, so hovering the description
+          lights the chevron too. */}
+      <div
+        className={cn(
+          'group relative flex items-start justify-between gap-4',
+          expanded ? 'mb-4' : 'mb-0'
+        )}
+      >
+        <div className="min-w-0 flex-1">
+          <h2 className={SECTION_HEADING}>
+            {collapse ? (
+              <button
+                type="button"
+                aria-expanded={expanded}
+                aria-controls={panelId}
+                onClick={() => collapse.toggle(id)}
+                className={cn(
+                  'flex w-full cursor-pointer items-center gap-2 text-left',
+                  'outline-none',
+                  // Stretched over the row so the description toggles too. The
+                  // description stays a sibling: nesting it would fold the blurb
+                  // into the button's accessible name and the h2's heading text.
+                  'after:absolute after:inset-0 after:rounded-md',
+                  'focus-visible:after:ring-2 focus-visible:after:ring-primary/50'
+                )}
+              >
+                <span>{title}</span>
+                <ChevronDownIcon
+                  aria-hidden="true"
+                  className={cn(
+                    'ml-auto size-4 shrink-0 transition-transform duration-200',
+                    'text-default-700 group-hover:text-primary',
+                    !expanded && '-rotate-90'
+                  )}
+                />
+              </button>
+            ) : (
+              title
+            )}
           </h2>
           {description && (
             <p className="mt-1 text-sm text-default-800">{description}</p>
           )}
         </div>
-        {action}
+        {/* `relative` lifts the action above the stretched hit area, so it stays
+            its own control instead of toggling the section. */}
+        {action && <div className="relative shrink-0">{action}</div>}
       </div>
-      {children}
+      {/* The panel stays mounted so `aria-controls` resolves; only its contents
+          unmount, which keeps collapsed content out of the tab order. */}
+      <div id={panelId} hidden={!expanded}>
+        {expanded && children}
+      </div>
     </section>
   );
 }
@@ -102,13 +157,30 @@ export function AbsentCell() {
   );
 }
 
+/** A navigable subsection of a section: one `SubHeading` with an anchor. */
+export type Subsection = { id: string; label: string };
+
 /**
  * A sub-heading inside a section. `text-sm` semibold so it outranks the body
- * text beneath it.
+ * text beneath it. Pass `id` to make it a nav anchor.
  */
-export function SubHeading({ children }: { children: React.ReactNode }) {
+export function SubHeading({
+  id,
+  children,
+}: {
+  id?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <h3 className="text-sm font-semibold text-default-900 mb-2">{children}</h3>
+    <h3
+      id={id}
+      className={cn(
+        'text-sm font-semibold text-default-900 mb-2',
+        id && 'scroll-mt-20'
+      )}
+    >
+      {children}
+    </h3>
   );
 }
 
