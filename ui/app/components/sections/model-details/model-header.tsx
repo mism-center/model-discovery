@@ -120,12 +120,12 @@ export function ModelHeader({ model }: { model: ModelDetailResponse }) {
           {(hasItems(model.model_scales) || hasItems(model.domains)) && (
             <div className="mt-4 flex flex-wrap gap-1.5">
               {model.model_scales?.map((s) => (
-                <Chip key={s} tone="primary">
+                <Chip key={s} facet="model_scales">
                   {s}
                 </Chip>
               ))}
               {model.domains?.map((d) => (
-                <Chip key={d} tone="neutral">
+                <Chip key={d} facet="domains">
                   {d}
                 </Chip>
               ))}

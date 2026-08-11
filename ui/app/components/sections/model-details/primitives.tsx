@@ -1,7 +1,9 @@
 import cn from 'classnames';
+import { Link } from 'react-router';
 import { ChevronDownIcon } from '@heroicons/react/24/outline';
 
 import { NotRecorded } from '~/components/common/definition-field';
+import { getFacetConfig } from '~/search/state/facets.config';
 import { useSectionCollapse } from './section-collapse';
 
 export { FIELD_LABEL } from '~/components/common/definition-field';
@@ -202,6 +204,38 @@ export {
   hasItems,
 } from '~/components/common/definition-field';
 
+/**
+ * Link to a search filtered to one value of one facet, or `undefined` when the
+ * category is not a declared facet.
+ *
+ * Resolving against `FACETS` is the point, not a formality. `searchStateFromParams`
+ * only reads params for declared facets and `buildSearchRequest` only compiles
+ * those, so a param for anything else is silently dropped — a link built blindly
+ * would land the reader on an *unfiltered* search that looks like it worked.
+ * Returning `undefined` makes the chip render as plain text instead, and keeps
+ * that true automatically if a facet is ever removed from the config.
+ *
+ * Params, not a built `SearchState`: the codec documents terms facets as
+ * `?<facetId>=<value>`, and the omitted keys are exactly the ones whose defaults
+ * a fresh search should apply anyway.
+ */
+export function facetSearchLink(
+  facetId: string,
+  value: string
+): { href: string; label: string } | undefined {
+  const facet = getFacetConfig(facetId);
+  if (!facet || facet.widget !== 'terms') return undefined;
+
+  const params = new URLSearchParams();
+  params.append(facet.id, value);
+  return {
+    href: `/search?${params.toString()}`,
+    // The chip's own text is just the value, so on its own it would announce as
+    // an unexplained link. Naming the facet says what the link will do.
+    label: `Search models where ${facet.label} includes ${value}`,
+  };
+}
+
 type ChipTone = 'primary' | 'neutral' | 'secondary';
 
 /**
@@ -214,33 +248,90 @@ const CHIP_TONES: Record<ChipTone, string> = {
   secondary: 'bg-secondary-100 text-default-900',
 };
 
-/** Small tag chip. `text-xs` from the type scale, not an arbitrary 10px. */
+/**
+ * Hover fill for a chip that filters — one step deeper in its own ramp.
+ *
+ * The whole chip is the hit area, so the whole chip reacts. `hover:underline` is
+ * prose link styling; inside a filled pill it decorates the label and leaves the
+ * pill itself looking inert. No border either — outlining a filled shape gives it
+ * two competing edges, and at `text-xs` the ring flattens into the fill.
+ *
+ * Each hover fill keeps its foreground well clear of AA: `text-primary` (#012169)
+ * on `primary-200` (#c7d9ff) is 10.3:1, and `text-default-900` (#404041) on
+ * `default-200` (#ebebec) is 7.7:1.
+ */
+const CHIP_HOVER: Record<ChipTone, string> = {
+  primary: 'hover:bg-primary-200',
+  neutral: 'hover:bg-default-200',
+  secondary: 'hover:bg-secondary-200',
+};
+
+/**
+ * Small tag chip. `text-xs` from the type scale, not an arbitrary 10px.
+ *
+ * Given a `facet`, becomes a link to a search filtered to that value — but only
+ * when the facet is real; see `facetSearchLink`.
+ *
+ * On this page tone encodes *behaviour*, not category: navy means the tag filters,
+ * grey means it is only a value. So a categorical chip does not take a tone — it
+ * derives one from whether its link resolved, which is what keeps the rule
+ * honest. A caller cannot paint a dead-end value navy, and a category that loses
+ * its facet turns grey on its own.
+ *
+ * `tone` remains for chips that are not categorical tags at all, like the
+ * "Required" badge on an I/O slot, where the colour means something else.
+ */
 export function Chip({
   children,
-  tone = 'primary',
+  tone,
+  facet,
+  value,
 }: {
   children: React.ReactNode;
   tone?: ChipTone;
+  facet?: string;
+  /** The raw value to filter on. Defaults to `children` when it is a string. */
+  value?: string;
 }) {
+  const term = value ?? (typeof children === 'string' ? children : undefined);
+  const link = facet && term ? facetSearchLink(facet, term) : undefined;
+  const resolvedTone: ChipTone = tone ?? (link ? 'primary' : 'neutral');
+
+  const className = cn(
+    'px-2 py-0.5 rounded-sm text-xs font-semibold',
+    CHIP_TONES[resolvedTone]
+  );
+
+  if (!link) return <span className={className}>{children}</span>;
+
   return (
-    <span
+    <Link
+      to={link.href}
+      aria-label={link.label}
       className={cn(
-        'px-2 py-0.5 rounded-sm text-xs font-semibold',
-        CHIP_TONES[tone]
+        className,
+        CHIP_HOVER[resolvedTone],
+        'cursor-pointer transition-colors',
+        'outline-none focus-visible:ring-2 focus-visible:ring-primary/50'
       )}
     >
       {children}
-    </span>
+    </Link>
   );
 }
 
-/** Render values as chips, or state the absence. */
+/**
+ * Render values as chips, or state the absence. Pass `facet` to make each chip
+ * link to a search filtered to it, which also turns it navy — see `Chip`.
+ */
 export function ChipList({
   values,
-  tone = 'primary',
+  tone,
+  facet,
 }: {
   values: string[] | null | undefined;
   tone?: ChipTone;
+  facet?: string;
 }) {
   if (!values || values.length === 0) {
     return <NotRecorded />;
@@ -248,7 +339,7 @@ export function ChipList({
   return (
     <div className="flex flex-wrap gap-1.5">
       {values.map((v) => (
-        <Chip key={v} tone={tone}>
+        <Chip key={v} tone={tone} facet={facet}>
           {v}
         </Chip>
       ))}

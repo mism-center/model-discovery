@@ -46,10 +46,10 @@ export function ModelCharacterizationSection({
       {hasContent ? (
         <dl className="grid gap-5 sm:grid-cols-2">
           <Field label="Model class">
-            <ChipList values={model.model_class} tone="neutral" />
+            <ChipList values={model.model_class} facet="model_class" />
           </Field>
           <Field label="Formalism">
-            <ChipList values={model.formalism} tone="neutral" />
+            <ChipList values={model.formalism} facet="formalism" />
           </Field>
           <Field label="Determinism">
             {formatVocabulary(model.determinism)}

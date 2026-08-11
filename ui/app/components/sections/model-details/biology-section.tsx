@@ -34,22 +34,34 @@ export function BiologySection({ model }: { model: ModelDetailResponse }) {
       {hasContent ? (
         <dl className="grid gap-5 sm:grid-cols-2">
           <Field label="Organisms">
-            <ChipList values={model.organisms} tone="neutral" />
+            <ChipList values={model.organisms} facet="organisms" />
           </Field>
           <Field label="Infectious agents">
-            <ChipList values={model.infectious_agents} tone="neutral" />
+            <ChipList
+              values={model.infectious_agents}
+              facet="infectious_agents"
+            />
           </Field>
           <Field label="Health conditions">
-            <ChipList values={model.health_conditions} tone="neutral" />
+            <ChipList
+              values={model.health_conditions}
+              facet="health_conditions"
+            />
           </Field>
           <Field label="Biological processes">
-            <ChipList values={model.biological_processes} tone="neutral" />
+            <ChipList
+              values={model.biological_processes}
+              facet="biological_processes"
+            />
           </Field>
           <Field label="Molecular entities">
-            <ChipList values={model.molecular_entities} tone="neutral" />
+            <ChipList
+              values={model.molecular_entities}
+              facet="molecular_entities"
+            />
           </Field>
           <Field label="Proteins / genes">
-            <ChipList values={model.proteins_genes} tone="neutral" />
+            <ChipList values={model.proteins_genes} facet="proteins_genes" />
           </Field>
         </dl>
       ) : (

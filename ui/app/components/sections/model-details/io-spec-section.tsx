@@ -135,9 +135,7 @@ function SlotColumn({ title, slots }: { title: string; slots: IOSlot[] }) {
               {slot.tags && slot.tags.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {slot.tags.map((t) => (
-                    <Chip key={t} tone="neutral">
-                      {t}
-                    </Chip>
+                    <Chip key={t}>{t}</Chip>
                   ))}
                 </div>
               )}

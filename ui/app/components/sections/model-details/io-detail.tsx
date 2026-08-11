@@ -175,7 +175,7 @@ function ProtocolBody({
         {duration && <Field label="Duration">{duration}</Field>}
         {observables.length > 0 && (
           <Field label="Observables" className="sm:col-span-3">
-            <ChipList values={observables} tone="neutral" />
+            <ChipList values={observables} />
           </Field>
         )}
       </dl>
