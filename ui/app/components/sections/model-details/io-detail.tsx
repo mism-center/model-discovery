@@ -1,5 +1,11 @@
 import type { ModelDetailResponse } from '~/api/endpoints/models';
-import { AbsentCell, Chip, SubHeading, type Subsection } from './primitives';
+import {
+  AbsentCell,
+  ChipList,
+  Field,
+  SubHeading,
+  type Subsection,
+} from './primitives';
 
 type IODetail = NonNullable<ModelDetailResponse['io']>;
 
@@ -159,29 +165,20 @@ function ProtocolBody({
   return (
     <>
       {protocol.description && (
-        <p className="text-sm text-default-900 mb-3">{protocol.description}</p>
+        <p className="text-sm text-default-900 mb-4">{protocol.description}</p>
       )}
-      <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm text-default-900">
-        {timestep && (
-          <span>
-            <span className="font-semibold">Timestep:</span> {timestep}
-          </span>
+      {/* Same `dl` grid as Execution's Compute requirements. The inline
+          `<b>Timestep:</b>` this replaced outranked the description above it, so
+          the prose read as trapped between two headings. */}
+      <dl className="grid gap-4 sm:grid-cols-3">
+        {timestep && <Field label="Timestep">{timestep}</Field>}
+        {duration && <Field label="Duration">{duration}</Field>}
+        {observables.length > 0 && (
+          <Field label="Observables" className="sm:col-span-3">
+            <ChipList values={observables} tone="neutral" />
+          </Field>
         )}
-        {duration && (
-          <span>
-            <span className="font-semibold">Duration:</span> {duration}
-          </span>
-        )}
-      </div>
-      {observables.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {observables.map((o) => (
-            <Chip key={o} tone="neutral">
-              {o}
-            </Chip>
-          ))}
-        </div>
-      )}
+      </dl>
     </>
   );
 }

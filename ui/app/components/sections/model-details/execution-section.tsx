@@ -216,13 +216,14 @@ function DependenciesBody({
     byKind.set(kind, list);
   }
 
+  // Each kind labels a list of names, so it is a label/value pair — `Field`'s
+  // uppercase micro-label ranks it under the "Dependencies" subheading instead of
+  // matching it exactly, which is what made the nesting unreadable. `FIELD_LABEL`
+  // uppercases, so the raw `runtime`/`system` values need no `capitalize`.
   return (
-    <div className="flex flex-col gap-3">
+    <dl className="flex flex-col gap-4">
       {[...byKind.entries()].map(([kind, deps]) => (
-        <div key={kind}>
-          <p className="text-sm font-semibold text-default-900 capitalize mb-1">
-            {kind}
-          </p>
+        <Field key={kind} label={kind}>
           <ul className="flex flex-wrap gap-x-4 gap-y-1">
             {deps.map((d) => (
               <li
@@ -239,9 +240,9 @@ function DependenciesBody({
               </li>
             ))}
           </ul>
-        </div>
+        </Field>
       ))}
-    </div>
+    </dl>
   );
 }
 
