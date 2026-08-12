@@ -137,7 +137,9 @@ export function modelBuckets(
   }
   // Sorting a fresh array (spread copy), so in-place sort mutates nothing shared.
   // eslint-disable-next-line unicorn/no-array-sort
-  return [...byId.values()].sort(
+  const result = [...byId.values()].sort(
     (a, b) => b.count - a.count || a.name.localeCompare(b.name)
   );
+
+  return result;
 }

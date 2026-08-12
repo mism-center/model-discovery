@@ -63,10 +63,10 @@ class Settings(BaseSettings):
     # through this pod's mount. Bounded retry absorbs that propagation lag
     # before surfacing a 404 — see RegistryService._metadata_package_dir.
     metadata_package_retry_max_attempts: int = Field(
-        default=3, alias="METADATA_PACKAGE_RETRY_MAX_ATTEMPTS"
+        default=4, alias="METADATA_PACKAGE_RETRY_MAX_ATTEMPTS"
     )
     metadata_package_retry_backoff_seconds: float = Field(
-        default=0.5, alias="METADATA_PACKAGE_RETRY_BACKOFF_SECONDS"
+        default=2.0, alias="METADATA_PACKAGE_RETRY_BACKOFF_SECONDS"
     )
 
     # Upload service
