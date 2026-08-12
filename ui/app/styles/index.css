@@ -55,3 +55,30 @@
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
+
+/**
+ * Fill for `NavigationProgress`: advances quickly, then decelerates hard and
+ * never quite arrives, because the loader's duration isn't knowable up front.
+ * `forwards` parks it near the end for as long as the navigation runs.
+ *
+ * A CSS animation rather than a JS width transition: the bar mounts mid-flight,
+ * and a transition needs a second render at a second value to animate at all,
+ * which makes the indicator depend on a `requestAnimationFrame` a throttled tab
+ * may never deliver. This moves on the frame it mounts.
+ */
+@keyframes nav-progress-fill {
+  0% {
+    transform: scaleX(0.02);
+  }
+  50% {
+    transform: scaleX(0.62);
+  }
+  100% {
+    transform: scaleX(0.94);
+  }
+}
+
+@utility animate-nav-progress {
+  transform-origin: left center;
+  animation: nav-progress-fill 5s cubic-bezier(0.1, 0.8, 0.25, 1) forwards;
+}

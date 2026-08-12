@@ -19,11 +19,16 @@ export const resourceKeys = {
 /**
  * A resource's file listing (`GET /resources/{id}/files`).
  *
- * `client` lets SSR loaders pass a cookie-forwarding `serverApiClient`, matching
- * `modelDetailQueryOptions`. Without it a loader prefetch runs against the
- * browser client — wrong base URL on Node, no cookie forwarding — so the query
- * fails on the server, `dehydrate()` drops it, and the browser refetches from
- * scratch. That is why this section used to arrive unhydrated.
+ * `client` lets an SSR loader pass a cookie-forwarding `serverApiClient`,
+ * matching `modelDetailQueryOptions`. A loader prefetch that omits it runs
+ * against the browser client — wrong base URL on Node, no cookie forwarding — so
+ * the query fails on the server, `dehydrate()` drops it, and the browser
+ * refetches from scratch.
+ *
+ * The model detail loader prefetches this for *document* requests only. It is by
+ * far the slowest call that page makes (~440ms against dev), so awaiting it on
+ * client-side navigations blocked transition to the page until a low-prio section loaded.
+ * On that path `FilesSection` fetches it on mount and shows a skeleton instead.
  */
 export function resourceFilesQueryOptions(
   resourceId: string,
