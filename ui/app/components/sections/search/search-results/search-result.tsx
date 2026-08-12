@@ -8,48 +8,22 @@ import {
 } from '@heroicons/react/16/solid';
 import { DocumentIcon } from '@heroicons/react/24/solid';
 import { QuotationMarkIcon } from '@sidekickicons/react/16/solid';
-// import { Link } from 'react-router';
+import { Link } from 'react-router';
 
 import type { SearchResultItem } from '~/api';
+import { formatBytes, formatMonthYear } from '~/utils/format';
 import { AuthorListTooltip } from './author-list-tooltip';
 import { RunControls } from './run-controls';
-
-/**
- * Format an ISO timestamp / date string as `Mon D, Year, H:MM AM/PM` (e.g. `Jan 22, 2024, 3:14 PM`).
- */
-function formatDate(iso: string) {
-  const date = new Date(iso);
-  // Catch invalid dates
-  if (Number.isNaN(date.valueOf())) return iso;
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(date);
-}
-
-/**
- * Human-readable byte-size formatting.
- */
-function formatSize(bytes: number): string {
-  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
-  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`;
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${bytes} B`;
-}
 
 interface SearchResultProps {
   result: SearchResultItem;
 }
 
 export function SearchResult({ result }: SearchResultProps) {
-  // Details-page navigation is disabled while the details route is unimplemented.
-  // const isDataset = result.resource_type === 'dataset';
-  // const linkPath = isDataset
-  //   ? `/datasets/${result.id}/`
-  //   : `/models/${result.id}/`;
+  // Only models have a details page today; datasets stay unlinked until a
+  // dataset details route exists.
+  const isModel = result.resource_type !== 'dataset';
+  const detailsPath = isModel ? `/models/${result.id}` : undefined;
 
   const formatTags = result.format_tags ?? [];
   const authors = result.authors ?? [];
@@ -90,18 +64,36 @@ export function SearchResult({ result }: SearchResultProps) {
           </div>
         )}
 
-        {/* Title */}
-        <h3
-          className={cn(
-            'relative w-fit text-xl font-bold font-headline text-primary',
-            'after:absolute after:w-full after:h-0.5 after:-bottom-px after:left-0',
-            'after:bg-primary after:content-[""]',
-            'after:scale-x-0 after:origin-right after:transition-transform after:duration-150 after:ease-in-out',
-            'group-hover:after:scale-x-100 group-hover:after:origin-left',
-            'after:delay-0 group-hover:after:delay-150'
+        {/*
+         * Title. Deliberately *not* `relative`: the overlay below is
+         * `absolute inset-0`, so it resolves against the nearest positioned
+         * ancestor — and while that was this `h3` (which is `w-fit`) the overlay
+         * only ever covered the title text, not the card. The underline's
+         * positioning context moved to an inner span so the card can be the one
+         * that counts.
+         */}
+        <h3 className="w-fit text-xl font-bold font-headline text-primary">
+          {detailsPath ? (
+            <Link to={detailsPath} className="outline-none">
+              {/* Covers the whole card, so clicking anywhere in it opens details.
+                  The action buttons sit above it via `relative z-10`. */}
+              <span className="absolute inset-0 z-0" aria-hidden="true" />
+              <span
+                className={cn(
+                  'relative inline-block',
+                  'after:absolute after:w-full after:h-0.5 after:-bottom-px after:left-0',
+                  'after:bg-primary after:content-[""]',
+                  'after:scale-x-0 after:origin-right after:transition-transform after:duration-150 after:ease-in-out',
+                  'group-hover:after:scale-x-100 group-hover:after:origin-left',
+                  'after:delay-0 group-hover:after:delay-150'
+                )}
+              >
+                {result.name}
+              </span>
+            </Link>
+          ) : (
+            result.name
           )}
-        >
-          {result.name}
         </h3>
 
         {/* Description */}
@@ -158,7 +150,7 @@ export function SearchResult({ result }: SearchResultProps) {
             )}
             <div className="flex items-center gap-1.5">
               <CalendarIcon className="size-3.5" />
-              <span>{formatDate(displayDate)}</span>
+              <span>{formatMonthYear(displayDate)}</span>
             </div>
             {formatTags.length > 0 && (
               <div className="flex items-center gap-1.5">
@@ -171,7 +163,7 @@ export function SearchResult({ result }: SearchResultProps) {
             {typeof result.size_bytes === 'number' && (
               <div className="flex items-center gap-1.5">
                 <CircleStackIcon className="size-3.5" />
-                {formatSize(result.size_bytes)}
+                {formatBytes(result.size_bytes)}
               </div>
             )}
             {publications.length > 0 && (
@@ -187,12 +179,14 @@ export function SearchResult({ result }: SearchResultProps) {
         </div>
       </div>
 
-      {/* Right side actions */}
-      <div className="flex flex-col justify-between items-end">
+      {/* Right side actions. `relative z-10` keeps these above the title's
+          full-card overlay link so clicks here don't navigate to details. */}
+      <div className="relative z-10 flex flex-col justify-between items-end">
         <Button
           variant="flat"
           size="sm"
           isIconOnly
+          aria-label={`Bookmark ${result.name}`}
           className={cn(
             'bg-transparent rounded-lg hover:opacity-100! active:opacity-90!',
             'text-primary hover:bg-primary hover:text-white'
@@ -204,16 +198,13 @@ export function SearchResult({ result }: SearchResultProps) {
           <BookmarkIcon className="size-5" />
         </Button>
 
-        {/* View details — disabled until the details page is implemented.
-            Replaced in this slot by <RunControls /> below.
-        <Button
-          size="sm"
-          color="primary"
-          className="px-5 py-2.5 rounded-lg text-sm font-bold"
-        >
-          View details
-        </Button>
-        */}
+        {/*
+         * No "View details" button. The card is the link — the title's overlay
+         * covers it, the title underlines on hover and the card tints and lifts —
+         * so an explicit button was a second tab stop to the same place, and
+         * every comparable result list treats the row itself as the link. That
+         * leaves the row one action, which is the consequential one.
+         */}
         {executable && <RunControls model={result} />}
       </div>
     </div>

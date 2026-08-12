@@ -1,4 +1,6 @@
-import type { components } from '~/api/generated/schema';
+import type { Client } from 'openapi-fetch';
+
+import type { components, paths } from '~/api/generated/schema';
 import { apiClient } from '~/api/client/client';
 import { browserApiBaseUrl } from '~/utils/env';
 
@@ -8,9 +10,9 @@ export type ResourceFilesResponse =
 
 export async function listResourceFiles(
   resourceId: string,
-  options: { signal?: AbortSignal } = {}
+  options: { signal?: AbortSignal; client?: Client<paths> } = {}
 ): Promise<ResourceFilesResponse> {
-  const { data } = await apiClient.GET(
+  const { data } = await (options.client ?? apiClient).GET(
     '/api/v1/resources/{resource_id}/files',
     {
       params: { path: { resource_id: resourceId } },
@@ -37,17 +39,26 @@ export function resourceDownloadUrl(
   file?: string,
   options: { inline?: boolean } = {}
 ): string {
-  // browserApiBaseUrl() is '' for same-origin (shared ingress); fall back to
-  // the current origin so `new URL()` has an absolute base to resolve against.
-  const base = browserApiBaseUrl() || globalThis.location?.origin;
-  const url = new URL(
-    `/api/v1/resources/${encodeURIComponent(resourceId)}/download`,
-    base
-  );
-  if (file) url.searchParams.set('file', file);
+  const path = `/api/v1/resources/${encodeURIComponent(resourceId)}/download`;
+
+  const query = new URLSearchParams();
+  if (file) query.set('file', file);
   // `inline` only applies to a single file; the zip is always an attachment.
-  if (file && options.inline) url.searchParams.set('disposition', 'inline');
-  return url.toString();
+  if (file && options.inline) query.set('disposition', 'inline');
+  const suffix = query.size > 0 ? `?${query}` : '';
+
+  // browserApiBaseUrl() is '' for same-origin (shared ingress); fall back to the
+  // current origin so `new URL()` has an absolute base to resolve against.
+  //
+  // On the server there is no origin at all, and `new URL(path, undefined)`
+  // throws `TypeError: Invalid URL` — which took down the whole route as soon as
+  // the Files section began server-rendering its rows. A root-relative href is
+  // the correct answer there anyway: the browser resolves it against the current
+  // origin, which is exactly what the absolute form was reconstructing.
+  const base = browserApiBaseUrl() || globalThis.location?.origin;
+  if (!base) return `${path}${suffix}`;
+
+  return new URL(`${path}${suffix}`, base).toString();
 }
 
 /**

@@ -7,6 +7,7 @@ import type { ApiError, SearchResponse } from '~/api';
 import { searchQueryOptions } from '~/api/query/search';
 import { getFacetConfig } from '~/search/state/facets.config';
 import {
+  hasExplicitFacetParams,
   removeAllFacetParams,
   removeFacetParams,
   searchStateFromParams,
@@ -67,6 +68,11 @@ export function SearchProvider({ children }: { children: ReactNode }) {
 
   const state = useMemo(
     () => searchStateFromParams(searchParams),
+    [searchParams]
+  );
+
+  const hasActiveFacets = useMemo(
+    () => hasExplicitFacetParams(searchParams),
     [searchParams]
   );
 
@@ -193,8 +199,16 @@ export function SearchProvider({ children }: { children: ReactNode }) {
       isFetching: queryResult.isFetching,
       error: (queryResult.error as ApiError | null) ?? null,
       refetch,
-      isCompact: state.query.length > 0,
-      hasActiveFacets: Object.keys(state.facets).length > 0,
+      // The hero is the landing state, so it collapses as soon as the page
+      // carries any search intent — a query *or* an explicit filter. Arriving
+      // from a tag link on a model page is intent, so showing the "Find models &
+      // data across scales" pitch above the results it already narrowed reads as
+      // though the filter had not registered.
+      //
+      // Safe to collapse because the site header swaps in a compact search input
+      // whenever this is true, so the query is still reachable.
+      isCompact: state.query.length > 0 || hasActiveFacets,
+      hasActiveFacets,
       setQuery,
       setResourceType,
       setSort,
@@ -206,6 +220,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     }),
     [
       state,
+      hasActiveFacets,
       queryResult.data,
       queryResult.isLoading,
       queryResult.isFetching,

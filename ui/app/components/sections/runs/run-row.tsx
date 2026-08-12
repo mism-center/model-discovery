@@ -61,6 +61,16 @@ interface RunRowProps {
    */
   item: UserRunItem;
   /**
+   * Where this row is being rendered.
+   *
+   * `'cross-model'` (default) is the My Runs list, where rows span many models
+   * and the model name is the row's identity. `'single-model'` is the model
+   * detail page, where every row belongs to the model already named in the page
+   * header — so the name is repeated noise and "View model" links to the page
+   * you are on. In that context the run id becomes the row heading instead.
+   */
+  context?: 'cross-model' | 'single-model';
+  /**
    * Start expanded and scroll into view on mount. Used to reveal a run the
    * user just launched (deep-linked via `?run=<id>` from the launch toast).
    */
@@ -196,7 +206,12 @@ function StatusIcon({ status }: { status: string }) {
   return <CheckCircleIcon className="size-3.5" />;
 }
 
-export function RunRow({ item, defaultExpanded = false }: RunRowProps) {
+export function RunRow({
+  item,
+  context = 'cross-model',
+  defaultExpanded = false,
+}: RunRowProps) {
+  const singleModel = context === 'single-model';
   const [expanded, setExpanded] = useState(defaultExpanded);
   // Brief attention ring when deep-linked, so the user can see which run the
   // "View" flow landed them on. Fades out after a couple seconds.
@@ -270,14 +285,25 @@ export function RunRow({ item, defaultExpanded = false }: RunRowProps) {
         )}
       >
         <div className="min-w-0">
-          <h3 className="text-base font-bold font-headline text-primary truncate">
-            {item.model.name}
+          <h3
+            className={cn(
+              'truncate text-primary',
+              singleModel
+                ? 'font-mono text-sm font-semibold'
+                : 'text-base font-bold font-headline'
+            )}
+          >
+            {singleModel ? run.id : item.model.name}
           </h3>
           <p className="mt-0.5 flex items-center gap-2 text-[11px] text-default-700">
-            <span className="font-mono truncate">{run.id}</span>
-            <span aria-hidden="true" className="text-default-500">
-              •
-            </span>
+            {!singleModel && (
+              <>
+                <span className="font-mono truncate">{run.id}</span>
+                <span aria-hidden="true" className="text-default-500">
+                  •
+                </span>
+              </>
+            )}
             <span className="tabular-nums shrink-0">{liveDuration}</span>
             <span aria-hidden="true" className="text-default-500">
               •
@@ -421,16 +447,18 @@ export function RunRow({ item, defaultExpanded = false }: RunRowProps) {
 
           {/* Actions bin */}
           <div className="flex items-center justify-end gap-2 px-5 py-3 rounded-b-2xl border-t border-default-200/75 bg-default-50">
-            <Button
-              as={Link}
-              to={`/models/${item.model.id}`}
-              size="sm"
-              variant="bordered"
-              className="font-semibold border-default-300 bg-white text-default-800"
-              startContent={<ArrowTopRightOnSquareIcon className="size-4" />}
-            >
-              View model
-            </Button>
+            {!singleModel && (
+              <Button
+                as={Link}
+                to={`/models/${item.model.id}`}
+                size="sm"
+                variant="bordered"
+                className="font-semibold border-default-300 bg-white text-default-800"
+                startContent={<ArrowTopRightOnSquareIcon className="size-4" />}
+              >
+                View model
+              </Button>
+            )}
             {terminal ? (
               <Button
                 size="sm"

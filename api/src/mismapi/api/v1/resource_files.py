@@ -145,9 +145,13 @@ async def list_resource_files(
     resource_id: str,
     service: RegistryServiceDep,
 ) -> ResourceFilesResponse:
-    """List every file in the resource's artifact directory."""
-    resource, directory = service.get_resource_directory(resource_id)
-    files = _walk_files(directory)
+    """List every file in the resource's artifact directory.
+
+    A resource with no directory on the mount yet returns an empty list, not a
+    404 — see ``RegistryService.find_resource_directory``.
+    """
+    resource, directory = service.find_resource_directory(resource_id)
+    files = [] if directory is None else _walk_files(directory)
     return ResourceFilesResponse(
         resource_id=resource.id,
         location_uri=resource.location_uri,

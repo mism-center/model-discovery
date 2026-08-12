@@ -54,7 +54,9 @@ export function links() {
  */
 export async function loader({ request }: Route.LoaderArgs) {
   const queryClient = getQueryClient();
-  await prefetchUser(queryClient, serverApiClient(request));
+  // The only place the user is prefetched. This boundary wraps the whole route
+  // tree, so every route inherits the hydrated user without prefetching it again.
+  await prefetchUser(queryClient, serverApiClient(request), request);
   return { dehydratedState: dehydrate(queryClient) };
 }
 

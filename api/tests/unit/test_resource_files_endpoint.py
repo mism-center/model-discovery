@@ -69,7 +69,7 @@ def _make_app(service: RegistryService) -> TestClient:
 def test_list_files_returns_all_files_recursively(resource_dir: Path) -> None:
     resource = _make_resource()
     service = MagicMock(spec=RegistryService)
-    service.get_resource_directory.return_value = (resource, resource_dir)
+    service.find_resource_directory.return_value = (resource, resource_dir)
 
     client = _make_app(service)
     response = client.get("/api/v1/resources/ds-1/files")
@@ -92,7 +92,7 @@ def test_list_files_returns_all_files_recursively(resource_dir: Path) -> None:
 
 def test_list_files_resource_missing_returns_404() -> None:
     service = MagicMock(spec=RegistryService)
-    service.get_resource_directory.side_effect = APIError(
+    service.find_resource_directory.side_effect = APIError(
         status_code=404, code="not_found", detail="Resource 'missing' not found"
     )
 
@@ -104,7 +104,7 @@ def test_list_files_resource_missing_returns_404() -> None:
 
 def test_list_files_unsupported_scheme_returns_400() -> None:
     service = MagicMock(spec=RegistryService)
-    service.get_resource_directory.side_effect = APIError(
+    service.find_resource_directory.side_effect = APIError(
         status_code=400,
         code="unsupported_location_scheme",
         detail="Cannot serve files for scheme 's3'.",
@@ -288,3 +288,39 @@ def test_download_zip_streams_large_directory(tmp_path: Path) -> None:
             assert fh.read() == payload
         with zf.open("small.txt") as fh:
             assert fh.read() == b"hello"
+
+
+def test_list_files_absent_directory_returns_empty_not_404() -> None:
+    """A registered resource with nothing on the mount lists empty.
+
+    This is what lets the detail page's Files section server-render: a 404 makes
+    the React Query prefetch error, `dehydrate()` drops errored queries, and the
+    browser has to refetch from scratch. Emptiness is a result, not a failure.
+    """
+    resource = _make_resource()
+    service = MagicMock(spec=RegistryService)
+    service.find_resource_directory.return_value = (resource, None)
+
+    client = _make_app(service)
+    response = client.get("/api/v1/resources/ds-1/files")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["files"] == []
+    assert payload["total"] == 0
+    assert payload["resource_id"] == "ds-1"
+
+
+def test_download_still_404s_for_an_absent_directory() -> None:
+    """Download keeps the strict accessor — there is genuinely nothing to send."""
+    service = MagicMock(spec=RegistryService)
+    service.get_resource_directory.side_effect = APIError(
+        status_code=404,
+        code="resource_files_not_found",
+        detail="No files found on disk for resource at irods:///datasets/abc-123.",
+    )
+
+    client = _make_app(service)
+    response = client.get("/api/v1/resources/ds-1/download")
+
+    assert response.status_code == 404

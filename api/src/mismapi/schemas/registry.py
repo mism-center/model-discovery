@@ -5,11 +5,17 @@ from mism_registry import ExecutionType
 from mism_registry.types import (
     Argument,
     Author,
+    Compute,
+    Contact,
     Container,
+    Dependency,
     EntryPoint,
+    IODetail,
     IOSlot,
     IOSpec,
     Publication,
+    RelatedResource,
+    TestSpec,
 )
 from pydantic import BaseModel, Field, field_validator
 
@@ -28,8 +34,30 @@ class AuthorDTO(BaseModel):
 class PublicationDTO(BaseModel):
     title: str
     doi: str = ""
+    pmid: str = ""
     url: str = ""
     citation: str = ""
+
+
+class ContactDTO(BaseModel):
+    """How to reach someone about the model now (`Resource.contacts`)."""
+
+    name: str
+    role: str = ""
+    email: str = ""
+    affiliation: str = ""
+
+
+class RelatedResourceDTO(BaseModel):
+    """A linked prior model or data source (`Resource.related_resources`).
+
+    The only provenance link the registry stores — `qualifier` carries the
+    relationship (e.g. `bqmodel:isDerivedFrom`, `bqbiol:isVersionOf`).
+    """
+
+    qualifier: str
+    scheme: str = ""
+    value: str = ""
 
 
 class IOSlotDTO(BaseModel):
@@ -45,6 +73,28 @@ class IOSpecDTO(BaseModel):
     parameters_schema: dict[str, Any] | None = None
 
 
+class DependencyDTO(BaseModel):
+    name: str
+    version_constraint: str = ""
+    kind: str = "runtime"
+    group: str = ""
+
+
+class ContainerDTO(BaseModel):
+    kind: str
+    file: str = ""
+    image_name: str = ""
+
+
+class ComputeDTO(BaseModel):
+    cpu_cores: int | None = None
+    memory_gb: float | None = None
+    gpu_required: bool | None = None
+    parallelism: str = ""
+    typical_runtime: float | None = None
+    typical_runtime_unit: str = ""
+
+
 class ArgumentDTO(BaseModel):
     """A documented argument to an entry-point command."""
 
@@ -57,20 +107,71 @@ class ArgumentDTO(BaseModel):
     user_can_override: bool | None = None
 
 
-class EntryPointDTO(BaseModel):
-    """One invocable command declared on a model."""
+# ── Section C: rich I/O characterization (`Resource.io`) ─────────────
+#
+# Distinct from `io_spec`, which is the machine handshake used to validate a run
+# (slot names + tags + a JSON Schema). This is the *human* description of what
+# the model consumes and produces — units, biological meaning, protocol — and it
+# is the richest metadata a characterized model carries. It was absent from the
+# detail response entirely, so the page had nothing real to show under I/O.
 
+
+class ParameterDTO(BaseModel):
+    name: str
+    description: str = ""
+    default_value: Any = None
+    unit: str = ""
+    biological_meaning: str = ""
+
+
+class InitialConditionDTO(BaseModel):
+    name: str
+    value: Any = None
+    unit: str = ""
+
+
+class DataInputDTO(BaseModel):
+    name: str
+    purpose: str = ""
+    format: str = ""
+    required: bool = True
+
+
+class OutputDTO(BaseModel):
+    name: str
+    description: str = ""
+    quantity_kind: str = ""
+    unit: str = ""
+    format: str = ""
+    destination: str = ""
+
+
+class ExperimentProtocolDTO(BaseModel):
+    description: str = ""
+    timestep: float | None = None
+    timestep_unit: str = ""
+    duration: float | None = None
+    duration_unit: str = ""
+    observables: list[str] = Field(default_factory=list)
+
+
+class IODetailDTO(BaseModel):
+    parameters: list[ParameterDTO] = Field(default_factory=list)
+    initial_conditions: list[InitialConditionDTO] = Field(default_factory=list)
+    data_inputs: list[DataInputDTO] = Field(default_factory=list)
+    outputs: list[OutputDTO] = Field(default_factory=list)
+    experiment_protocol: ExperimentProtocolDTO | None = None
+
+
+class EntryPointDTO(BaseModel):
     command: str
     purpose: str = ""
     arguments: list[ArgumentDTO] = Field(default_factory=list)
 
 
-class ContainerDTO(BaseModel):
-    """A container recipe declared on a model."""
-
-    kind: str  # "docker" | "singularity"
-    file: str = ""
-    image_name: str = ""
+class TestSpecDTO(BaseModel):
+    framework: str = ""
+    invocation: str = ""
 
 
 # ── DTO ↔ dataclass converters ───────────────────────────────────────
@@ -81,7 +182,9 @@ def author_from_dto(dto: AuthorDTO) -> Author:
 
 
 def pub_from_dto(dto: PublicationDTO) -> Publication:
-    return Publication(title=dto.title, doi=dto.doi, url=dto.url, citation=dto.citation)
+    return Publication(
+        title=dto.title, doi=dto.doi, pmid=dto.pmid, url=dto.url, citation=dto.citation
+    )
 
 
 def io_slot_from_dto(dto: IOSlotDTO) -> IOSlot:
@@ -103,7 +206,62 @@ def author_to_dto(a: Author) -> AuthorDTO:
 
 
 def pub_to_dto(p: Publication) -> PublicationDTO:
-    return PublicationDTO(title=p.title, doi=p.doi, url=p.url, citation=p.citation)
+    return PublicationDTO(title=p.title, doi=p.doi, pmid=p.pmid, url=p.url, citation=p.citation)
+
+
+def contact_to_dto(c: Contact) -> ContactDTO:
+    return ContactDTO(name=c.name, role=c.role, email=c.email, affiliation=c.affiliation)
+
+
+def related_resource_to_dto(r: RelatedResource) -> RelatedResourceDTO:
+    return RelatedResourceDTO(qualifier=r.qualifier, scheme=r.scheme, value=r.value)
+
+
+def io_detail_to_dto(io: IODetail) -> IODetailDTO:
+    protocol = io.experiment_protocol
+    return IODetailDTO(
+        parameters=[
+            ParameterDTO(
+                name=p.name,
+                description=p.description,
+                default_value=p.default_value,
+                unit=p.unit,
+                biological_meaning=p.biological_meaning,
+            )
+            for p in io.parameters
+        ],
+        initial_conditions=[
+            InitialConditionDTO(name=c.name, value=c.value, unit=c.unit)
+            for c in io.initial_conditions
+        ],
+        data_inputs=[
+            DataInputDTO(name=d.name, purpose=d.purpose, format=d.format, required=d.required)
+            for d in io.data_inputs
+        ],
+        outputs=[
+            OutputDTO(
+                name=o.name,
+                description=o.description,
+                quantity_kind=o.quantity_kind,
+                unit=o.unit,
+                format=o.format,
+                destination=o.destination,
+            )
+            for o in io.outputs
+        ],
+        experiment_protocol=(
+            ExperimentProtocolDTO(
+                description=protocol.description,
+                timestep=protocol.timestep,
+                timestep_unit=protocol.timestep_unit,
+                duration=protocol.duration,
+                duration_unit=protocol.duration_unit,
+                observables=list(protocol.observables),
+            )
+            if protocol is not None
+            else None
+        ),
+    )
 
 
 def io_slot_to_dto(s: IOSlot) -> IOSlotDTO:
@@ -115,6 +273,31 @@ def io_spec_to_dto(spec: IOSpec) -> IOSpecDTO:
         inputs=[io_slot_to_dto(s) for s in spec.inputs],
         outputs=[io_slot_to_dto(s) for s in spec.outputs],
         parameters_schema=spec.parameters_schema,
+    )
+
+
+# Read-only converters (details response); no *_from_dto counterparts because
+# these fields are written through the metadata-package path, not the API.
+
+
+def dependency_to_dto(d: Dependency) -> DependencyDTO:
+    return DependencyDTO(
+        name=d.name, version_constraint=d.version_constraint, kind=d.kind, group=d.group
+    )
+
+
+def container_to_dto(c: Container) -> ContainerDTO:
+    return ContainerDTO(kind=c.kind, file=c.file, image_name=c.image_name)
+
+
+def compute_to_dto(c: Compute) -> ComputeDTO:
+    return ComputeDTO(
+        cpu_cores=c.cpu_cores,
+        memory_gb=c.memory_gb,
+        gpu_required=c.gpu_required,
+        parallelism=c.parallelism,
+        typical_runtime=c.typical_runtime,
+        typical_runtime_unit=c.typical_runtime_unit,
     )
 
 
@@ -138,8 +321,8 @@ def entry_point_to_dto(e: EntryPoint) -> EntryPointDTO:
     )
 
 
-def container_to_dto(c: Container) -> ContainerDTO:
-    return ContainerDTO(kind=c.kind, file=c.file, image_name=c.image_name)
+def test_spec_to_dto(t: TestSpec) -> TestSpecDTO:
+    return TestSpecDTO(framework=t.framework, invocation=t.invocation)
 
 
 # ── Shared field mixin (used in request & response bodies) ───────────
@@ -234,6 +417,47 @@ class RegisterModelResponse(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
+
+
+class ModelDetailResponse(RegisterModelResponse):
+    """Full detail view of a model (GET /models/{id} only).
+
+    Extends the registration response with the characterization fields
+    populated by the metadata-package workflow (schema.md Sections A/B).
+    Create/update endpoints keep returning ``RegisterModelResponse``.
+    """
+
+    # Model characterization (schema.md Section A)
+    short_description: str = ""
+    model_class: list[str] = Field(default_factory=list)
+    formalism: list[str] = Field(default_factory=list)
+    determinism: str = "unknown"
+    time_dynamics: str = "unknown"
+    spatial: str = "unknown"
+    multiscale: bool | None = None
+    # Biology
+    infectious_agents: list[str] = Field(default_factory=list)
+    health_conditions: list[str] = Field(default_factory=list)
+    biological_processes: list[str] = Field(default_factory=list)
+    molecular_entities: list[str] = Field(default_factory=list)
+    proteins_genes: list[str] = Field(default_factory=list)
+    # Execution characterization (schema.md Section B)
+    execution_status: str = ""
+    language_name: str = ""
+    language_version: str = ""
+    execution_notes: str = ""
+    dependencies: list[DependencyDTO] = Field(default_factory=list)
+    containers: list[ContainerDTO] = Field(default_factory=list)
+    compute: ComputeDTO | None = None
+    entry_points: list[EntryPointDTO] = Field(default_factory=list)
+    tests: TestSpecDTO | None = None
+    # Rich I/O characterization (schema.md Section C) — the human-readable
+    # counterpart to `io_spec`, and the richest data a characterized model has.
+    io: IODetailDTO | None = None
+    # Attribution and provenance the response previously dropped.
+    # `related_resources` is the registry's only "derived from / version of" link.
+    contacts: list[ContactDTO] = Field(default_factory=list)
+    related_resources: list[RelatedResourceDTO] = Field(default_factory=list)
 
 
 class UpdateModelRequest(_AttributionFields, _ScientificFields, _IntegrityFields):
@@ -355,6 +579,7 @@ class UpdateDatasetRequest(_AttributionFields, _ScientificFields, _IntegrityFiel
 
 class CreateRunRequest(BaseModel):
     input_resource_ids: list[str] = Field(default_factory=list)
+    parameters: dict[str, Any] = Field(default_factory=dict)
     # Select one of the model's declared entry points by index. When set,
     # ``arguments`` (VALUES keyed by the entry point's declared arg names —
     # never command/flag strings) are validated against it. Injection defense
@@ -377,6 +602,11 @@ class ExecuteRunRequest(BaseModel):
     """Create a run AND trigger execution on the Execution API."""
 
     input_resource_ids: list[str] = Field(default_factory=list)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    # Select one of the model's declared entry points by index. When set,
+    # ``arguments`` (VALUES keyed by the entry point's declared arg names —
+    # never command/flag strings) are validated against it. Injection defense
+    # lives in the registry: the caller never supplies a raw command.
     entrypoint_index: int | None = None
     arguments: dict[str, Any] = Field(default_factory=dict)
     notes: str = ""
@@ -433,6 +663,8 @@ class ResourceSummaryItem(BaseModel):
     execution_type: str | None = None
     execution_ref: str = ""
     io_spec: IOSpecDTO | None = None
+    # Execution recipe (populated from the annotation metadata-package): the
+    # entry points a run can select and the container(s) it runs in.
     entry_points: list[EntryPointDTO] = Field(default_factory=list)
     containers: list[ContainerDTO] = Field(default_factory=list)
     # System

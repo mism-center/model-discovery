@@ -115,6 +115,16 @@ export interface paths {
      *     (DRAFT → ANNOTATING → PENDING_REVIEW / ANNOTATION_FAILED → APPROVED).
      *     The execution-platform's background poller writes these transitions directly
      *     to the shared registry; this endpoint reads the current value on demand.
+     *
+     *     Returns the full detail view, including the characterization fields
+     *     populated by the metadata-package workflow.
+     *
+     *     Anonymous reads are allowed for approved models only. Anything still in
+     *     draft / annotating / pending_review / rejected is visible solely to its
+     *     owner, matching the gate the search path already applies — so an
+     *     unapproved model's characterization can't be read by url-guessing. The
+     *     uploader keeps polling their own draft because ``create_model`` stores
+     *     ``owner = principal.subject``.
      */
     get: operations['get_model_api_v1_models__model_id__get'];
     /** Update Model */
@@ -160,7 +170,9 @@ export interface paths {
      *
      *     Looks for ``<model_id>/<version>/metadata-package/`` on the storage mount and
      *     maps its ``metadata.yaml`` + ``execution.yaml`` onto a Resource (values only,
-     *     not persisted). 404 if the package is absent, 400 if it can't be parsed.
+     *     not persisted). 404 if the package is absent, 400 if it can't be parsed at
+     *     all; individual missing/empty fields are tolerated and reported in
+     *     ``warnings`` instead.
      */
     get: operations['get_model_metadata_package_api_v1_models__model_id__metadata_package_get'];
     put?: never;
@@ -186,6 +198,12 @@ export interface paths {
     /**
      * Update Model Metadata Package Raw
      * @description Write edited raw YAML back to the metadata-package and return the result.
+     *
+     *     Missing/empty fields on individual entries (an author with no name,
+     *     etc.) are tolerated and reported in ``warnings``, not raised — see
+     *     ``RegistryService.write_metadata_package_raw``. If the package fails to
+     *     parse at all (the top-level ``model``/``execution`` structure itself is
+     *     broken), this raises a 400 and does not approve the model.
      */
     put: operations['update_model_metadata_package_raw_api_v1_models__model_id__metadata_package_raw_put'];
     post?: never;
@@ -204,9 +222,18 @@ export interface paths {
     };
     /**
      * List Model Runs
-     * @description Fetch all runs for a model, enriched with hydrated input/output resources.
+     * @description Fetch the calling user's runs for a model, with hydrated I/O resources.
      *
-     *     Designed to populate the UI's "Model Runs" page in a single call.
+     *     Populates the run history on the model detail page in a single call.
+     *
+     *     Scoped to the caller: this returns only runs the requesting user triggered,
+     *     filtered in the query rather than after hydration. It previously required no
+     *     authentication and returned *every* user's runs for the model, which —
+     *     paired with the run controls the detail page renders — exposed other
+     *     people's run ids, output downloads, and cancel actions to anonymous
+     *     visitors.
+     *
+     *     Runs arrive newest-first from the registry; the order is not re-derived here.
      */
     get: operations['list_model_runs_api_v1_models__model_id__runs_get'];
     put?: never;
@@ -336,6 +363,9 @@ export interface paths {
      *
      *     If the Execution call fails we surface the error to the caller; if it
      *     times out the client gets a 504 (see ExecutionClient.get_status).
+     *
+     *     Requires authentication, and only the user who triggered the run may read
+     *     it (404 otherwise — see ``_authz``).
      */
     get: operations['get_run_api_v1_runs__run_id__get'];
     put?: never;
@@ -346,6 +376,17 @@ export interface paths {
      *     All job configuration (image, resources, prompt) comes from server-side
      *     settings. The LLM API key is injected by the execution-platform from its
      *     own environment — it is never passed through this request.
+     *
+     *     Requires authentication *and* ownership of the target resource. This endpoint
+     *     spends the deployment's LLM budget, so it must be reachable neither
+     *     anonymously nor by a signed-in user pointing it at someone else's resource.
+     *
+     *     Note the id space: despite the `/runs/{run_id}` path, the path param is a
+     *     *resource* id — it is forwarded to Execution as `resource_id`, and the
+     *     ownership check is a resource check. The upload flow calls this as
+     *     `POST /api/v1/runs/{modelId}` (see `initiateAnnotation` in
+     *     `ui/app/routes/upload.tsx`), so the path is load-bearing; renaming it needs
+     *     that call site changed in the same breath.
      */
     post: operations['post_run_api_v1_runs__run_id__post'];
     /**
@@ -353,6 +394,8 @@ export interface paths {
      * @description Cancel a run by proxying DELETE to the Execution service.
      *
      *     Order matters:
+     *       0. Read the Run and verify the caller triggered it — this precedes the
+     *          Execution call because cancelling is destructive and irreversible.
      *       1. Call Execution API DELETE → it stops the run and updates DAL status
      *          to CANCELLED.
      *       2. Read the now-updated Run record from the DAL → reflects the cancel.
@@ -376,6 +419,9 @@ export interface paths {
     /**
      * List Resource Files
      * @description List every file in the resource's artifact directory.
+     *
+     *     A resource with no directory on the mount yet returns an empty list, not a
+     *     404 — see ``RegistryService.find_resource_directory``.
      */
     get: operations['list_resource_files_api_v1_resources__resource_id__files_get'];
     put?: never;
@@ -534,10 +580,51 @@ export interface components {
       /** File */
       file: string;
     };
+    /** ComputeDTO */
+    ComputeDTO: {
+      /** Cpu Cores */
+      cpu_cores?: number | null;
+      /** Memory Gb */
+      memory_gb?: number | null;
+      /** Gpu Required */
+      gpu_required?: boolean | null;
+      /**
+       * Parallelism
+       * @default
+       */
+      parallelism: string;
+      /** Typical Runtime */
+      typical_runtime?: number | null;
+      /**
+       * Typical Runtime Unit
+       * @default
+       */
+      typical_runtime_unit: string;
+    };
     /**
-     * ContainerDTO
-     * @description A container recipe declared on a model.
+     * ContactDTO
+     * @description How to reach someone about the model now (`Resource.contacts`).
      */
+    ContactDTO: {
+      /** Name */
+      name: string;
+      /**
+       * Role
+       * @default
+       */
+      role: string;
+      /**
+       * Email
+       * @default
+       */
+      email: string;
+      /**
+       * Affiliation
+       * @default
+       */
+      affiliation: string;
+    };
+    /** ContainerDTO */
     ContainerDTO: {
       /** Kind */
       kind: string;
@@ -570,10 +657,47 @@ export interface components {
       /** Preferred Username */
       preferred_username?: string | null;
     };
-    /**
-     * EntryPointDTO
-     * @description One invocable command declared on a model.
-     */
+    /** DataInputDTO */
+    DataInputDTO: {
+      /** Name */
+      name: string;
+      /**
+       * Purpose
+       * @default
+       */
+      purpose: string;
+      /**
+       * Format
+       * @default
+       */
+      format: string;
+      /**
+       * Required
+       * @default true
+       */
+      required: boolean;
+    };
+    /** DependencyDTO */
+    DependencyDTO: {
+      /** Name */
+      name: string;
+      /**
+       * Version Constraint
+       * @default
+       */
+      version_constraint: string;
+      /**
+       * Kind
+       * @default runtime
+       */
+      kind: string;
+      /**
+       * Group
+       * @default
+       */
+      group: string;
+    };
+    /** EntryPointDTO */
     EntryPointDTO: {
       /** Command */
       command: string;
@@ -592,6 +716,10 @@ export interface components {
     ExecuteRunRequest: {
       /** Input Resource Ids */
       input_resource_ids?: string[];
+      /** Parameters */
+      parameters?: {
+        [key: string]: unknown;
+      };
       /** Entrypoint Index */
       entrypoint_index?: number | null;
       /** Arguments */
@@ -660,6 +788,30 @@ export interface components {
       | 'jupyter'
       | 'native'
       | 'other';
+    /** ExperimentProtocolDTO */
+    ExperimentProtocolDTO: {
+      /**
+       * Description
+       * @default
+       */
+      description: string;
+      /** Timestep */
+      timestep?: number | null;
+      /**
+       * Timestep Unit
+       * @default
+       */
+      timestep_unit: string;
+      /** Duration */
+      duration?: number | null;
+      /**
+       * Duration Unit
+       * @default
+       */
+      duration_unit: string;
+      /** Observables */
+      observables?: string[];
+    };
     /**
      * GitHubImportRequest
      * @description Request body for importing a GitHub repository.
@@ -691,6 +843,20 @@ export interface components {
       /** Detail */
       detail?: components['schemas']['ValidationError'][];
     };
+    /** IODetailDTO */
+    IODetailDTO: {
+      /** Parameters */
+      parameters?: components['schemas']['ParameterDTO'][];
+      /** Initial Conditions */
+      initial_conditions?: components['schemas']['InitialConditionDTO'][];
+      /** Data Inputs */
+      data_inputs?: components['schemas']['DataInputDTO'][];
+      /** Outputs */
+      outputs?: components['schemas']['OutputDTO'][];
+      experiment_protocol?:
+        | components['schemas']['ExperimentProtocolDTO']
+        | null;
+    };
     /** IOSlotDTO */
     IOSlotDTO: {
       /** Name */
@@ -718,6 +884,18 @@ export interface components {
       parameters_schema?: {
         [key: string]: unknown;
       } | null;
+    };
+    /** InitialConditionDTO */
+    InitialConditionDTO: {
+      /** Name */
+      name: string;
+      /** Value */
+      value?: unknown;
+      /**
+       * Unit
+       * @default
+       */
+      unit: string;
     };
     /**
      * LogoutResponse
@@ -758,6 +936,11 @@ export interface components {
       model_id: string;
       /** Files */
       files?: components['schemas']['MetadataPackageFile'][];
+      /**
+       * Warnings
+       * @description Non-blocking issues found while parsing the metadata-package (missing/empty required fields); approval still succeeded.
+       */
+      warnings?: string[];
     };
     /**
      * MetadataPackageUpdateRequest
@@ -766,6 +949,176 @@ export interface components {
     MetadataPackageUpdateRequest: {
       /** Files */
       files: components['schemas']['MetadataPackageFile'][];
+    };
+    /**
+     * ModelDetailResponse
+     * @description Full detail view of a model (GET /models/{id} only).
+     *
+     *     Extends the registration response with the characterization fields
+     *     populated by the metadata-package workflow (schema.md Sections A/B).
+     *     Create/update endpoints keep returning ``RegisterModelResponse``.
+     */
+    ModelDetailResponse: {
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+      /** Resource Type */
+      resource_type: string;
+      /** Location Uri */
+      location_uri: string;
+      /**
+       * Description
+       * @default
+       */
+      description: string;
+      /**
+       * Version
+       * @default
+       */
+      version: string;
+      /** Status */
+      status: string;
+      /** Registration Status */
+      registration_status: string;
+      /**
+       * Owner
+       * @default
+       */
+      owner: string;
+      /** Execution Type */
+      execution_type?: string | null;
+      /**
+       * Execution Ref
+       * @default
+       */
+      execution_ref: string;
+      io_spec?: components['schemas']['IOSpecDTO'] | null;
+      /** Entry Points */
+      entry_points?: components['schemas']['EntryPointDTO'][];
+      /** Containers */
+      containers?: components['schemas']['ContainerDTO'][];
+      /** Format Tags */
+      format_tags?: string[];
+      /** Authors */
+      authors?: components['schemas']['AuthorDTO'][];
+      /**
+       * Organization
+       * @default
+       */
+      organization: string;
+      /**
+       * Contact Email
+       * @default
+       */
+      contact_email: string;
+      /** Publications */
+      publications?: components['schemas']['PublicationDTO'][];
+      /** Funding */
+      funding?: string[];
+      /** Model Scales */
+      model_scales?: string[];
+      /** Organisms */
+      organisms?: string[];
+      /** Domains */
+      domains?: string[];
+      /** Date Published */
+      date_published?: string | null;
+      /**
+       * Digest Sha256
+       * @default
+       */
+      digest_sha256: string;
+      /** Size Bytes */
+      size_bytes?: number | null;
+      /** External Ids */
+      external_ids?: {
+        [key: string]: string;
+      };
+      /**
+       * License
+       * @default
+       */
+      license: string;
+      /** Metadata */
+      metadata?: {
+        [key: string]: unknown;
+      };
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /**
+       * Short Description
+       * @default
+       */
+      short_description: string;
+      /** Model Class */
+      model_class?: string[];
+      /** Formalism */
+      formalism?: string[];
+      /**
+       * Determinism
+       * @default unknown
+       */
+      determinism: string;
+      /**
+       * Time Dynamics
+       * @default unknown
+       */
+      time_dynamics: string;
+      /**
+       * Spatial
+       * @default unknown
+       */
+      spatial: string;
+      /** Multiscale */
+      multiscale?: boolean | null;
+      /** Infectious Agents */
+      infectious_agents?: string[];
+      /** Health Conditions */
+      health_conditions?: string[];
+      /** Biological Processes */
+      biological_processes?: string[];
+      /** Molecular Entities */
+      molecular_entities?: string[];
+      /** Proteins Genes */
+      proteins_genes?: string[];
+      /**
+       * Execution Status
+       * @default
+       */
+      execution_status: string;
+      /**
+       * Language Name
+       * @default
+       */
+      language_name: string;
+      /**
+       * Language Version
+       * @default
+       */
+      language_version: string;
+      /**
+       * Execution Notes
+       * @default
+       */
+      execution_notes: string;
+      /** Dependencies */
+      dependencies?: components['schemas']['DependencyDTO'][];
+      compute?: components['schemas']['ComputeDTO'] | null;
+      tests?: components['schemas']['TestSpecDTO'] | null;
+      io?: components['schemas']['IODetailDTO'] | null;
+      /** Contacts */
+      contacts?: components['schemas']['ContactDTO'][];
+      /** Related Resources */
+      related_resources?: components['schemas']['RelatedResourceDTO'][];
     };
     /** ModelListItem */
     ModelListItem: {
@@ -897,6 +1250,58 @@ export interface components {
       /** Total */
       total: number;
     };
+    /** OutputDTO */
+    OutputDTO: {
+      /** Name */
+      name: string;
+      /**
+       * Description
+       * @default
+       */
+      description: string;
+      /**
+       * Quantity Kind
+       * @default
+       */
+      quantity_kind: string;
+      /**
+       * Unit
+       * @default
+       */
+      unit: string;
+      /**
+       * Format
+       * @default
+       */
+      format: string;
+      /**
+       * Destination
+       * @default
+       */
+      destination: string;
+    };
+    /** ParameterDTO */
+    ParameterDTO: {
+      /** Name */
+      name: string;
+      /**
+       * Description
+       * @default
+       */
+      description: string;
+      /** Default Value */
+      default_value?: unknown;
+      /**
+       * Unit
+       * @default
+       */
+      unit: string;
+      /**
+       * Biological Meaning
+       * @default
+       */
+      biological_meaning: string;
+    };
     /** PublicationDTO */
     PublicationDTO: {
       /** Title */
@@ -906,6 +1311,11 @@ export interface components {
        * @default
        */
       doi: string;
+      /**
+       * Pmid
+       * @default
+       */
+      pmid: string;
       /**
        * Url
        * @default
@@ -1238,6 +1648,27 @@ export interface components {
        * Format: date-time
        */
       updated_at: string;
+    };
+    /**
+     * RelatedResourceDTO
+     * @description A linked prior model or data source (`Resource.related_resources`).
+     *
+     *     The only provenance link the registry stores — `qualifier` carries the
+     *     relationship (e.g. `bqmodel:isDerivedFrom`, `bqbiol:isVersionOf`).
+     */
+    RelatedResourceDTO: {
+      /** Qualifier */
+      qualifier: string;
+      /**
+       * Scheme
+       * @default
+       */
+      scheme: string;
+      /**
+       * Value
+       * @default
+       */
+      value: string;
     };
     /**
      * ResourceFileItem
@@ -1622,6 +2053,19 @@ export interface components {
        */
       order: 'asc' | 'desc';
     };
+    /** TestSpecDTO */
+    TestSpecDTO: {
+      /**
+       * Framework
+       * @default
+       */
+      framework: string;
+      /**
+       * Invocation
+       * @default
+       */
+      invocation: string;
+    };
     /** UpdateDatasetRequest */
     UpdateDatasetRequest: {
       /** Digest Sha256 */
@@ -1810,6 +2254,7 @@ export interface operations {
       query?: {
         return_to_key?: string;
         return_to_query?: string;
+        return_to_id?: string;
       };
       header?: never;
       path?: never;
@@ -2021,7 +2466,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['RegisterModelResponse'];
+          'application/json': components['schemas']['ModelDetailResponse'];
         };
       };
       /** @description Validation Error */
@@ -2284,6 +2729,15 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ModelRunDetailsResponse'];
+        };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
         };
       };
       /** @description Validation Error */
@@ -2577,6 +3031,15 @@ export interface operations {
           'application/json': components['schemas']['RunDetailResponse'];
         };
       };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
       /** @description Validation Error */
       422: {
         headers: {
@@ -2608,6 +3071,15 @@ export interface operations {
           'application/json': components['schemas']['AnnotateRunResponse'];
         };
       };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
       /** @description Validation Error */
       422: {
         headers: {
@@ -2637,6 +3109,15 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['RunDetailResponse'];
+        };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
         };
       };
       /** @description Validation Error */

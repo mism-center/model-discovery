@@ -1,7 +1,6 @@
 import { HydrationBoundary, dehydrate } from '@tanstack/react-query';
 import type { ShouldRevalidateFunctionArgs } from 'react-router';
 
-import { prefetchUser } from '~/api/auth/user';
 import { serverApiClient } from '~/api/client/server-client';
 import { getQueryClient } from '~/api/query/query-client';
 import SearchSection from '~/components/sections/search/search';
@@ -36,10 +35,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   const client = serverApiClient(request);
 
   const queryClient = getQueryClient();
-  await Promise.all([
-    queryClient.prefetchQuery(searchQueryOptions(state, client)),
-    prefetchUser(queryClient, client),
-  ]);
+  // The user is not prefetched here: the root loader already does it, and its
+  // HydrationBoundary wraps this route, so `useUser()` is populated before
+  // anything here renders.
+  await queryClient.prefetchQuery(searchQueryOptions(state, client));
 
   return { dehydratedState: dehydrate(queryClient) };
 }

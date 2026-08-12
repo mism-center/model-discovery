@@ -9,13 +9,12 @@ from mism_registry.resource import Resource
 from mism_registry.run import Run
 from sqlalchemy.orm import Session
 
-from mismapi.auth.base import AuthenticatedPrincipal, require_principal
 from mismapi.clients.execution_client import ExecutionClient
 from mismapi.core.deps import _get_execution_client, _get_registry_service
 from mismapi.core.errors import APIError
 from mismapi.main import create_app
 from mismapi.services.registry_service import RegistryService
-from tests.conftest import minimal_oidc_settings
+from tests.conftest import minimal_oidc_settings, override_anonymous, override_principal
 
 
 def _make_model(id: str, name: str = "Example Model", owner: str = "user-1") -> Resource:
@@ -74,22 +73,6 @@ def _make_run(
     )
 
 
-async def _allow_principal() -> AuthenticatedPrincipal:
-    return AuthenticatedPrincipal(
-        subject="user-1",
-        issuer="test",
-        audience="mism-api",
-        scopes=set(),
-    )
-
-
-async def _deny_principal() -> AuthenticatedPrincipal:
-    # Mirror what the real require_principal raises for an anonymous caller
-    # (no session cookie) — lets us assert the endpoint enforces auth without
-    # needing Redis/OIDC infra.
-    raise APIError(status_code=401, code="auth_missing", detail="Missing credentials.")
-
-
 def _build_service(*, runs: list[Run], resources: list[Resource]) -> RegistryService:
     """Real RegistryService backed by a fake registry so hydration runs for real."""
     by_id = {r.id: r for r in resources}
@@ -144,9 +127,10 @@ def _make_app(
     execution_client: MagicMock | None = None,
 ) -> TestClient:
     app = create_app(settings=minimal_oidc_settings())
-    app.dependency_overrides[require_principal] = (
-        _allow_principal if authenticated else _deny_principal
-    )
+    if authenticated:
+        override_principal(app)
+    else:
+        override_anonymous(app)
     app.dependency_overrides[_get_registry_service] = lambda: service
     app.dependency_overrides[_get_execution_client] = lambda: (
         execution_client or _make_execution_client()

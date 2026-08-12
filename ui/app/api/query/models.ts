@@ -7,8 +7,8 @@ import {
   getModelAnnotationPackage,
   listModels,
   type MetadataPackageRawResponse,
+  type ModelDetailResponse,
   type ModelListResponse,
-  type RegisterModelResponse,
 } from '~/api/endpoints/models';
 
 type ApiClientType = Client<paths>;
@@ -21,11 +21,17 @@ export const modelKeys = {
   pendingReview: () => [...modelKeys.all, 'pending-review'] as const,
 };
 
+/**
+ * A single model's full detail view (`GET /models/{id}`).
+ *
+ * `client` lets SSR loaders pass a cookie-forwarding `serverApiClient`;
+ * client-side callers omit it.
+ */
 export function modelDetailQueryOptions(
   modelId: string,
   client?: ApiClientType
 ) {
-  return queryOptions<RegisterModelResponse>({
+  return queryOptions<ModelDetailResponse>({
     queryKey: modelKeys.detail(modelId),
     queryFn: ({ signal }) => getModel(modelId, { client, signal }),
   });

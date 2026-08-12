@@ -18,23 +18,12 @@ import {
   type ResourceSummaryItem,
 } from '~/api';
 import { resourceFilesQueryOptions } from '~/api/query/resources';
+import { formatBytes } from '~/utils/format';
 import { FilePreviewModal, previewCategory } from './file-preview-modal';
 
 interface RunOutputFilesProps {
   outputs: ResourceSummaryItem[];
 }
-
-const formatBytes = (bytes: number): string => {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ['KB', 'MB', 'GB', 'TB'];
-  let value = bytes / 1024;
-  let i = 0;
-  while (value >= 1024 && i < units.length - 1) {
-    value /= 1024;
-    i++;
-  }
-  return `${value.toFixed(value < 10 ? 1 : 0)} ${units[i]}`;
-};
 
 const FILE_TYPE_ICONS: Array<{
   extensions: string[];

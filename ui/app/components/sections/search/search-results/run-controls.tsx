@@ -1,28 +1,37 @@
-import { Button, useDisclosure } from '@heroui/react';
+import { Button, Tooltip, useDisclosure } from '@heroui/react';
 import { PlayIcon } from '@heroicons/react/24/solid';
 
-import type { SearchResultItem } from '~/api';
+import type { RunnableModel } from '~/api/endpoints/runs';
 import { useUser } from '~/api/auth/user';
 import { RunModelModal } from './run-model-modal';
 
 interface RunControlsProps {
-  model: SearchResultItem;
+  model: RunnableModel;
+  /**
+   * Visual scale of the launch button.
+   *
+   * `'card'` (the default) is a search result row: a compact icon-only button
+   * that pairs with the bookmark button already in that column. It is the row's
+   * only action — navigation belongs to the card itself, which is a link — so it
+   * needs no label to distinguish it from anything.
+   *
+   * `'page'` is the detail page, where this is the primary verb beside a
+   * `text-3xl` heading and stays labelled.
+   */
+  scale?: 'card' | 'page';
 }
 
 /**
- * Launch affordance for an executable model in the search results.
+ * Launch affordance for an executable model.
  *
- * Live run status and outputs now live on the "My Runs" page, so the card only
- * offers the launch action:
- *
- *   - executable + signed in → `Run model` button (opens the launch modal)
+ *   - executable + signed in → launch button (opens the launch modal)
  *   - non-executable or signed out → render nothing
  *
  * Running is an authenticated action — the server rejects anonymous launches —
  * so nothing renders until a user is present. `isUserLoading` avoids flashing
  * the button during the initial `/api/auth/me` fetch.
  */
-export function RunControls({ model }: RunControlsProps) {
+export function RunControls({ model, scale = 'card' }: RunControlsProps) {
   const isExecutable = Boolean(model.execution_type);
   const launchModal = useDisclosure();
   const { user, isLoading: isUserLoading } = useUser();
@@ -31,15 +40,33 @@ export function RunControls({ model }: RunControlsProps) {
 
   return (
     <>
-      <Button
-        size="sm"
-        color="primary"
-        className="px-5 py-2.5 rounded-lg text-sm font-bold"
-        startContent={<PlayIcon className="size-4" />}
-        onPress={launchModal.onOpen}
-      >
-        Run model
-      </Button>
+      {scale === 'card' ? (
+        // A tooltip *and* an aria-label: with no visible text, pointer users need
+        // the former and assistive tech the latter. `size="sm"` + `isIconOnly`
+        // gives a 32px square, matching the bookmark button above it.
+        <Tooltip content="Run model" delay={300} closeDelay={100} radius="sm">
+          <Button
+            isIconOnly
+            size="sm"
+            color="primary"
+            aria-label="Run model"
+            className="rounded-lg"
+            onPress={launchModal.onOpen}
+          >
+            <PlayIcon className="size-4" />
+          </Button>
+        </Tooltip>
+      ) : (
+        <Button
+          size="md"
+          color="primary"
+          className="px-6 rounded-lg text-[15px] font-bold"
+          startContent={<PlayIcon className="size-4" />}
+          onPress={launchModal.onOpen}
+        >
+          Run model
+        </Button>
+      )}
       {/* Mount only while open so each launch starts from fresh form state. */}
       {launchModal.isOpen && (
         <RunModelModal model={model} isOpen onClose={launchModal.onClose} />

@@ -32,6 +32,7 @@ async def login(
     oidc_service: OIDCServiceDep,
     return_to_key: str = "",
     return_to_query: str = "",
+    return_to_id: str = "",
 ) -> RedirectResponse:
     # Carry return_to through the IdP round-trip in the SessionMiddleware
     # cookie (already required by Authlib). Read again in /callback.
@@ -39,6 +40,9 @@ async def login(
         request.session[RETURN_TO_SESSION_KEY] = {
             "key": return_to_key,
             "query": return_to_query,
+            # Only meaningful for parameterized routes; `resolve_return_to`
+            # validates it as a UUID and ignores it otherwise.
+            "id": return_to_id,
         }
     else:
         request.session.pop(RETURN_TO_SESSION_KEY, None)
@@ -101,7 +105,11 @@ async def callback(
     )
 
     if return_to and return_to.get("key"):
-        landing = resolve_return_to(return_to.get("key"), return_to.get("query"))
+        landing = resolve_return_to(
+            return_to.get("key"),
+            return_to.get("query"),
+            return_to.get("id"),
+        )
     else:
         landing = settings.oidc_post_login_redirect_uri or DEFAULT_LANDING_PATH
     response = RedirectResponse(url=landing, status_code=302)

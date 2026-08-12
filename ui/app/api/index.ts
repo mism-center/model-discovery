@@ -32,13 +32,6 @@ export {
 } from './endpoints/runs';
 
 export {
-  getModel,
-  type RegisterModelResponse,
-  type EntryPointDTO,
-  type ArgumentDTO,
-} from './endpoints/models';
-
-export {
   listResourceFiles,
   resourceDownloadUrl,
   fetchResourceFileText,
@@ -46,3 +39,18 @@ export {
   type ResourceFileItem,
   type ResourceFilesResponse,
 } from './endpoints/resources';
+
+export {
+  getModel,
+  type ArgumentDTO,
+  type ComputeDTO,
+  type ContactDTO,
+  type ContainerDTO,
+  type DependencyDTO,
+  type EntryPointDTO,
+  type IODetailDTO,
+  type ModelDetailResponse,
+  type RegisterModelResponse,
+  type RelatedResourceDTO,
+  type TestSpecDTO,
+} from './endpoints/models';

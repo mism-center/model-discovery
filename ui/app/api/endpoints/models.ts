@@ -13,6 +13,14 @@ export type ModelListItem = components['schemas']['ModelListItem'];
 export type ModelListResponse = components['schemas']['ModelListResponse'];
 export type EntryPointDTO = components['schemas']['EntryPointDTO'];
 export type ArgumentDTO = components['schemas']['ArgumentDTO'];
+export type ModelDetailResponse = components['schemas']['ModelDetailResponse'];
+export type DependencyDTO = components['schemas']['DependencyDTO'];
+export type ContainerDTO = components['schemas']['ContainerDTO'];
+export type ComputeDTO = components['schemas']['ComputeDTO'];
+export type TestSpecDTO = components['schemas']['TestSpecDTO'];
+export type IODetailDTO = components['schemas']['IODetailDTO'];
+export type ContactDTO = components['schemas']['ContactDTO'];
+export type RelatedResourceDTO = components['schemas']['RelatedResourceDTO'];
 
 export async function listModels(
   options: {
@@ -36,10 +44,20 @@ export async function listModels(
   return data as ModelListResponse;
 }
 
+/**
+ * Fetch a single model's full detail view (`GET /models/{id}`).
+ *
+ * Typed as `ModelDetailResponse`: the endpoint returns the characterization
+ * fields too, and that type extends `RegisterModelResponse`, so callers needing
+ * only the registration subset are unaffected.
+ *
+ * `client` lets SSR loaders pass a cookie-forwarding `serverApiClient`;
+ * client-side callers omit it and use the shared browser client.
+ */
 export async function getModel(
   modelId: string,
   options: { client?: ApiClientType; signal?: AbortSignal } = {}
-): Promise<RegisterModelResponse> {
+): Promise<ModelDetailResponse> {
   const { data } = await (options.client ?? apiClient).GET(
     '/api/v1/models/{model_id}',
     {
@@ -47,7 +65,7 @@ export async function getModel(
       signal: options.signal,
     }
   );
-  return data as RegisterModelResponse;
+  return data as ModelDetailResponse;
 }
 
 export async function deleteModel(
