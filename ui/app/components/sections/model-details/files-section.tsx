@@ -75,22 +75,7 @@ export function FilesSection({ modelId }: { modelId: string }) {
   const files = sortFiles(data?.files ?? []);
 
   return (
-    <SectionCard
-      title="Files"
-      description="Artifacts stored with this model."
-      action={
-        !isLoading && !error && files.length > 0 ? (
-          <a
-            href={resourceDownloadUrl(modelId)}
-            download
-            className="flex items-center gap-1.5 shrink-0 text-sm font-semibold text-primary hover:underline outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded"
-          >
-            <ArchiveBoxArrowDownIcon aria-hidden="true" className="size-4" />
-            Download all (zip)
-          </a>
-        ) : undefined
-      }
-    >
+    <SectionCard title="Files" description="Artifacts stored with this model.">
       <div>
         <FilesBody
           modelId={modelId}
@@ -148,6 +133,14 @@ function FilesBody({
   }
   return (
     <div className="flex flex-col gap-4">
+      <a
+        href={resourceDownloadUrl(modelId)}
+        download
+        className="flex items-center gap-1.5 self-start text-sm font-semibold text-primary hover:underline outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded"
+      >
+        <ArchiveBoxArrowDownIcon aria-hidden="true" className="size-4" />
+        Download all (zip)
+      </a>
       {groupByDirectory(files).map(({ directory, entries }) => (
         <div key={directory}>
           {directory !== '' && (
