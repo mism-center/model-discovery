@@ -15,7 +15,7 @@ import {
 } from '@heroui/react';
 import { XMarkIcon } from '@heroicons/react/24/solid';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router';
+import { Link } from 'react-router';
 
 import {
   executeModelRun,
@@ -77,7 +77,6 @@ export function RunModelModal({
   initialParameters,
 }: RunModelModalProps) {
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
   const inputs = model.io_spec?.inputs ?? [];
   const entryPoints: EntryPointDTO[] = model.entry_points ?? [];
 
@@ -133,11 +132,7 @@ export function RunModelModal({
       // "My Runs" page list (`runKeys.user(...)`, any status variant) and any
       // per-model list. Launching is rare, so the broad invalidation is cheap.
       void queryClient.invalidateQueries({ queryKey: runKeys.all });
-      const viewRun = () => {
-        // Dismiss the toast immediately as we navigate to the run.
-        if (toastKey) closeToast(toastKey);
-        navigate(`/runs?run=${encodeURIComponent(run.id)}`);
-      };
+      const runHref = `/runs?run=${encodeURIComponent(run.id)}`;
       // Dark pill toast with an inline action row: [ View run | ✕ ]. We hide
       // HeroUI's default icon and floating close button and render the whole
       // right-side cluster ourselves in `endContent`, so there's no
@@ -157,13 +152,27 @@ export function RunModelModal({
         },
         endContent: (
           <div className="flex items-center gap-3 shrink-0">
-            <button
-              type="button"
-              onClick={viewRun}
+            <Link
+              to={runHref}
+              onClick={(event) => {
+                // Only close the toast for a genuine left click. E.g., want to
+                // avoid a ctrl-click opening in a new tab from closing the toast
+                // in this tab. `Link` calls this before deciding whether to
+                // navigate, so it runs on modified clicks too and must opt out.
+                if (
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey
+                ) {
+                  return;
+                }
+                if (toastKey) closeToast(toastKey);
+              }}
               className="text-sm font-semibold text-white underline underline-offset-2 hover:text-white/80 outline-none focus-visible:ring-2 focus-visible:ring-white/40 rounded"
             >
               View run
-            </button>
+            </Link>
             <span aria-hidden="true" className="h-5 w-px bg-white/25" />
             <button
               type="button"
