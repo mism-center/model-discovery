@@ -29,7 +29,7 @@ import {
   MagnifyingGlassIcon,
 } from '@heroicons/react/16/solid';
 
-import { signIn, signOut, useUser, type CurrentUser } from '~/api/auth/user';
+import { loginHref, signOut, useUser, type CurrentUser } from '~/api/auth/user';
 
 interface NavbarDropdownItemProps extends DropdownItemProps {
   isActive?: boolean;
@@ -158,6 +158,7 @@ function UserAvatar({
 
 function HeaderAuth() {
   const { user, isLoading } = useUser();
+  const { pathname, search } = useLocation();
 
   if (isLoading && user === null) {
     return <Skeleton className="rounded-full h-8 w-8 bg-white/20" />;
@@ -165,15 +166,15 @@ function HeaderAuth() {
 
   if (!user) {
     return (
-      <button
+      <a
+        href={loginHref(pathname, search)}
         className={cn(
           'text-slate-300 hover:text-white transition-colors',
           'text-[0.9375rem] px-1 py-1.5 font-medium tracking-tight shrink-0'
         )}
-        onClick={() => signIn()}
       >
         Sign in
-      </button>
+      </a>
     );
   }
 

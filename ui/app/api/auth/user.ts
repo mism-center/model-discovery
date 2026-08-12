@@ -51,12 +51,10 @@ const RETURN_TO_ID_ROUTES: Array<{ prefix: string; key: string }> = [
 ];
 
 /**
- * Trigger an OIDC login. Top-level navigation so the browser follows the
- * 302 chain to the IdP and back through `/api/auth/callback` cleanly. Sends
- * the current route key + query so the callback can return the user here.
+ * Build the URL that starts an OIDC login, carrying the route key + query for
+ * the given location so the callback can return the user there.
  */
-export function signIn(): void {
-  const pathname = globalThis.location.pathname;
+export function loginHref(pathname: string, search = ''): string {
   let key = RETURN_TO_KEYS[pathname];
   let id: string | undefined;
 
@@ -77,11 +75,11 @@ export function signIn(): void {
   if (key) {
     params.set('return_to_key', key);
     if (id) params.set('return_to_id', id);
-    const query = globalThis.location.search.replace(/^\?/, '');
+    const query = search.replace(/^\?/, '');
     if (query) params.set('return_to_query', query);
   }
   const qs = params.toString();
-  globalThis.location.assign(`/api/auth/login${qs ? `?${qs}` : ''}`);
+  return `/api/auth/login${qs ? `?${qs}` : ''}`;
 }
 
 /**

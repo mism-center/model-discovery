@@ -1,9 +1,10 @@
 import cn from 'classnames';
 import { BreadcrumbItem, Button } from '@heroui/react';
 import { ArrowRightEndOnRectangleIcon } from '@heroicons/react/16/solid';
+import { useLocation } from 'react-router';
 
 import type { ModelDetailResponse } from '~/api/endpoints/models';
-import { signIn, useUser } from '~/api/auth/user';
+import { loginHref, useUser } from '~/api/auth/user';
 import { CompactBreadcrumbs } from '~/components/layout/breadcrumbs';
 import { RunControls } from '~/components/sections/search/search-results/run-controls';
 import { ModelByline } from './model-byline';
@@ -18,12 +19,13 @@ import { Chip, OVERVIEW_TITLE, hasItems, sectionId } from './primitives';
  * users on first paint. Sizing tracks `RunControls`' `page` scale so the two
  * variants of this slot are interchangeable.
  *
- * `signIn()` returns the user here: `/models/:id` is a parameterized return-to
+ * `loginHref()` returns the user here: `/models/:id` is a parameterized return-to
  * route, so the client sends the route key plus the id and the server rebuilds
  * the path from its own template after validating the id as a UUID.
  */
 function SignInToRunPrompt({ executable }: { executable: boolean }) {
   const { user, isLoading } = useUser();
+  const { pathname, search } = useLocation();
   if (!executable || isLoading || user) return null;
 
   // Filled, not bordered, and identical in size and padding to `RunControls`'
@@ -36,11 +38,12 @@ function SignInToRunPrompt({ executable }: { executable: boolean }) {
   // restated the label, and stacking it turned one control into a two-line block.
   return (
     <Button
+      as="a"
+      href={loginHref(pathname, search)}
       size="md"
       color="primary"
       className="px-6 rounded-lg text-[15px] font-bold"
       startContent={<ArrowRightEndOnRectangleIcon className="size-4" />}
-      onPress={() => signIn()}
     >
       Sign in to run
     </Button>
