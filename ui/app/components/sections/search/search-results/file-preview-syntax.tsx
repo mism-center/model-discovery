@@ -5,8 +5,9 @@
  * preview modal; this keeps the highlighter out of the route bundle and the
  * SSR path. Do not add a static import of this module anywhere.
  *
- * PrismAsyncLight fetches each grammar on its own dynamic import.
- * Previewing a `.py`, for example, pulls the python grammar alone.
+ * PrismAsyncLight fetches each grammar on its own dynamic import, so
+ * previewing a `.py` pulls the python grammar alone. Grammar names are the
+ * async loader's, which spells hyphenated ones in camelCase (`goModule`).
  */
 import { PrismAsyncLight as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';

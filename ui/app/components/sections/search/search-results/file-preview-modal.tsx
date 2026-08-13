@@ -44,10 +44,7 @@ const CodePreview = lazy(() => import('./file-preview-syntax'));
  *
  * Grouped by family rather than alphabetized, because the failure mode here is
  * an omission, not a lookup: `jsx` without `mjs`, or `java` without `kt`, is
- * invisible in an alphabetical list and obvious in a row. Roughly a third of
- * these restate Prism's own name/alias table (`py`, `js`, `rb`); they are
- * written out anyway so the table can be read as the single answer to "what
- * highlights what" instead of half a list plus a fallback rule.
+ * invisible in an alphabetical list and obvious in a row.
  */
 // prettier-ignore
 const PRISM_LANGUAGES: Record<string, string> = {
@@ -251,29 +248,17 @@ function looksBinary(content: string): boolean {
 const MAX_TABLE_ROWS = 500;
 
 /**
- * Caps on the highlighted preview, mirroring MAX_TABLE_ROWS so both truncating
- * previews cut at the same scale and say so the same way.
+ * Caps on the highlighted preview. Prism emits a React element per token with
+ * its own inline style object, so render cost is linear in source length and
+ * steep — roughly 1.6 ms per line.
  *
- * Prism emits one React element per token, each carrying its own inline style
- * object, so render cost is linear in source length and steep — ~1.6 ms per
- * line measured against this theme. Uncapped, the TEXT_PREVIEW_MAX_BYTES
- * ceiling of 1.5 MB meant a ~900k-element render that locked the tab for the
- * better part of a minute, and a multi-MB `.ipynb` hits that ceiling routinely.
- *
- * MAX_CODE_CHARS catches what the line cap can't: files with few but enormous
- * lines, like minified JSON, where 500 lines is still megabytes.
+ * MAX_CODE_CHARS catches what the line cap can't: minified files, where 500
+ * lines is still megabytes.
  */
 const MAX_CODE_LINES = 500;
 const MAX_CODE_CHARS = 40_000;
 
-/**
- * Clip content down to what we're willing to highlight.
- *
- * Whether anything was dropped is a length comparison, which covers both caps
- * at once. Counting lines instead missed the case both caps exist for: a
- * minified blob is one line, so a char-cap slice left the line count unchanged
- * and the notice never appeared.
- */
+/** Clip content to what we're willing to highlight. */
 function clipForHighlight(content: string): {
   text: string;
   truncated: boolean;
@@ -306,13 +291,13 @@ function hasNonBlankAfter(text: string, index: number): boolean {
  * than materializing every row of a file that may be MAX_TEXT_PREVIEW_BYTES
  * long and then discarding all but 500.
  *
- * `skipEmptyLines` deliberately is NOT set alongside it: Papa applies `preview`
- * to raw rows *before* skipping, so a sheet padded with blank lines gives a false count.
+ * Do not add `skipEmptyLines`: Papa applies `preview` to raw rows *before*
+ * skipping, so a sheet padded with blank lines stops short and reads as
+ * complete. Blanks are filtered here instead.
  */
 function CsvTable({ content, tsv }: { content: string; tsv: boolean }) {
   const { header, body, hasMore } = useMemo(() => {
-    // One row past what we draw, so a full window is a hint (not proof) that
-    // the file continues.
+    // One row past what we draw.
     const parsed = Papa.parse<string[]>(content, {
       delimiter: tsv ? '\t' : '',
       preview: MAX_TABLE_ROWS + 2,
@@ -325,10 +310,8 @@ function CsvTable({ content, tsv }: { content: string; tsv: boolean }) {
     return {
       header: first,
       body: rest.slice(0, MAX_TABLE_ROWS),
-      // Row count alone can't answer this: blank lines burn preview budget
-      // without producing rows, so a truncated file can yield under 500. Papa
-      // reports where it stopped, which settles it, anything but whitespace
-      // left in the buffer means there is more sheet than we drew.
+      // Blank lines burn preview budget without producing rows, so a
+      // truncated sheet can yield under 500. `meta.cursor` settles it.
       hasMore:
         rest.length > MAX_TABLE_ROWS ||
         hasNonBlankAfter(content, parsed.meta.cursor),
@@ -340,8 +323,14 @@ function CsvTable({ content, tsv }: { content: string; tsv: boolean }) {
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="overflow-auto rounded-lg border border-default-200">
+    <div className="flex flex-col">
+      {/* The sticky header positions against this element; keep `overflow-auto`
+      here. */}
+      <div
+        className={`overflow-auto border border-default-200 ${
+          hasMore ? 'rounded-t-lg' : 'rounded-lg'
+        }`}
+      >
         <table className="min-w-full border-collapse text-xs">
           <thead className="sticky top-0 bg-default-100">
             <tr>
@@ -373,9 +362,7 @@ function CsvTable({ content, tsv }: { content: string; tsv: boolean }) {
         </table>
       </div>
       {hasMore && (
-        <p className="text-[11px] text-default-600">
-          {/* No "N more not shown": the exact remainder is exactly what the
-          early stop buys us out of counting. */}
+        <p className="rounded-b-lg border-x border-b border-default-200 bg-default-100 px-3 py-1.5 text-xs text-default-600">
           Showing first {body.length} rows. Download the file to see everything.
         </p>
       )}
@@ -426,8 +413,7 @@ export function FilePreviewModal({
       </div>
     );
   } else if (unpreviewable) {
-    // Ahead of `tooLarge` so a 40 MB archive reads as a format we can't render
-    // rather than a file we could have rendered if only it were smaller.
+    // Ahead of `tooLarge`: an unshowable format is the reason, not the size.
     body = (
       <EmptyState
         icon={EyeSlashIcon}
@@ -485,15 +471,20 @@ export function FilePreviewModal({
         const { text, truncated } = clipForHighlight(data);
         body = (
           <Suspense fallback={<Spinner size="sm" />}>
-            <div className="flex flex-col gap-2">
-              <div className="overflow-auto rounded-lg border border-default-200 bg-default-50 p-3">
+            <div className="flex flex-col">
+              <div
+                className={`overflow-auto border border-default-200 bg-default-50 p-3 ${
+                  truncated ? 'rounded-t-lg' : 'rounded-lg'
+                }`}
+              >
                 <CodePreview language={prismLanguageForPath(file.path)}>
                   {text}
                 </CodePreview>
               </div>
               {truncated && (
-                <p className="text-[11px] text-default-600">
-                  Preview truncated. Download the file to see everything.
+                <p className="rounded-b-lg border-x border-b border-default-200 bg-default-100 px-3 py-1.5 text-xs text-default-700">
+                  Showing the beginning of this file. Download it to see
+                  everything.
                 </p>
               )}
             </div>
