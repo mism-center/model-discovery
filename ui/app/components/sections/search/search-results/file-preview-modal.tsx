@@ -30,7 +30,7 @@ import { formatBytes } from '~/utils/format';
 // the route/SSR bundle; the modal body only mounts after a client click, so
 // they never run on the server. Keep this a pure `import(...)` — a static
 // import from file-preview-syntax here would defeat the code-split.
-const ReactMarkdown = lazy(() => import('react-markdown'));
+const MarkdownPreview = lazy(() => import('./file-preview-markdown'));
 const CodePreview = lazy(() => import('./file-preview-syntax'));
 
 /**
@@ -70,7 +70,7 @@ const PRISM_LANGUAGES: Record<string, string> = {
   c: 'c', h: 'c',
   cpp: 'cpp', cxx: 'cpp', cc: 'cpp', hpp: 'cpp', hxx: 'cpp', hh: 'cpp',
   rs: 'rust', go: 'go', zig: 'zig', nim: 'nim', d: 'd',
-  cs: 'csharp', vb: 'visualBasic', fs: 'fsharp', fsx: 'fsharp', fsi: 'fsharp',
+  cs: 'csharp', vb: 'visual-basic', fs: 'fsharp', fsx: 'fsharp', fsi: 'fsharp',
   java: 'java', kt: 'kotlin', kts: 'kotlin', scala: 'scala',
   swift: 'swift', dart: 'dart', mm: 'objectivec',
 
@@ -133,7 +133,7 @@ const PRISM_LANGUAGES_BY_FILENAME: Record<string, string> = {
   vagrantfile: 'ruby', brewfile: 'ruby',
   jenkinsfile: 'groovy',
   snakefile: 'python',
-  'go.mod': 'goModule',
+  'go.mod': 'go-module',
 
   // Lockfiles, named individually: `.lock` says nothing about format. These
   // three are TOML, but yarn.lock has its own syntax, flake.lock is JSON and
@@ -327,11 +327,11 @@ function CsvTable({ content, tsv }: { content: string; tsv: boolean }) {
       {/* The sticky header positions against this element; keep `overflow-auto`
       here. */}
       <div
-        className={`overflow-auto border border-default-200 ${
+        className={`max-h-[60vh] overflow-auto border border-default-200 ${
           hasMore ? 'rounded-t-lg' : 'rounded-lg'
         }`}
       >
-        <table className="min-w-full border-collapse text-xs">
+        <table className="min-w-full border-separate border-spacing-0 text-xs">
           <thead className="sticky top-0 bg-default-100">
             <tr>
               {header.map((cell, i) => (
@@ -362,7 +362,7 @@ function CsvTable({ content, tsv }: { content: string; tsv: boolean }) {
         </table>
       </div>
       {hasMore && (
-        <p className="rounded-b-lg border-x border-b border-default-200 bg-default-100 px-3 py-1.5 text-xs text-default-600">
+        <p className="rounded-b-lg border-x border-b border-default-200 bg-default-100 px-3 py-1.5 text-xs text-default-700">
           Showing first {body.length} rows. Download the file to see everything.
         </p>
       )}
@@ -404,13 +404,11 @@ export function FilePreviewModal({
   let body: React.ReactNode;
   if (category === 'image') {
     body = (
-      <div className="flex justify-center">
-        <img
-          src={resourceDownloadUrl(resourceId, file.path, { inline: true })}
-          alt={file.name}
-          className="max-h-[70vh] w-auto rounded-lg object-contain"
-        />
-      </div>
+      <img
+        src={resourceDownloadUrl(resourceId, file.path, { inline: true })}
+        alt={file.name}
+        className="mx-auto block min-h-0 max-w-full rounded-lg object-contain"
+      />
     );
   } else if (unpreviewable) {
     // Ahead of `tooLarge`: an unshowable format is the reason, not the size.
@@ -460,7 +458,7 @@ export function FilePreviewModal({
             {/* No typography plugin in this app — apply minimal readable defaults
             via arbitrary variants so markdown renders legibly on its own. */}
             <div className="text-sm text-default-900 leading-relaxed [&_h1]:text-lg [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-base [&_h2]:font-bold [&_h2]:mt-4 [&_h2]:mb-2 [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1.5 [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_a]:text-primary [&_a]:underline [&_code]:font-mono [&_code]:text-[0.85em] [&_code]:bg-default-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_pre]:bg-default-50 [&_pre]:border [&_pre]:border-default-200 [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:overflow-auto [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_blockquote]:border-l-2 [&_blockquote]:border-default-300 [&_blockquote]:pl-3 [&_blockquote]:text-default-700 [&_table]:border-collapse [&_th]:border [&_th]:border-default-200 [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-default-200 [&_td]:px-2 [&_td]:py-1">
-              <ReactMarkdown>{data}</ReactMarkdown>
+              <MarkdownPreview>{data}</MarkdownPreview>
             </div>
           </Suspense>
         );
@@ -519,7 +517,7 @@ export function FilePreviewModal({
           >
             {file.name}
           </span>
-          <span className="text-xs font-normal text-default-600">
+          <span className="text-xs font-normal text-default-700">
             {formatBytes(file.size_bytes)}
           </span>
         </ModalHeader>

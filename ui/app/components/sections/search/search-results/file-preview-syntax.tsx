@@ -10,7 +10,17 @@
  * async loader's, which spells hyphenated ones in camelCase (`goModule`).
  */
 import { PrismAsyncLight as SyntaxHighlighter } from 'react-syntax-highlighter';
+import goModule from 'refractor/go-module';
+import visualBasic from 'refractor/visual-basic';
 import 'prism-themes/themes/prism-one-light.css';
+
+// The async loader keys these two as `goModule` / `visualBasic` but registers
+// them under their real names, so asking for either spelling fails: the
+// camelCase one is never registered, and the kebab one has no loader entry.
+// Registering them here queues them until the core loads, after which the
+// kebab names resolve normally.
+SyntaxHighlighter.registerLanguage('go-module', goModule);
+SyntaxHighlighter.registerLanguage('visual-basic', visualBasic);
 
 export default function CodePreview({
   language,
