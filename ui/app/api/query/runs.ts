@@ -20,6 +20,26 @@ export const runKeys = {
   user: (status?: string) => [...runKeys.all, 'user', status ?? 'all'] as const,
 };
 
+/** How often a run list re-reads status while any of its runs is still active. */
+const ACTIVE_LIST_POLL_MS = 5000;
+
+/**
+ * Poll a run list while any run in it is still non-terminal, so status (and the
+ * derived duration) stay fresh even for collapsed rows, which don't run their
+ * own detail query. Stops once every run has reached a terminal state.
+ *
+ * `RunRow` reads status straight off the list item, so a list that doesn't poll
+ * leaves a finished run showing "running" until the page is reloaded.
+ */
+function pollWhileAnyRunIsActive(
+  runs: Array<{ run: { status: string } }> | undefined
+): number | false {
+  const anyActive = (runs ?? []).some(
+    (item) => !isTerminalStatus(item.run.status)
+  );
+  return anyActive ? ACTIVE_LIST_POLL_MS : false;
+}
+
 /**
  * All runs for a given model (`GET /models/{id}/runs`).
  *
@@ -30,6 +50,7 @@ export function modelRunsQueryOptions(modelId: string, client?: Client<paths>) {
   return queryOptions<ModelRunDetailsResponse>({
     queryKey: runKeys.byModel(modelId),
     queryFn: ({ signal }) => listModelRuns(modelId, { signal, client }),
+    refetchInterval: (query) => pollWhileAnyRunIsActive(query.state.data?.runs),
   });
 }
 
@@ -50,14 +71,7 @@ export function userRunsQueryOptions(
   return queryOptions<UserRunsResponse>({
     queryKey: runKeys.user(status),
     queryFn: ({ signal }) => listUserRuns({ status, signal, client }),
-    // Poll while any run in the list is still non-terminal so status (and the
-    // derived duration) stay fresh even for collapsed rows, which don't run
-    // their own detail query. Stop once every run has reached a terminal state.
-    refetchInterval: (query) => {
-      const runs = query.state.data?.runs ?? [];
-      const anyActive = runs.some((item) => !isTerminalStatus(item.run.status));
-      return anyActive ? 5000 : false;
-    },
+    refetchInterval: (query) => pollWhileAnyRunIsActive(query.state.data?.runs),
   });
 }
 
