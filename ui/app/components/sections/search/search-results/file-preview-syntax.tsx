@@ -10,7 +10,7 @@
  * async loader's, which spells hyphenated ones in camelCase (`goModule`).
  */
 import { PrismAsyncLight as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import 'prism-themes/themes/prism-one-light.css';
 
 export default function CodePreview({
   language,
@@ -22,7 +22,10 @@ export default function CodePreview({
   return (
     <SyntaxHighlighter
       language={language}
-      style={oneLight}
+      // Emits `class="token keyword"` rather than building a style object per
+      // token, which is where nearly all of the render cost lives. Paired with
+      // the theme import above: removing either one breaks the other.
+      useInlineStyles={false}
       wrapLongLines
       customStyle={{
         margin: 0,
