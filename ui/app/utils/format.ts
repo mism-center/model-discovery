@@ -28,15 +28,26 @@ function parseLoose(value: string): Date | undefined {
 }
 
 /**
+ * Decimal, so the labels below are honest: a KB is 1000 bytes, not 1024.
+ *
+ * This used to divide by 1024 while labelling the result KB/MB, which named
+ * neither convention and understated every size by ~2.4% per magnitude.
+ * Decimal is what Finder, browser download managers and drive capacities
+ * report, so a size shown here matches what the file looks like once it lands.
+ * Dividing by 1024 would be equally valid, but only with KiB/MiB labels.
+ */
+const BYTE_UNIT = 1000;
+
+/**
  * Human-readable byte-size formatting (e.g. `1.5 MB`).
  */
 export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < BYTE_UNIT) return `${bytes} B`;
   const units = ['KB', 'MB', 'GB', 'TB'];
-  let value = bytes / 1024;
+  let value = bytes / BYTE_UNIT;
   let i = 0;
-  while (value >= 1024 && i < units.length - 1) {
-    value /= 1024;
+  while (value >= BYTE_UNIT && i < units.length - 1) {
+    value /= BYTE_UNIT;
     i++;
   }
   return `${value.toFixed(value < 10 ? 1 : 0)} ${units[i]}`;

@@ -18,6 +18,7 @@ import { resourceDownloadUrl } from '~/api';
 import { resourceFilesQueryOptions } from '~/api/query/resources';
 import { ApiErrorDisplay } from '~/components/common/api-error-display';
 import { EmptyState } from '~/components/common/empty-state';
+import type { PreviewCategory } from '~/components/sections/search/search-results/file-preview-modal';
 import {
   FilePreviewModal,
   previewCategory,
@@ -26,29 +27,34 @@ import { formatBytes } from '~/utils/format';
 import { SectionCard } from './primitives';
 import { SectionListSkeleton } from './skeleton';
 
-const FILE_TYPE_ICONS: Array<{
-  extensions: string[];
-  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-}> = [
-  {
-    extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'tiff'],
-    icon: PhotoIcon,
-  },
-  {
-    extensions: ['csv', 'tsv', 'xlsx', 'xls', 'parquet'],
-    icon: TableCellsIcon,
-  },
-  { extensions: ['json', 'yaml', 'yml', 'xml', 'toml'], icon: CodeBracketIcon },
-  { extensions: ['txt', 'md', 'log'], icon: DocumentTextIcon },
-];
+const CATEGORY_ICONS: Record<
+  NonNullable<PreviewCategory>,
+  React.ComponentType<React.SVGProps<SVGSVGElement>>
+> = {
+  image: PhotoIcon,
+  table: TableCellsIcon,
+  markdown: DocumentTextIcon,
+  code: CodeBracketIcon,
+  text: DocumentTextIcon,
+};
 
-function FileTypeIcon({ file }: { file: ResourceFileItem }) {
+/**
+ * Row icon, keyed off the same classification that decides previewability.
+ *
+ * This used to carry its own extension → icon table, which meant two lists to
+ * keep in step; `previewCategory` already knows what a `.py` is. A `null`
+ * category (binary, or a directory) falls through to the generic document icon.
+ */
+function FileTypeIcon({
+  file,
+  category,
+}: {
+  file: ResourceFileItem;
+  category: PreviewCategory;
+}) {
   if (file.is_dir)
     return <FolderIcon aria-hidden="true" className="size-4 shrink-0" />;
-  const extension = file.path.split('.').pop()?.toLowerCase() ?? '';
-  const Icon =
-    FILE_TYPE_ICONS.find((entry) => entry.extensions.includes(extension))
-      ?.icon ?? DocumentIcon;
+  const Icon = category ? CATEGORY_ICONS[category] : DocumentIcon;
   return <Icon aria-hidden="true" className="size-4 shrink-0" />;
 }
 
@@ -156,7 +162,7 @@ function FilesBody({
               const category = file.is_dir ? null : previewCategory(file.path);
               const label = (
                 <>
-                  <FileTypeIcon file={file} />
+                  <FileTypeIcon file={file} category={category} />
                   <span className="truncate text-sm" title={file.path}>
                     {basename(file.path)}
                   </span>

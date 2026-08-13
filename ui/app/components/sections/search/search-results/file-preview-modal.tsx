@@ -9,6 +9,10 @@ import {
   Spinner,
 } from '@heroui/react';
 import { ArrowDownTrayIcon } from '@heroicons/react/16/solid';
+import {
+  DocumentMagnifyingGlassIcon,
+  EyeSlashIcon,
+} from '@heroicons/react/24/outline';
 import { useQuery } from '@tanstack/react-query';
 import Papa from 'papaparse';
 
@@ -18,6 +22,9 @@ import {
   type ResourceFileItem,
 } from '~/api';
 import { resourceFileTextQueryOptions } from '~/api/query/resources';
+import { ApiErrorDisplay } from '~/components/common/api-error-display';
+import { EmptyState } from '~/components/common/empty-state';
+import { formatBytes } from '~/utils/format';
 
 // Heavy renderers are lazy-loaded so they (and Prism/its grammars) stay out of
 // the route/SSR bundle; the modal body only mounts after a client click, so
@@ -26,27 +33,125 @@ import { resourceFileTextQueryOptions } from '~/api/query/resources';
 const ReactMarkdown = lazy(() => import('react-markdown'));
 const CodePreview = lazy(() => import('./file-preview-syntax'));
 
-/** Map a lowercase file extension to a registered Prism language. */
-function prismLanguageForExtension(extension: string): string {
-  switch (extension) {
-    case 'json': {
-      return 'json';
-    }
-    case 'yaml':
-    case 'yml': {
-      return 'yaml';
-    }
-    case 'xml': {
-      return 'markup';
-    }
-    case 'toml': {
-      return 'toml';
-    }
-    default: {
-      return 'text';
-    }
-  }
-}
+/**
+ * Extension → Prism language.
+ *
+ * Names are refractor's, as spelled by the async loader that
+ * file-preview-syntax.tsx pulls grammars from — note that hyphenated grammars
+ * are camelCase there (`goModule`, not `go-module`). Any of refractor's ~300
+ * grammars can be named; nothing has to be registered first, and a name with no
+ * grammar renders unhighlighted rather than throwing.
+ *
+ * Grouped by family rather than alphabetized, because the failure mode here is
+ * an omission, not a lookup: `jsx` without `mjs`, or `java` without `kt`, is
+ * invisible in an alphabetical list and obvious in a row. Roughly a third of
+ * these restate Prism's own name/alias table (`py`, `js`, `rb`); they are
+ * written out anyway so the table can be read as the single answer to "what
+ * highlights what" instead of half a list plus a fallback rule.
+ */
+// prettier-ignore
+const PRISM_LANGUAGES: Record<string, string> = {
+  // Shell and terminal scripting
+  sh: 'bash', bash: 'bash', zsh: 'bash', ksh: 'bash', fish: 'bash',
+  bat: 'batch', cmd: 'batch',
+  ps1: 'powershell', psm1: 'powershell', psd1: 'powershell',
+  awk: 'awk', tcl: 'tcl', vim: 'vim',
+
+  // Python, and the file types that are Python by another name
+  py: 'python', pyi: 'python', pyw: 'python', pyx: 'python',
+  smk: 'python', // Snakemake rules
+  ipynb: 'json', // Raw notebook JSON: not a rendered notebook, but readable
+
+  // Scientific and statistical computing
+  r: 'r', jl: 'julia', m: 'matlab', sas: 'sas', do: 'stata', stan: 'stan',
+  f: 'fortran', for: 'fortran', ftn: 'fortran', f90: 'fortran',
+  f95: 'fortran', f03: 'fortran', f08: 'fortran',
+  nb: 'wolfram', wl: 'wolfram', wls: 'wolfram',
+  cu: 'cpp', cuh: 'cpp', glsl: 'glsl', vert: 'glsl', frag: 'glsl',
+
+  // Compiled and systems languages
+  c: 'c', h: 'c',
+  cpp: 'cpp', cxx: 'cpp', cc: 'cpp', hpp: 'cpp', hxx: 'cpp', hh: 'cpp',
+  rs: 'rust', go: 'go', zig: 'zig', nim: 'nim', d: 'd',
+  cs: 'csharp', vb: 'visualBasic', fs: 'fsharp', fsx: 'fsharp', fsi: 'fsharp',
+  java: 'java', kt: 'kotlin', kts: 'kotlin', scala: 'scala',
+  swift: 'swift', dart: 'dart', mm: 'objectivec',
+
+  // Dynamic and functional languages
+  rb: 'ruby', rake: 'ruby', gemspec: 'ruby', ru: 'ruby',
+  pl: 'perl', pm: 'perl', php: 'php', lua: 'lua',
+  ex: 'elixir', exs: 'elixir', erl: 'erlang', hrl: 'erlang',
+  hs: 'haskell', ml: 'ocaml', mli: 'ocaml',
+  clj: 'clojure', cljs: 'clojure', cljc: 'clojure', edn: 'clojure',
+  lisp: 'lisp', cl: 'lisp', el: 'lisp', scm: 'scheme', ss: 'scheme',
+  rkt: 'racket',
+  groovy: 'groovy', gradle: 'gradle',
+  nf: 'groovy', // Nextflow pipelines
+
+  // Web
+  js: 'javascript', mjs: 'javascript', cjs: 'javascript',
+  ts: 'typescript', mts: 'typescript', cts: 'typescript',
+  jsx: 'jsx', tsx: 'tsx',
+  html: 'markup', htm: 'markup', xhtml: 'markup', vue: 'markup',
+  css: 'css', scss: 'scss', sass: 'sass', less: 'less', styl: 'stylus',
+  graphql: 'graphql', gql: 'graphql',
+
+  // Structured data
+  json: 'json', jsonl: 'json', ndjson: 'json', jsonc: 'json',
+  geojson: 'json', avsc: 'json', json5: 'json5',
+  yaml: 'yaml', yml: 'yaml',
+  cff: 'yaml', // Citation File Format
+  cwl: 'yaml', // Common Workflow Language
+  toml: 'toml',
+  proto: 'protobuf', sql: 'sql', ddl: 'sql', psql: 'sql',
+
+  // XML dialects, including the model-exchange formats
+  xml: 'markup', xsd: 'markup', xsl: 'markup', xslt: 'markup',
+  xaml: 'markup', plist: 'markup', rss: 'markup',
+  sbml: 'markup', cellml: 'markup', sedml: 'markup',
+  neuroml: 'markup', nml: 'markup',
+
+  // Config, build, and infrastructure
+  ini: 'ini', cfg: 'ini', conf: 'ini', cnf: 'ini', properties: 'properties',
+  mk: 'makefile', mak: 'makefile', make: 'makefile', cmake: 'cmake',
+  dockerfile: 'docker', hcl: 'hcl', tf: 'hcl', tfvars: 'hcl',
+  service: 'systemd', socket: 'systemd', timer: 'systemd',
+
+  // Prose, markup, and output
+  tex: 'latex', sty: 'latex', cls: 'latex', ltx: 'latex', bib: 'latex',
+  rst: 'rest', diff: 'diff', patch: 'diff', log: 'log',
+};
+
+/**
+ * Files with no extension, or whose name means more than their extension.
+ * Keyed by lowercased filename and checked before the extension map, so
+ * `CMakeLists.txt` is CMake rather than an unhighlighted `.txt`.
+ */
+// prettier-ignore
+const PRISM_LANGUAGES_BY_FILENAME: Record<string, string> = {
+  // Build and task runners
+  makefile: 'makefile', gnumakefile: 'makefile', 'cmakelists.txt': 'cmake',
+  dockerfile: 'docker', 'containerfile': 'docker',
+  rakefile: 'ruby', gemfile: 'ruby', guardfile: 'ruby', podfile: 'ruby',
+  vagrantfile: 'ruby', brewfile: 'ruby',
+  jenkinsfile: 'groovy',
+  snakefile: 'python',
+  'go.mod': 'goModule',
+
+  // Lockfiles, named individually: `.lock` says nothing about format. These
+  // three are TOML, but yarn.lock has its own syntax, flake.lock is JSON and
+  // Gemfile.lock is neither, so the extension can't be mapped as a class.
+  'cargo.lock': 'toml', 'poetry.lock': 'toml', 'uv.lock': 'toml',
+  pipfile: 'toml',
+
+  // Dotfiles
+  '.env': 'ini', '.gitconfig': 'ini', '.editorconfig': 'editorconfig',
+  '.bashrc': 'bash', '.bash_profile': 'bash', '.zshrc': 'bash',
+  '.profile': 'bash',
+  '.gitignore': 'ignore', '.dockerignore': 'ignore', '.npmignore': 'ignore',
+  '.prettierignore': 'ignore', '.eslintignore': 'ignore',
+  'nginx.conf': 'nginx',
+};
 
 export type PreviewCategory =
   | 'image'
@@ -56,60 +161,183 @@ export type PreviewCategory =
   | 'text'
   | null;
 
-// Extension sets mirror the taxonomy in run-output-files.tsx's FILE_TYPE_ICONS.
-// Note: xlsx/xls/parquet are intentionally excluded from `table` — they are not
-// text-parseable, so they get no preview (icon + download only).
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp']);
 const TABLE_EXTS = new Set(['csv', 'tsv']);
-const CODE_EXTS = new Set(['json', 'yaml', 'yml', 'xml', 'toml']);
-const TEXT_EXTS = new Set(['txt', 'log']);
+// rmd/qmd are markdown with executable code chunks; rendering the prose is
+// closer to their intent than showing the source.
+const MARKDOWN_EXTS = new Set(['md', 'markdown', 'mdown', 'rmd', 'qmd']);
 
+/**
+ * Extensions whose bytes aren't text. Download-only; no preview.
+ *
+ * This is a denylist because the previewable side is unenumerable: a model repo
+ * brings .py, .sh, .ini, .bib, .rst, .cff, .jl, extensionless LICENSE and
+ * Makefile, and whatever the next one brings. Every extension missing from an
+ * allowlist is a file the user can't open. Binary formats, by contrast, are a
+ * closed set — and anything that slips through is caught by `looksBinary` once
+ * its bytes arrive.
+ *
+ * Kept grouped rather than one-per-line (hence the prettier-ignore): sixty
+ * single-token lines are harder to scan for a missing format than five rows.
+ */
+// prettier-ignore
+const BINARY_EXTS = new Set([
+  // Archives
+  '7z', 'bz2', 'gz', 'jar', 'rar', 'tar', 'tgz', 'whl', 'xz', 'zip', 'zst',
+  // Serialized data, arrays, and trained models
+  'arrow', 'db', 'feather', 'h5', 'hdf5', 'mat', 'nc', 'npy', 'npz', 'onnx',
+  'parquet', 'pb', 'pickle', 'pkl', 'pt', 'pth', 'rds', 'sqlite', 'xls', 'xlsx',
+  // Documents and media (PDFs included: no in-app viewer, download instead)
+  'avi', 'doc', 'docx', 'ico', 'mov', 'mp3', 'mp4', 'pdf', 'ppt', 'pptx', 'psd',
+  'tif', 'tiff', 'wav', 'webm',
+  // Compiled artifacts
+  'a', 'bin', 'class', 'dll', 'dylib', 'exe', 'o', 'pyc', 'pyd', 'so', 'wasm',
+]);
+
+function filenameOf(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1).toLowerCase();
+}
+
+/**
+ * Lowercased extension, or `''` when there is none.
+ *
+ * A leading dot doesn't count: `.gitignore` is a dotfile, not a file with a
+ * `gitignore` extension. Naive `split('.').pop()` reported `LICENSE` as having
+ * extension `license`, which quietly tested filenames against extension sets.
+ */
 function extensionOf(path: string): string {
-  return path.split('.').pop()?.toLowerCase() ?? '';
+  const name = filenameOf(path);
+  const dot = name.lastIndexOf('.');
+  return dot > 0 ? name.slice(dot + 1) : '';
+}
+
+/** The Prism grammar for a path, or `'text'` when we have none. */
+function prismLanguageForPath(path: string): string {
+  return (
+    PRISM_LANGUAGES_BY_FILENAME[filenameOf(path)] ??
+    PRISM_LANGUAGES[extensionOf(path)] ??
+    'text'
+  );
 }
 
 /** Classify a file for previewing; `null` means "not previewable". */
 export function previewCategory(path: string): PreviewCategory {
   const ext = extensionOf(path);
   if (IMAGE_EXTS.has(ext)) return 'image';
+  if (BINARY_EXTS.has(ext)) return null;
   if (TABLE_EXTS.has(ext)) return 'table';
-  if (ext === 'md') return 'markdown';
-  if (CODE_EXTS.has(ext)) return 'code';
-  if (TEXT_EXTS.has(ext)) return 'text';
-  return null;
+  if (MARKDOWN_EXTS.has(ext)) return 'markdown';
+  // Anything left is text; having a grammar is the only thing separating a
+  // highlighted view from a plain one.
+  return prismLanguageForPath(path) === 'text' ? 'text' : 'code';
 }
 
-const formatBytes = (bytes: number): string => {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ['KB', 'MB', 'GB', 'TB'];
-  let value = bytes / 1024;
-  let i = 0;
-  while (value >= 1024 && i < units.length - 1) {
-    value /= 1024;
-    i++;
-  }
-  return `${value.toFixed(value < 10 ? 1 : 0)} ${units[i]}`;
-};
+/**
+ * Whether decoded content looks like binary rather than text.
+ *
+ * The cost of the denylist above is that an unrecognized binary extension gets
+ * fetched and rendered as mojibake. This catches it after the fact: NUL bytes
+ * don't occur in text, and a scattering of U+FFFD means the bytes weren't valid
+ * UTF-8. A 2% threshold tolerates a stray mis-encoded character in an otherwise
+ * readable file — a latin-1 accent in a comment shouldn't hide the whole file.
+ */
+function looksBinary(content: string): boolean {
+  const sample = content.slice(0, 4096);
+  if (sample.length === 0) return false;
+  if (sample.includes('\u0000')) return true;
+  return (sample.match(/\uFFFD/g)?.length ?? 0) > sample.length * 0.02;
+}
 
 const MAX_TABLE_ROWS = 500;
 
-/** Render CSV/TSV text as a scrollable HTML table (first row as header). */
+/**
+ * Caps on the highlighted preview, mirroring MAX_TABLE_ROWS so both truncating
+ * previews cut at the same scale and say so the same way.
+ *
+ * Prism emits one React element per token, each carrying its own inline style
+ * object, so render cost is linear in source length and steep — ~1.6 ms per
+ * line measured against this theme. Uncapped, the TEXT_PREVIEW_MAX_BYTES
+ * ceiling of 1.5 MB meant a ~900k-element render that locked the tab for the
+ * better part of a minute, and a multi-MB `.ipynb` hits that ceiling routinely.
+ *
+ * MAX_CODE_CHARS catches what the line cap can't: files with few but enormous
+ * lines, like minified JSON, where 500 lines is still megabytes.
+ */
+const MAX_CODE_LINES = 500;
+const MAX_CODE_CHARS = 40_000;
+
+/**
+ * Clip content down to what we're willing to highlight.
+ *
+ * Whether anything was dropped is a length comparison, which covers both caps
+ * at once. Counting lines instead missed the case both caps exist for: a
+ * minified blob is one line, so a char-cap slice left the line count unchanged
+ * and the notice never appeared.
+ */
+function clipForHighlight(content: string): {
+  text: string;
+  truncated: boolean;
+} {
+  let text = content.split('\n', MAX_CODE_LINES).join('\n');
+  if (text.length > MAX_CODE_CHARS) text = text.slice(0, MAX_CODE_CHARS);
+  return { text, truncated: text.length !== content.length };
+}
+
+/**
+ * Whether anything but whitespace remains at or after `index`.
+ *
+ * Scanning rather than `slice(index).trim()`, which would copy the entire
+ * unparsed tail — up to the full file — just to ask a yes/no question. This
+ * returns on the first real character, which for a truncated file is
+ * immediately.
+ */
+function hasNonBlankAfter(text: string, index: number): boolean {
+  for (let i = index; i < text.length; i++) {
+    const ch = text[i];
+    if (ch !== ' ' && ch !== '\t' && ch !== '\n' && ch !== '\r') return true;
+  }
+  return false;
+}
+
+/**
+ * Render CSV/TSV text as a scrollable HTML table (first row as header).
+ *
+ * `preview` stops the parser once it has the rows we intend to draw, rather
+ * than materializing every row of a file that may be MAX_TEXT_PREVIEW_BYTES
+ * long and then discarding all but 500.
+ *
+ * `skipEmptyLines` deliberately is NOT set alongside it: Papa applies `preview`
+ * to raw rows *before* skipping, so a sheet padded with blank lines gives a false count.
+ */
 function CsvTable({ content, tsv }: { content: string; tsv: boolean }) {
-  const rows = useMemo(() => {
+  const { header, body, hasMore } = useMemo(() => {
+    // One row past what we draw, so a full window is a hint (not proof) that
+    // the file continues.
     const parsed = Papa.parse<string[]>(content, {
       delimiter: tsv ? '\t' : '',
-      skipEmptyLines: true,
+      preview: MAX_TABLE_ROWS + 2,
     });
-    return parsed.data;
+    const rows = parsed.data.filter(
+      (row) => !(row.length === 1 && row[0].trim() === '')
+    );
+    const [first, ...rest] = rows;
+
+    return {
+      header: first,
+      body: rest.slice(0, MAX_TABLE_ROWS),
+      // Row count alone can't answer this: blank lines burn preview budget
+      // without producing rows, so a truncated file can yield under 500. Papa
+      // reports where it stopped, which settles it, anything but whitespace
+      // left in the buffer means there is more sheet than we drew.
+      hasMore:
+        rest.length > MAX_TABLE_ROWS ||
+        hasNonBlankAfter(content, parsed.meta.cursor),
+    };
   }, [content, tsv]);
 
-  if (rows.length === 0) {
+  if (header === undefined) {
     return <p className="text-xs text-default-600">This file is empty.</p>;
   }
-
-  const [header, ...body] = rows;
-  const shown = body.slice(0, MAX_TABLE_ROWS);
-  const truncated = body.length - shown.length;
 
   return (
     <div className="flex flex-col gap-2">
@@ -129,7 +357,7 @@ function CsvTable({ content, tsv }: { content: string; tsv: boolean }) {
             </tr>
           </thead>
           <tbody>
-            {shown.map((row, r) => (
+            {body.map((row, r) => (
               <tr key={r} className="odd:bg-default-50/50">
                 {row.map((cell, c) => (
                   <td
@@ -144,10 +372,11 @@ function CsvTable({ content, tsv }: { content: string; tsv: boolean }) {
           </tbody>
         </table>
       </div>
-      {truncated > 0 && (
+      {hasMore && (
         <p className="text-[11px] text-default-600">
-          Showing first {MAX_TABLE_ROWS} rows ({truncated} more not shown).
-          Download the file to see everything.
+          {/* No "N more not shown": the exact remainder is exactly what the
+          early stop buys us out of counting. */}
+          Showing first {body.length} rows. Download the file to see everything.
         </p>
       )}
     </div>
@@ -174,16 +403,16 @@ export function FilePreviewModal({
   // Images render straight from the inline URL (browser handles it, cookies
   // sent same-origin). Everything else fetches text — but only when open, of a
   // sensible size, and not an image.
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     ...resourceFileTextQueryOptions(resourceId, file.path),
     enabled: isOpen && category !== 'image' && category !== null && !tooLarge,
   });
 
-  const centeredMessage = (message: React.ReactNode) => (
-    <div className="flex min-h-40 items-center justify-center text-sm text-default-600">
-      {message}
-    </div>
-  );
+  /**
+   * Binary data (or suspected binary data) = unpreviewable.
+   */
+  const unpreviewable =
+    category === null || (data !== undefined && looksBinary(data));
 
   let body: React.ReactNode;
   if (category === 'image') {
@@ -196,12 +425,23 @@ export function FilePreviewModal({
         />
       </div>
     );
+  } else if (unpreviewable) {
+    // Ahead of `tooLarge` so a 40 MB archive reads as a format we can't render
+    // rather than a file we could have rendered if only it were smaller.
+    body = (
+      <EmptyState
+        icon={EyeSlashIcon}
+        title="No preview available"
+        description="This file's format can't be displayed in the browser."
+      />
+    );
   } else if (tooLarge) {
-    body = centeredMessage(
-      <span>
-        This file is {formatBytes(file.size_bytes)} — too large to preview.
-        Download it instead.
-      </span>
+    body = (
+      <EmptyState
+        icon={DocumentMagnifyingGlassIcon}
+        title="Too large to preview"
+        description="Download this file to view its contents."
+      />
     );
   } else if (isLoading) {
     body = (
@@ -211,8 +451,15 @@ export function FilePreviewModal({
       </div>
     );
   } else if (isError || data === undefined) {
-    body = centeredMessage(
-      <span className="text-danger">Couldn&apos;t load this file.</span>
+    // The same component the Files section uses when its listing fails, so a
+    // failed preview reads as the same kind of event: it classifies the error
+    // (offline, 401, 5xx), offers a retry, and surfaces details in dev.
+    body = (
+      <ApiErrorDisplay
+        error={error}
+        title="Couldn't load this file"
+        onRetry={() => void refetch()}
+      />
     );
   } else
     switch (category) {
@@ -235,12 +482,20 @@ export function FilePreviewModal({
         break;
       }
       case 'code': {
+        const { text, truncated } = clipForHighlight(data);
         body = (
           <Suspense fallback={<Spinner size="sm" />}>
-            <div className="overflow-auto rounded-lg border border-default-200 bg-default-50 p-3">
-              <CodePreview language={prismLanguageForExtension(ext)}>
-                {data}
-              </CodePreview>
+            <div className="flex flex-col gap-2">
+              <div className="overflow-auto rounded-lg border border-default-200 bg-default-50 p-3">
+                <CodePreview language={prismLanguageForPath(file.path)}>
+                  {text}
+                </CodePreview>
+              </div>
+              {truncated && (
+                <p className="text-[11px] text-default-600">
+                  Preview truncated. Download the file to see everything.
+                </p>
+              )}
             </div>
           </Suspense>
         );
