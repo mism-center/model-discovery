@@ -1,15 +1,8 @@
-import { useState } from 'react';
-import { useDisclosure } from '@heroui/react';
 import {
   ArchiveBoxArrowDownIcon,
-  ArrowDownTrayIcon,
-  CodeBracketIcon,
-  DocumentIcon,
-  DocumentTextIcon,
-  EyeIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
   FolderIcon,
-  PhotoIcon,
-  TableCellsIcon,
 } from '@heroicons/react/16/solid';
 import { useQuery } from '@tanstack/react-query';
 
@@ -18,74 +11,27 @@ import { resourceDownloadUrl } from '~/api';
 import { resourceFilesQueryOptions } from '~/api/query/resources';
 import { ApiErrorDisplay } from '~/components/common/api-error-display';
 import { EmptyState } from '~/components/common/empty-state';
-import type { PreviewCategory } from '~/components/sections/search/search-results/file-preview-modal';
-import {
-  FilePreviewModal,
-  previewCategory,
-} from '~/components/sections/search/search-results/file-preview-modal';
-import { formatBytes } from '~/utils/format';
+import { FileTree, useFileTree } from '~/components/common/file-tree';
 import { SectionCard } from './primitives';
 import { SectionListSkeleton } from './skeleton';
 
-const CATEGORY_ICONS: Record<
-  NonNullable<PreviewCategory>,
-  React.ComponentType<React.SVGProps<SVGSVGElement>>
-> = {
-  image: PhotoIcon,
-  table: TableCellsIcon,
-  markdown: DocumentTextIcon,
-  code: CodeBracketIcon,
-  text: DocumentTextIcon,
-};
-
 /**
- * Row icon, keyed off the same classification that decides previewability.
- *
- * This used to carry its own extension → icon table, which meant two lists to
- * keep in step; `previewCategory` already knows what a `.py` is. A `null`
- * category (binary, or a directory) falls through to the generic document icon.
- */
-function FileTypeIcon({
-  file,
-  category,
-}: {
-  file: ResourceFileItem;
-  category: PreviewCategory;
-}) {
-  if (file.is_dir)
-    return <FolderIcon aria-hidden="true" className="size-4 shrink-0" />;
-  const Icon = category ? CATEGORY_ICONS[category] : DocumentIcon;
-  return <Icon aria-hidden="true" className="size-4 shrink-0" />;
-}
-
-/** Sort directories first, then alphabetically by path. */
-function sortFiles(files: ResourceFileItem[]): ResourceFileItem[] {
-  // eslint-disable-next-line unicorn/no-array-sort -- toSorted needs a newer lib target than tsconfig sets
-  return [...files].sort((a, b) => {
-    if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
-    return a.path.localeCompare(b.path);
-  });
-}
-
-/**
- * Model artifact browser. Renders the flat file listing from
- * `GET /resources/{id}/files`; each file downloads via a plain anchor to the
- * download endpoint (anonymous, native browser download), plus a
- * whole-directory zip.
+ * Model artifact browser. Renders the listing from
+ * `GET /resources/{id}/files` as a collapsible tree; each file downloads via a
+ * plain anchor to the download endpoint (anonymous, native browser download),
+ * plus a whole-directory zip.
  */
 export function FilesSection({ modelId }: { modelId: string }) {
   const { data, isLoading, error, refetch } = useQuery(
     resourceFilesQueryOptions(modelId)
   );
 
-  const files = sortFiles(data?.files ?? []);
-
   return (
     <SectionCard title="Files" description="Artifacts stored with this model.">
       <div>
         <FilesBody
           modelId={modelId}
-          files={files}
+          files={data?.files}
           isLoading={isLoading}
           error={error}
           refetch={refetch}
@@ -103,18 +49,14 @@ function FilesBody({
   refetch,
 }: {
   modelId: string;
-  files: ResourceFileItem[];
+  files: ResourceFileItem[] | undefined;
   isLoading: boolean;
   error: unknown;
   refetch: () => void;
 }) {
-  const preview = useDisclosure();
-  const [previewFile, setPreviewFile] = useState<ResourceFileItem | null>(null);
-
-  const openPreview = (file: ResourceFileItem) => {
-    setPreviewFile(file);
-    preview.onOpen();
-  };
+  // Closed by default: a model's artifact tree is something to navigate, and an
+  // opened one is the long listing the tree replaced.
+  const tree = useFileTree(files, { initialExpansion: 'none' });
 
   if (error) {
     return (
@@ -128,7 +70,7 @@ function FilesBody({
   if (isLoading) {
     return <SectionListSkeleton rows={5} />;
   }
-  if (files.length === 0) {
+  if (!files || files.length === 0) {
     return (
       <EmptyState
         icon={FolderIcon}
@@ -138,146 +80,38 @@ function FilesBody({
     );
   }
   return (
-    <div className="flex flex-col gap-4">
-      <a
-        href={resourceDownloadUrl(modelId)}
-        download
-        className="flex items-center gap-1.5 self-start text-sm font-semibold text-primary hover:underline outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded"
-      >
-        <ArchiveBoxArrowDownIcon aria-hidden="true" className="size-4" />
-        Download all (zip)
-      </a>
-      {groupByDirectory(files).map(({ directory, entries }) => (
-        <div key={directory}>
-          {directory !== '' && (
-            <p className="flex items-center gap-1.5 mb-1 text-xs font-bold uppercase tracking-wider text-default-800">
-              <FolderIcon aria-hidden="true" className="size-3.5 shrink-0" />
-              <span className="truncate font-mono normal-case tracking-normal">
-                {directory}
-              </span>
-            </p>
-          )}
-          <ul className="flex flex-col divide-y divide-default-100">
-            {entries.map((file) => {
-              const category = file.is_dir ? null : previewCategory(file.path);
-              const label = (
-                <>
-                  <FileTypeIcon file={file} category={category} />
-                  <span className="truncate text-sm" title={file.path}>
-                    {basename(file.path)}
-                  </span>
-                </>
-              );
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-4">
+        <a
+          href={resourceDownloadUrl(modelId)}
+          download
+          className="flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded"
+        >
+          <ArchiveBoxArrowDownIcon aria-hidden="true" className="size-4" />
+          Download all (zip)
+        </a>
+        {tree.hasDirectories && (
+          <button
+            type="button"
+            onClick={() => tree.setAllExpanded(!tree.allExpanded)}
+            className="flex items-center gap-1 shrink-0 text-xs font-semibold text-default-800 hover:text-primary cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded"
+          >
+            {tree.allExpanded ? (
+              <ChevronUpIcon aria-hidden="true" className="size-3.5" />
+            ) : (
+              <ChevronDownIcon aria-hidden="true" className="size-3.5" />
+            )}
+            {tree.allExpanded ? 'Collapse all' : 'Expand all'}
+          </button>
+        )}
+      </div>
 
-              return (
-                <li key={file.path}>
-                  {/*
-                   * A div, not one big anchor: a button cannot nest inside an
-                   * anchor, and previewable rows need both affordances — the row
-                   * itself previews, and the eye icon makes that discoverable.
-                   *
-                   * The row button takes no aria-label, so its visible filename
-                   * names it: an explicit one would announce the same string as
-                   * the eye icon beside it, twice per row.
-                   */}
-                  <div className="group flex items-center justify-between gap-4 py-2 px-2 -mx-2 rounded hover:bg-primary/4">
-                    {category ? (
-                      <button
-                        type="button"
-                        onClick={() => openPreview(file)}
-                        title={file.path}
-                        className="flex items-center gap-2 min-w-0 text-default-900 group-hover:text-primary rounded outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-                      >
-                        {label}
-                      </button>
-                    ) : (
-                      <span className="flex items-center gap-2 min-w-0 text-default-900">
-                        {label}
-                      </span>
-                    )}
-                    <div className="flex items-center gap-4 shrink-0">
-                      {!file.is_dir && (
-                        <span className="text-xs text-default-800 tabular-nums">
-                          {formatBytes(file.size_bytes)}
-                        </span>
-                      )}
-                      {category && (
-                        <button
-                          type="button"
-                          onClick={() => openPreview(file)}
-                          aria-label={`Preview ${file.path}`}
-                          className="text-default-800 group-hover:text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded"
-                        >
-                          <EyeIcon aria-hidden="true" className="size-4" />
-                        </button>
-                      )}
-                      {!file.is_dir && (
-                        <a
-                          href={resourceDownloadUrl(modelId, file.path)}
-                          download
-                          aria-label={`Download ${file.path}`}
-                          className="text-default-800 group-hover:text-primary outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded"
-                        >
-                          <ArrowDownTrayIcon className="size-4" />
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      ))}
-
-      {preview.isOpen && previewFile && (
-        <FilePreviewModal
-          isOpen={preview.isOpen}
-          onClose={preview.onClose}
-          resourceId={modelId}
-          file={previewFile}
-        />
-      )}
+      <FileTree
+        resourceId={modelId}
+        nodes={tree.nodes}
+        expanded={tree.expanded}
+        onToggle={tree.toggle}
+      />
     </div>
-  );
-}
-
-/** Trailing path segment — the listing is flat, so paths carry the directory. */
-function basename(path: string): string {
-  const index = path.lastIndexOf('/');
-  return index === -1 ? path : path.slice(index + 1);
-}
-
-/**
- * Group a flat listing into directory blocks.
- *
- * The API returns one flat array of full paths (and `is_dir` is currently always
- * false), so a real collapsible tree has nothing to expand. Grouping by parent
- * directory gets the structural readability of a tree — you can see the repo's
- * shape and file names stop being long duplicated path strings — without
- * pretending to a hierarchy the endpoint doesn't describe.
- *
- * Root-level files come first (directory `''`), then directories alphabetically.
- */
-function groupByDirectory(
-  files: ResourceFileItem[]
-): Array<{ directory: string; entries: ResourceFileItem[] }> {
-  const groups = new Map<string, ResourceFileItem[]>();
-  for (const file of files) {
-    const index = file.path.lastIndexOf('/');
-    const directory = index === -1 ? '' : file.path.slice(0, index);
-    const entries = groups.get(directory) ?? [];
-    entries.push(file);
-    groups.set(directory, entries);
-  }
-  return (
-    [...groups.entries()]
-      .map(([directory, entries]) => ({ directory, entries }))
-      // eslint-disable-next-line unicorn/no-array-sort -- toSorted needs a newer lib target than tsconfig sets; the array is freshly built above so mutating it is safe
-      .sort((a, b) => {
-        if (a.directory === '') return -1;
-        if (b.directory === '') return 1;
-        return a.directory.localeCompare(b.directory);
-      })
   );
 }

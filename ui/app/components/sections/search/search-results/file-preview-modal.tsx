@@ -47,7 +47,7 @@ const CodePreview = lazy(() => import('./file-preview-syntax'));
  * invisible in an alphabetical list and obvious in a row.
  */
 // prettier-ignore
-const PRISM_LANGUAGES: Record<string, string> = {
+export const PRISM_LANGUAGES: Record<string, string> = {
   // Shell and terminal scripting
   sh: 'bash', bash: 'bash', zsh: 'bash', ksh: 'bash', fish: 'bash',
   bat: 'batch', cmd: 'batch',
@@ -125,7 +125,7 @@ const PRISM_LANGUAGES: Record<string, string> = {
  * `CMakeLists.txt` is CMake rather than an unhighlighted `.txt`.
  */
 // prettier-ignore
-const PRISM_LANGUAGES_BY_FILENAME: Record<string, string> = {
+export const PRISM_LANGUAGES_BY_FILENAME: Record<string, string> = {
   // Build and task runners
   makefile: 'makefile', gnumakefile: 'makefile', 'cmakelists.txt': 'cmake',
   dockerfile: 'docker', 'containerfile': 'docker',
@@ -288,12 +288,12 @@ function hasNonBlankAfter(text: string, index: number): boolean {
  * Render CSV/TSV text as a scrollable HTML table (first row as header).
  *
  * `preview` stops the parser once it has the rows we intend to draw, rather
- * than materializing every row of a file that may be MAX_TEXT_PREVIEW_BYTES
+ * than materializing every row of a file that may be TEXT_PREVIEW_MAX_BYTES
  * long and then discarding all but 500.
  *
- * Do not add `skipEmptyLines`: Papa applies `preview` to raw rows *before*
- * skipping, so a sheet padded with blank lines stops short and reads as
- * complete. Blanks are filtered here instead.
+ * It counts raw rows, so blank lines spend that budget without producing any
+ * and a padded sheet renders fewer than 500. Truncation is therefore decided
+ * by where the parser stopped, not by how many rows came back.
  */
 function CsvTable({ content, tsv }: { content: string; tsv: boolean }) {
   const { header, body, hasMore } = useMemo(() => {
