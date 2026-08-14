@@ -231,7 +231,8 @@ def test_download_zip_of_entire_directory(resource_dir: Path) -> None:
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/zip"
-    assert 'filename="ds-1.zip"' in response.headers.get("content-disposition", "")
+    # Named for the resource and version, not the (usually UUID) id.
+    assert 'filename="Example-Dataset-1.0.zip"' in response.headers.get("content-disposition", "")
 
     # Validate the zip contains the expected files.
     with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
@@ -243,6 +244,36 @@ def test_download_zip_of_entire_directory(resource_dir: Path) -> None:
 
     service.get_resource_directory.assert_called_once_with("ds-1")
     service.resolve_resource_file.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("name", "version", "expected"),
+    [
+        ("Example Dataset", "1.0", 'filename="Example-Dataset-1.0.zip"'),
+        # No version recorded — the name stands alone.
+        ("Example Dataset", "", 'filename="Example-Dataset.zip"'),
+        # Punctuation that reads badly (or not at all) in a Downloads folder.
+        ("A/B: model (v2)", "1.0-rc.1", 'filename="A-B-model-v2-1.0-rc.1.zip"'),
+        # Nothing ASCII survives, so the id stands in for the name.
+        ("免疫模型", "1.0", 'filename="ds-1-1.0.zip"'),
+        # A name that tries to break out of the header can't.
+        ('evil" ; x="', "1.0", 'filename="evil-x-1.0.zip"'),
+    ],
+)
+def test_download_zip_filename_derives_from_name_and_version(
+    resource_dir: Path, name: str, version: str, expected: str
+) -> None:
+    resource = _make_resource()
+    resource.name = name
+    resource.version = version
+    service = MagicMock(spec=RegistryService)
+    service.get_resource_directory.return_value = (resource, resource_dir)
+
+    client = _make_app(service)
+    response = client.get("/api/v1/resources/ds-1/download")
+
+    assert response.status_code == 200
+    assert expected in response.headers["content-disposition"]
 
 
 def test_download_zip_resource_missing_returns_404() -> None:

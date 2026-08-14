@@ -20,6 +20,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import type { Route } from './+types/root';
 import { Header } from './components/layout/header';
 import { AuthErrorBanner } from './components/layout/auth-error-banner';
+import { NavigationProgress } from './components/layout/navigation-progress';
 import { prefetchUser } from './api/auth/user';
 import { serverApiClient } from './api/client/server-client';
 import { getQueryClient } from './api/query/query-client';
@@ -102,6 +103,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </head>
       <body className="min-h-dvh">
         <Providers>
+          {/* Outside the column so it can pin itself over the sticky header. */}
+          <NavigationProgress />
           <div className="min-h-dvh flex flex-col grow">
             <Header />
             <AuthErrorBanner />

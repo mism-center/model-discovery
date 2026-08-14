@@ -1,23 +1,26 @@
 /**
- * Thin wrapper around react-syntax-highlighter's light Prism build.
+ * Thin wrapper around react-syntax-highlighter's async Prism build.
  *
  * Lives in its own module, imported ONLY via `lazy(() => import(...))` from the
- * preview modal — this keeps Prism and its grammars out of the route bundle and
- * the SSR path. Do not add a static import of this module anywhere, or the
- * code-split breaks. Only the grammars we actually preview are registered,
- * rather than pulling every language Prism ships.
+ * preview modal; this keeps the highlighter out of the route bundle and the
+ * SSR path. Do not add a static import of this module anywhere.
+ *
+ * PrismAsyncLight fetches each grammar on its own dynamic import, so
+ * previewing a `.py` pulls the python grammar alone. Grammar names are the
+ * async loader's, which spells hyphenated ones in camelCase (`goModule`).
  */
-import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
-import json from 'react-syntax-highlighter/dist/esm/languages/prism/json';
-import yaml from 'react-syntax-highlighter/dist/esm/languages/prism/yaml';
-import markup from 'react-syntax-highlighter/dist/esm/languages/prism/markup';
-import toml from 'react-syntax-highlighter/dist/esm/languages/prism/toml';
-import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { PrismAsyncLight as SyntaxHighlighter } from 'react-syntax-highlighter';
+import goModule from 'refractor/go-module';
+import visualBasic from 'refractor/visual-basic';
+import 'prism-themes/themes/prism-one-light.css';
 
-SyntaxHighlighter.registerLanguage('json', json);
-SyntaxHighlighter.registerLanguage('yaml', yaml);
-SyntaxHighlighter.registerLanguage('markup', markup); // xml/html
-SyntaxHighlighter.registerLanguage('toml', toml);
+// The async loader keys these two as `goModule` / `visualBasic` but registers
+// them under their real names, so asking for either spelling fails: the
+// camelCase one is never registered, and the kebab one has no loader entry.
+// Registering them here queues them until the core loads, after which the
+// kebab names resolve normally.
+SyntaxHighlighter.registerLanguage('go-module', goModule);
+SyntaxHighlighter.registerLanguage('visual-basic', visualBasic);
 
 export default function CodePreview({
   language,
@@ -29,7 +32,10 @@ export default function CodePreview({
   return (
     <SyntaxHighlighter
       language={language}
-      style={oneLight}
+      // Emits `class="token keyword"` rather than building a style object per
+      // token, which is where nearly all of the render cost lives. Paired with
+      // the theme import above: removing either one breaks the other.
+      useInlineStyles={false}
       wrapLongLines
       customStyle={{
         margin: 0,

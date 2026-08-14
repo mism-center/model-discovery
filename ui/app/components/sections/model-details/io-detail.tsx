@@ -195,7 +195,7 @@ function DataTable({
   rows: React.ReactNode[][];
 }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-default-200">
+    <div className="relative overflow-x-auto rounded-lg border border-default-200">
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-default-50 text-left">

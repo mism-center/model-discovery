@@ -62,7 +62,7 @@ export async function requireUser(
 /**
  * Build the login URL, carrying a `return_to` route key + the current query so
  * the post-login callback returns the user to the route they were gated out
- * of. Mirrors the params `signIn()` sends from the browser.
+ * of. Mirrors the params `loginHref()` sends from the browser.
  */
 function buildLoginUrl(request: Request, returnToKey?: string): string {
   const params = new URLSearchParams();

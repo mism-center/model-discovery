@@ -14,13 +14,16 @@ shapes responses.
 import io
 import logging
 import mimetypes
+import re
 import zipfile
 from collections.abc import Buffer, Iterator
 from datetime import UTC, datetime
+from email.message import EmailMessage
 from pathlib import Path
 
 from fastapi import APIRouter, Query
 from fastapi.responses import FileResponse, StreamingResponse
+from mism_registry.resource import Resource
 
 from mismapi.core.deps import RegistryServiceDep
 from mismapi.schemas.registry import ResourceFileItem, ResourceFilesResponse
@@ -137,6 +140,57 @@ def _zip_directory_stream(directory: Path) -> Iterator[bytes]:
         yield tail
 
 
+_UNSAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
+_REPEATED_HYPHENS = re.compile(r"-{2,}")
+_MAX_ZIP_STEM = 100
+
+
+def _filename_slug(value: str) -> str:
+    """Reduce ``value`` to characters that are safe and legible in a filename.
+
+    Everything outside ``[A-Za-z0-9._-]`` collapses to a single hyphen. That is
+    mostly cosmetic — model names carry spaces, slashes and punctuation that
+    read badly in a Downloads folder — but it also keeps the result ASCII,
+    which Content-Disposition needs: a raw non-ASCII filename either reaches the
+    browser mis-decoded as latin-1 or blows up Starlette's header encoding.
+    """
+    slug = _UNSAFE_FILENAME_CHARS.sub("-", value)
+    return _REPEATED_HYPHENS.sub("-", slug).strip("-._")
+
+
+def _zip_filename(resource: Resource) -> str:
+    """Name the archive after the resource and its version, not its id.
+
+    Ids are usually UUIDs, which tell the person who downloaded the zip nothing
+    about what is in it. ``name`` is required on a Resource and ``version`` is
+    optional, so "Immune Model" 1.2 gives ``Immune-Model-1.2.zip``.
+
+    Name and version are slugged separately so a name that survives slugging
+    empty-handed (one written entirely in a non-Latin script, say) falls back to
+    the id instead of leaving a filename that is nothing but a version number.
+    """
+    name = _filename_slug(resource.name) or _filename_slug(resource.id) or "download"
+    version = _filename_slug(resource.version)
+    stem = f"{name}-{version}" if version else name
+    return f"{stem[:_MAX_ZIP_STEM].strip('-._')}.zip"
+
+
+def _attachment_disposition(filename: str) -> str:
+    """Build a Content-Disposition header value for ``filename``.
+
+    Delegated to the stdlib's header machinery instead of f-stringing the name
+    into the value: it applies RFC 2045 quoting and rejects linefeeds, so a
+    resource name can never break out of the header. ``_zip_filename`` already
+    restricts the character set; this is the layer that makes that a
+    presentation concern rather than the only thing standing between a model
+    name and response-splitting.
+    """
+    message = EmailMessage()
+    message["Content-Disposition"] = "attachment"
+    message.set_param("filename", filename, header="Content-Disposition")
+    return str(message["Content-Disposition"])
+
+
 # ── GET /resources/{id}/files ───────────────────────────────────
 
 
@@ -208,9 +262,8 @@ async def download_resource(
 
     resource, directory = service.get_resource_directory(resource_id)
     logger.info("Streaming zip of %s for resource %s", directory, resource.id)
-    filename = f"{resource.id}.zip"
     return StreamingResponse(
         _zip_directory_stream(directory),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": _attachment_disposition(_zip_filename(resource))},
     )
