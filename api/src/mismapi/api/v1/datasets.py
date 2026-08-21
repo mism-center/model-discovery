@@ -3,7 +3,8 @@ import logging
 from fastapi import APIRouter, Query
 from mism_registry.resource import Resource
 
-from mismapi.auth.base import AuthenticatedPrincipalDep
+from mismapi.api.v1._authz import model_visible_to
+from mismapi.auth.base import AuthenticatedPrincipalDep, OptionalPrincipalDep
 from mismapi.core.deps import RegistryServiceDep
 from mismapi.schemas.registry import (
     RegisterDatasetRequest,
@@ -160,6 +161,7 @@ async def update_dataset(
 @router.get("/datasets", response_model=ModelListResponse)
 async def list_datasets(
     service: RegistryServiceDep,
+    principal: OptionalPrincipalDep,
     name: str | None = Query(default=None, description="Substring match on dataset name"),
     owner: str | None = Query(default=None, description="Exact match on owner"),
     tags: list[str] | None = Query(default=None, description="Format tags (all must match)"),
@@ -176,7 +178,14 @@ async def list_datasets(
         scales=scales,
     )
 
-    total = len(resources)
-    page = resources[offset : offset + limit]
+    # Same visibility rule as GET /models: approved datasets are public,
+    # anything still in draft / annotating / pending_review / rejected is
+    # visible only to its owner. Filtering before pagination keeps `total`
+    # and the page contents consistent — counting hidden rows would leak
+    # their existence through the count alone.
+    visible = [r for r in resources if model_visible_to(r, principal)]
+
+    total = len(visible)
+    page = visible[offset : offset + limit]
 
     return ModelListResponse(total=total, results=[_dataset_list_item(r) for r in page])

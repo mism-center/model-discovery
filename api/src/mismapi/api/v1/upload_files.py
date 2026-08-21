@@ -7,7 +7,7 @@ from fastapi import APIRouter, File, UploadFile
 from mismapi.auth.base import AuthenticatedPrincipalDep
 from mismapi.clients.local_upload_client import LocalFileUploadClient
 from mismapi.clients.upload_client import UploadServiceClient
-from mismapi.core.deps import SettingsDep, UploadClientDep
+from mismapi.core.deps import RegistryServiceDep, SettingsDep, UploadClientDep
 from mismapi.core.errors import APIError
 from mismapi.schemas.upload import UploadAcceptedResponse
 
@@ -22,6 +22,7 @@ async def upload_resource_file(
     principal: AuthenticatedPrincipalDep,
     settings: SettingsDep,
     upload_client: UploadClientDep,
+    service: RegistryServiceDep,
     file: UploadFile = upload_file_body,
 ) -> UploadAcceptedResponse:
     """Upload a file artifact for any resource (model, dataset, tool, …).
@@ -30,7 +31,14 @@ async def upload_resource_file(
     registry resource type. The configured upload backend (`UPLOAD_BACKEND=local`
     writes to the iRODS PVC; `UPLOAD_BACKEND=http` forwards to the upload
     service) is selected at app startup; the route is backend-agnostic.
+
+    Ownership-gated (goal 1 stopgap — matches ``import_from_github``'s pattern):
+    without this, any authenticated principal could overwrite any resource's
+    files, regardless of who owns it (``TODO.md``'s "Auth / authz" section
+    already tracked this exact gap).
     """
+    service.get_resource_and_assert_ownership(principal, resource_id=resource_id)
+
     session = await upload_client.init_upload(
         resource_id=resource_id,
         filename=file.filename or "upload.bin",

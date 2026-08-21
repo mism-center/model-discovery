@@ -386,8 +386,16 @@ class RegistryService:
         except ResourceNotFoundError as exc:
             raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
 
+        # Ownership check (goal 1 stopgap — string equality, not yet OpenFGA).
+        # Missing model still 404s (checked above) before this; only an
+        # existing-but-not-owned model reaches this 403. Mirrors
+        # `get_resource_and_assert_ownership`'s `issuer == "local"` bypass so
+        # local dev with auth disabled isn't blocked from updating models.
+        #
         # FUTURE: fga.check(user=principal.subject,
         #   relation="editor", object=f"model:{model_id}")
+        if principal.issuer != "local" and resource.owner != principal.subject:
+            raise self._not_authorized_error()
 
         if name is not None:
             resource.name = name
@@ -1301,8 +1309,16 @@ class RegistryService:
         except ResourceNotFoundError as exc:
             raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
 
+        # Ownership check (goal 1 stopgap — string equality, not yet OpenFGA).
+        # Missing dataset still 404s (checked above) before this; only an
+        # existing-but-not-owned dataset reaches this 403. Mirrors
+        # `get_resource_and_assert_ownership`'s `issuer == "local"` bypass so
+        # local dev with auth disabled isn't blocked from updating datasets.
+        #
         # FUTURE: fga.check(user=principal.subject,
         #   relation="editor", object=f"dataset:{dataset_id}")
+        if principal.issuer != "local" and resource.owner != principal.subject:
+            raise self._not_authorized_error()
 
         if name is not None:
             resource.name = name
