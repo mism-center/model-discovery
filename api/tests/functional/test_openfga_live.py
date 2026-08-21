@@ -37,14 +37,22 @@ import os
 import time
 import uuid
 from collections.abc import AsyncGenerator, Generator
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from mism_registry import ResourceRegistrationStatus, set_registration_status
+from mism_registry.backends.postgres import PostgresRegistry
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from mismapi.auth.principal import AuthenticatedPrincipal
+from mismapi.clients.execution_client import ExecutionClient
 from mismapi.clients.openfga_client import OpenFGAClient
+from mismapi.core.deps import _get_execution_client
 from mismapi.core.settings import Settings
 from mismapi.main import create_app
 from tests.conftest import TestSettings, override_principal
@@ -160,6 +168,82 @@ async def raw_openfga_client(live_settings: Settings) -> AsyncGenerator[OpenFGAC
     await client.close()
 
 
+# ── Helpers for the role/relation-gate tests below ──────────────────
+#
+# Unlike `live_client`/`live_principal` above (module-scoped, shared by the
+# two pre-existing tests, which rely on running in order: denied *before*
+# the uploader role is granted), each test below needs a role check to
+# start from a clean slate. Re-granting a tuple OpenFGA already has raises
+# an error (Write is not an idempotent upsert), so reusing the shared
+# module-scoped principal across tests would mean either fighting over
+# grant order or re-granting duplicate tuples. Simplest and most robust:
+# every test below mints its own fresh principal/client pair.
+
+
+def _fresh_principal(prefix: str) -> AuthenticatedPrincipal:
+    return AuthenticatedPrincipal(
+        subject=f"{prefix}-{uuid.uuid4().hex[:8]}",
+        issuer="test",  # NOT "local" — keeps OpenFGA in play, see live_principal above.
+        audience="mism-api",
+        scopes=set(),
+    )
+
+
+@contextmanager
+def _client_for(
+    live_settings: Settings, principal: AuthenticatedPrincipal
+) -> Generator[tuple[TestClient, AsyncMock], None, None]:
+    """A fresh app + TestClient bound to `principal`, with the execution
+    client mocked out (only the two execute_run tests below ever call it;
+    harmless for the rest). `with`-managed like `live_client` above, so the
+    app's lifespan (startup/shutdown) actually runs.
+    """
+    app = create_app(settings=live_settings)
+    override_principal(app, principal)
+    exec_client = AsyncMock(spec=ExecutionClient)
+    app.dependency_overrides[_get_execution_client] = lambda: exec_client
+    with TestClient(app) as client:
+        yield client, exec_client
+
+
+@contextmanager
+def _direct_registry(live_settings: Settings) -> Generator[PostgresRegistry, None, None]:
+    """A throwaway Postgres session/registry for test-setup mutations that
+    have no reachable path through model-discovery's REST API — see
+    `_advance_registration`.
+    """
+    engine = create_engine(live_settings.database_url, future=True)
+    session = sessionmaker(bind=engine, expire_on_commit=False, future=True)()
+    try:
+        yield PostgresRegistry(session)
+        session.commit()
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def _advance_registration(
+    live_settings: Settings, model_id: str, *targets: ResourceRegistrationStatus
+) -> None:
+    """Step a resource's registration_status through `targets` in order,
+    directly against Postgres, bypassing the app layer entirely.
+
+    DRAFT -> ANNOTATING -> PENDING_REVIEW has no endpoint in this app: in
+    production that transition is driven by the external
+    biomodel-annotator, not model-discovery. This is pure test-fixture
+    setup for tests below that need a model past DRAFT — never the thing
+    under test (the role-gated review/image-review/execute endpoints are).
+    """
+    with _direct_registry(live_settings) as registry:
+        for target in targets:
+            set_registration_status(
+                registry,
+                resource_id=model_id,
+                target=target,
+                reviewed_by="test-setup" if target == ResourceRegistrationStatus.APPROVED else "",
+            )
+
+
 def test_create_model_denied_without_uploader_role(live_client: TestClient) -> None:
     response = live_client.post(
         "/api/v1/models",
@@ -219,3 +303,235 @@ async def test_create_model_writes_real_tuples_after_role_granted(
         user="user:carol", relation="can_execute", object_=f"model:{model_id}"
     )
     assert carol_can_execute is True
+
+
+# ── upload_reviewer (MISM-291 Phase 3) ───────────────────────────────
+
+
+async def test_review_metadata_package_denied_without_upload_reviewer_role(
+    live_settings: Settings, raw_openfga_client: OpenFGAClient
+) -> None:
+    principal = _fresh_principal("review-denied")
+    user = f"user:{principal.subject}"
+    await raw_openfga_client.write_tuple(user=user, relation="uploader", object_="platform:main")
+
+    with _client_for(live_settings, principal) as (client, _exec_client):
+        create_resp = client.post(
+            "/api/v1/models",
+            json={
+                "name": unique_name("live-model-review-denied"),
+                "location_uri": "irods:///models/live",
+                "execution_type": "docker",
+            },
+        )
+        assert create_resp.status_code == 201
+        model_id = create_resp.json()["id"]
+
+        # No upload_reviewer grant — denial happens before the (still-DRAFT)
+        # model's state is even considered.
+        response = client.post(f"/api/v1/models/{model_id}/review", json={"approve": True})
+        assert response.status_code == 403
+        assert response.json()["error"]["code"] == "not_authorized"
+
+
+async def test_review_metadata_package_allowed_after_role_granted(
+    live_settings: Settings, raw_openfga_client: OpenFGAClient
+) -> None:
+    principal = _fresh_principal("review-allowed")
+    user = f"user:{principal.subject}"
+    await raw_openfga_client.write_tuple(user=user, relation="uploader", object_="platform:main")
+
+    with _client_for(live_settings, principal) as (client, _exec_client):
+        create_resp = client.post(
+            "/api/v1/models",
+            json={
+                "name": unique_name("live-model-review-allowed"),
+                "location_uri": "irods:///models/live",
+                "execution_type": "docker",
+            },
+        )
+        assert create_resp.status_code == 201
+        model_id = create_resp.json()["id"]
+
+        _advance_registration(
+            live_settings,
+            model_id,
+            ResourceRegistrationStatus.ANNOTATING,
+            ResourceRegistrationStatus.PENDING_REVIEW,
+        )
+        await raw_openfga_client.write_tuple(
+            user=user, relation="upload_reviewer", object_="platform:main"
+        )
+
+        response = client.post(f"/api/v1/models/{model_id}/review", json={"approve": True})
+        assert response.status_code == 200
+        assert response.json()["registration_status"] == "approved"
+
+
+# ── image_checker (MISM-291 Phase 4) ─────────────────────────────────
+
+
+async def test_image_review_denied_without_image_checker_role(
+    live_settings: Settings, raw_openfga_client: OpenFGAClient
+) -> None:
+    principal = _fresh_principal("image-review-denied")
+    user = f"user:{principal.subject}"
+    await raw_openfga_client.write_tuple(user=user, relation="uploader", object_="platform:main")
+
+    with _client_for(live_settings, principal) as (client, _exec_client):
+        create_resp = client.post(
+            "/api/v1/models",
+            json={
+                "name": unique_name("live-model-image-review-denied"),
+                "location_uri": "irods:///models/live",
+                "execution_type": "docker",
+            },
+        )
+        assert create_resp.status_code == 201
+        model_id = create_resp.json()["id"]
+
+        # No image_checker grant — denial happens before any image-review
+        # state is even considered.
+        response = client.post(f"/api/v1/models/{model_id}/image-review", json={"approve": True})
+        assert response.status_code == 403
+        assert response.json()["error"]["code"] == "not_authorized"
+
+
+async def test_image_review_allowed_after_role_granted(
+    live_settings: Settings, raw_openfga_client: OpenFGAClient
+) -> None:
+    """Full chain: upload -> metadata review/approve -> submit image ->
+    image review/approve — the same workflow steps (a) through (k)."""
+    principal = _fresh_principal("image-review-allowed")
+    user = f"user:{principal.subject}"
+    await raw_openfga_client.write_tuple(user=user, relation="uploader", object_="platform:main")
+
+    with _client_for(live_settings, principal) as (client, _exec_client):
+        create_resp = client.post(
+            "/api/v1/models",
+            json={
+                "name": unique_name("live-model-image-review-allowed"),
+                "location_uri": "irods:///models/live",
+                "execution_type": "docker",
+            },
+        )
+        assert create_resp.status_code == 201
+        model_id = create_resp.json()["id"]
+
+        _advance_registration(
+            live_settings,
+            model_id,
+            ResourceRegistrationStatus.ANNOTATING,
+            ResourceRegistrationStatus.PENDING_REVIEW,
+        )
+        await raw_openfga_client.write_tuple(
+            user=user, relation="upload_reviewer", object_="platform:main"
+        )
+        review_resp = client.post(f"/api/v1/models/{model_id}/review", json={"approve": True})
+        assert review_resp.status_code == 200
+        assert review_resp.json()["registration_status"] == "approved"
+
+        # Submitting the image is ownership-gated, not role-gated (steps h/l).
+        submit_resp = client.post(
+            f"/api/v1/models/{model_id}/image",
+            json={"kind": "docker", "file": "Dockerfile", "image_name": "example:latest"},
+        )
+        assert submit_resp.status_code == 200
+        assert submit_resp.json()["image_review_status"] == "pending_image_check"
+
+        await raw_openfga_client.write_tuple(
+            user=user, relation="image_checker", object_="platform:main"
+        )
+        response = client.post(f"/api/v1/models/{model_id}/image-review", json={"approve": True})
+        assert response.status_code == 200
+        assert response.json()["image_review_status"] == "image_approved"
+
+
+# ── can_execute (MISM-291 Phase 5) ───────────────────────────────────
+
+
+async def test_execute_run_denied_without_can_execute(
+    live_settings: Settings, raw_openfga_client: OpenFGAClient
+) -> None:
+    owner = _fresh_principal("execute-owner")
+    owner_user = f"user:{owner.subject}"
+    await raw_openfga_client.write_tuple(
+        user=owner_user, relation="uploader", object_="platform:main"
+    )
+
+    with _client_for(live_settings, owner) as (owner_client, _owner_exec_client):
+        create_resp = owner_client.post(
+            "/api/v1/models",
+            json={
+                "name": unique_name("live-model-execute-denied"),
+                "location_uri": "irods:///models/live",
+                "execution_type": "docker",
+            },
+        )
+        assert create_resp.status_code == 201
+        model_id = create_resp.json()["id"]
+        _advance_registration(
+            live_settings,
+            model_id,
+            ResourceRegistrationStatus.ANNOTATING,
+            ResourceRegistrationStatus.PENDING_REVIEW,
+            ResourceRegistrationStatus.APPROVED,
+        )
+
+    # A stranger: no ownership, no executor grant.
+    stranger = _fresh_principal("execute-stranger")
+    with _client_for(live_settings, stranger) as (stranger_client, stranger_exec_client):
+        response = stranger_client.post(
+            f"/api/v1/models/{model_id}/runs",
+            json={"input_resource_ids": []},
+        )
+        assert response.status_code == 403
+        assert response.json()["error"]["code"] == "not_authorized"
+        stranger_exec_client.launch_batch.assert_not_awaited()
+        stranger_exec_client.launch_interactive.assert_not_awaited()
+
+
+async def test_execute_run_allowed_for_platform_executor(
+    live_settings: Settings, raw_openfga_client: OpenFGAClient
+) -> None:
+    owner = _fresh_principal("execute-owner2")
+    owner_user = f"user:{owner.subject}"
+    await raw_openfga_client.write_tuple(
+        user=owner_user, relation="uploader", object_="platform:main"
+    )
+
+    with _client_for(live_settings, owner) as (owner_client, _owner_exec_client):
+        create_resp = owner_client.post(
+            "/api/v1/models",
+            json={
+                "name": unique_name("live-model-execute-allowed"),
+                "location_uri": "irods:///models/live",
+                "execution_type": "docker",
+            },
+        )
+        assert create_resp.status_code == 201
+        model_id = create_resp.json()["id"]
+        _advance_registration(
+            live_settings,
+            model_id,
+            ResourceRegistrationStatus.ANNOTATING,
+            ResourceRegistrationStatus.PENDING_REVIEW,
+            ResourceRegistrationStatus.APPROVED,
+        )
+
+    # Holds platform:main#executor, but neither owns nor uploaded the model.
+    executor = _fresh_principal("execute-executor")
+    executor_user = f"user:{executor.subject}"
+    await raw_openfga_client.write_tuple(
+        user=executor_user, relation="executor", object_="platform:main"
+    )
+
+    with _client_for(live_settings, executor) as (executor_client, exec_client):
+        exec_client.launch_batch.return_value = {"launched": True}
+        response = executor_client.post(
+            f"/api/v1/models/{model_id}/runs",
+            json={"input_resource_ids": []},
+        )
+        assert response.status_code == 201
+        assert response.json()["execution"] == {"launched": True}
+        exec_client.launch_batch.assert_awaited_once()
