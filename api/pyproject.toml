@@ -22,6 +22,9 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[project.scripts]
+mism-manage-openfga-roles = "mismapi.cli.manage_openfga_roles:main"
+
 [dependency-groups]
 dev = [
     "mypy>=1.17.1",
@@ -71,3 +74,6 @@ check_untyped_defs = true
 no_implicit_optional = true
 strict_equality = true
 plugins = []
+
+#[tool.uv.sources]
+#mism-registry = { path = "../../metadata-schema", editable = true }
