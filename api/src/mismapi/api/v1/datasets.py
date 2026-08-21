@@ -91,7 +91,7 @@ async def create_dataset(
     service: RegistryServiceDep,
     principal: AuthenticatedPrincipalDep,
 ) -> RegisterDatasetResponse:
-    resource = service.create_dataset(
+    resource = await service.create_dataset(
         principal,
         name=payload.name,
         location_uri=payload.location_uri,

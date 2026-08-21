@@ -266,7 +266,7 @@ def test_write_skips_publication_with_null_title_and_warns(
 ) -> None:
     """Reproduces the originally reported crash: a publication entry with a
     null title (annotator couldn't confidently extract one). This must not
-    block approval or raise — the incomplete publication is skipped, every
+    block the save or raise — the incomplete publication is skipped, every
     other field is still applied, and a warning names the exact file+field.
     """
     _make_package(tmp_path)
@@ -288,11 +288,79 @@ def test_write_skips_publication_with_null_title_and_warns(
 
     assert dict(out)["metadata.yaml"] == meta_with_null_title
     stored = service._registry.get_resource("m-1")
-    # Approved and other fields applied — the null-title entry didn't block anything.
-    assert stored.registration_status == ResourceRegistrationStatus.APPROVED
+    # registration_status is left untouched (DRAFT, the fixture's starting
+    # state) — this endpoint no longer approves; other fields still applied,
+    # so the null-title entry didn't block anything.
+    assert stored.registration_status == ResourceRegistrationStatus.DRAFT
     assert stored.name == "New Model"
     # The incomplete publication is skipped, not stored with a fabricated title.
     assert stored.publications == []
     assert warnings == [
         "metadata.yaml: 'model.publications[0].title' is missing or empty; entry skipped"
     ]
+
+
+def test_write_from_pending_review_leaves_status_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Editing while PENDING_REVIEW (the normal pre-review-decision case)
+    doesn't move the status at all — approval/rejection is decided solely by
+    RegistryService.review_metadata_package now."""
+    _make_package(tmp_path)
+    service = _make_service(tmp_path, monkeypatch)
+    resource = service._registry.get_resource("m-1")
+    resource.registration_status = ResourceRegistrationStatus.PENDING_REVIEW
+    service._registry.update_resource(resource)
+
+    service.write_metadata_package_raw(
+        _principal(), model_id="m-1", files=[("metadata.yaml", _META_NEW)]
+    )
+
+    stored = service._registry.get_resource("m-1")
+    assert stored.registration_status == ResourceRegistrationStatus.PENDING_REVIEW
+
+
+def test_write_from_rejected_returns_to_pending_review_and_clears_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Resubmitting a manually-fixed REJECTED package re-enters the reviewer
+    queue automatically (the state machine's REJECTED -> PENDING_REVIEW
+    transition), and the stale rejection reason is cleared since it no
+    longer applies. metadata_reviewed_by is left alone — it records who
+    last reviewed it, not touched again until the next review action."""
+    _make_package(tmp_path)
+    service = _make_service(tmp_path, monkeypatch)
+    resource = service._registry.get_resource("m-1")
+    resource.registration_status = ResourceRegistrationStatus.REJECTED
+    resource.metadata_rejection_reason = "Missing license info."
+    resource.metadata_reviewed_by = "erin"
+    service._registry.update_resource(resource)
+
+    service.write_metadata_package_raw(
+        _principal(), model_id="m-1", files=[("metadata.yaml", _META_NEW)]
+    )
+
+    stored = service._registry.get_resource("m-1")
+    assert stored.registration_status == ResourceRegistrationStatus.PENDING_REVIEW
+    assert stored.metadata_rejection_reason == ""
+    assert stored.metadata_reviewed_by == "erin"
+
+
+def test_write_from_approved_leaves_status_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An already-APPROVED model's raw package can still be edited by its
+    owner (ownership-gated only, same as other model edits) — but doing so
+    does not change registration_status at all."""
+    _make_package(tmp_path)
+    service = _make_service(tmp_path, monkeypatch)
+    resource = service._registry.get_resource("m-1")
+    resource.registration_status = ResourceRegistrationStatus.APPROVED
+    service._registry.update_resource(resource)
+
+    service.write_metadata_package_raw(
+        _principal(), model_id="m-1", files=[("metadata.yaml", _META_NEW)]
+    )
+
+    stored = service._registry.get_resource("m-1")
+    assert stored.registration_status == ResourceRegistrationStatus.APPROVED
