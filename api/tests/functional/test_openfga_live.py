@@ -535,3 +535,49 @@ async def test_execute_run_allowed_for_platform_executor(
         assert response.status_code == 201
         assert response.json()["execution"] == {"launched": True}
         exec_client.launch_batch.assert_awaited_once()
+
+
+# ── GET /auth/capabilities (new endpoint) ────────────────────────────
+
+
+async def test_capabilities_reflects_no_grants_for_a_fresh_principal(
+    live_settings: Settings,
+) -> None:
+    principal = _fresh_principal("capabilities-none")
+
+    with _client_for(live_settings, principal) as (client, _exec_client):
+        response = client.get("/api/auth/capabilities")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "uploader": False,
+        "upload_reviewer": False,
+        "image_checker": False,
+        "executor": False,
+    }
+
+
+async def test_capabilities_reflects_a_real_partial_grant(
+    live_settings: Settings, raw_openfga_client: OpenFGAClient
+) -> None:
+    """A known subset (`upload_reviewer` + `executor`, not `uploader`/
+    `image_checker`) granted directly against the same real OpenFGA store the
+    endpoint checks against — proves the endpoint reads real tuples, not a
+    mocked client."""
+    principal = _fresh_principal("capabilities-partial")
+    user = f"user:{principal.subject}"
+    await raw_openfga_client.write_tuple(
+        user=user, relation="upload_reviewer", object_="platform:main"
+    )
+    await raw_openfga_client.write_tuple(user=user, relation="executor", object_="platform:main")
+
+    with _client_for(live_settings, principal) as (client, _exec_client):
+        response = client.get("/api/auth/capabilities")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "uploader": False,
+        "upload_reviewer": True,
+        "image_checker": False,
+        "executor": True,
+    }

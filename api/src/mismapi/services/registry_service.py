@@ -62,6 +62,14 @@ _PACKAGE_FILES = (METADATA_FILE, EXECUTION_FILE)
 #: `model#can_execute`'s tupleToUserset, without a per-model grant.
 _PLATFORM_OBJECT = "platform:main"
 
+#: The four platform-wide roles `GET /auth/capabilities` reports (MISM-291).
+#: Kept in sync by hand with `mismapi.cli.manage_openfga_roles.VALID_ROLES`
+#: and the OpenFGA schema — see Docs/OpenFGA/MISM-OpenFGA-Auth-Model.md.
+#: Deliberately excludes `can_execute`: that's a per-model *derived* relation
+#: (owner OR `executor`, via `model#platform`'s tupleToUserset), not a role a
+#: principal directly holds the way the four below are.
+_PLATFORM_ROLES: tuple[str, ...] = ("uploader", "upload_reviewer", "image_checker", "executor")
+
 
 class RegistryService:
     """Orchestrates registry operations, session management, and (future) authz."""
@@ -186,6 +194,46 @@ class RegistryService:
                 code="not_authorized",
                 detail="Principal is not authorized to execute this model.",
             )
+
+    async def get_platform_capabilities(self, principal: AuthenticatedPrincipal) -> dict[str, bool]:
+        """Report which platform-wide OpenFGA roles `principal` holds (MISM-291).
+
+        Powers `GET /auth/capabilities`, giving the UI a single place to check
+        role membership up front instead of guessing from `/auth/me` or
+        403-probing individual endpoints. Checks each of `_PLATFORM_ROLES`
+        against the same singleton `platform:main` object the
+        `_assert_uploader`/`_assert_upload_reviewer`/`_assert_image_checker`
+        gates check (`executor` here mirrors `_assert_can_execute`'s
+        `platform:main#executor` half only — see `_PLATFORM_ROLES`'s docstring
+        for why `can_execute` itself isn't one of the four).
+
+        Deliberately asymmetric with `_openfga_client_for`'s combined skip
+        rule for one of its two conditions: `issuer == "local"` still means
+        "treat as fully permitted" (all four True), matching every
+        `_assert_*` gate's dev-mode bypass — but an *unconfigured* OpenFGA
+        client reports all four False here, not True. `_assert_*` treats a
+        missing client as permissive so local dev without a running OpenFGA
+        instance doesn't block resource creation; this is a read-only status
+        endpoint whose entire purpose is telling the UI what's true, so
+        reporting "yes" for a check that was never actually performed would
+        be actively misleading rather than merely permissive.
+
+        Four sequential `check` calls, not one batched request —
+        `OpenFGAClient` doesn't currently expose a batch-check call (its
+        `/check` wrapper is single-tuple only). Adding one was out of scope
+        for a single new endpoint; worth revisiting if a second caller ever
+        needs the same four-relation fan-out.
+        """
+        if self._openfga_client is None:
+            return dict.fromkeys(_PLATFORM_ROLES, False)
+        if principal.issuer == "local":
+            return dict.fromkeys(_PLATFORM_ROLES, True)
+        client = self._openfga_client
+        user = f"user:{principal.subject}"
+        return {
+            role: await client.check(user=user, relation=role, object_=_PLATFORM_OBJECT)
+            for role in _PLATFORM_ROLES
+        }
 
     def _assert_input_resource_visible(
         self, principal: AuthenticatedPrincipal, resource: Resource
