@@ -58,7 +58,7 @@ from mismapi.main import create_app
 from tests.conftest import TestSettings, override_principal
 from tests.functional.helpers import unique_name
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.live_openfga]
 
 OPENFGA_BASE_URL = os.environ.get("OPENFGA_TEST_BASE_URL", "http://localhost:8080")
 DATABASE_URL = os.environ.get(
