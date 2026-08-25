@@ -48,10 +48,18 @@ export function modelAnnotationPackageQueryOptions(
   });
 }
 
-export function pendingReviewModelsQueryOptions() {
+/**
+ * Models pending metadata review (`GET /models?registration_status=pending_review`).
+ *
+ * `client` lets SSR loaders pass a cookie-forwarding `serverApiClient`,
+ * matching `modelDetailQueryOptions`'s pattern — added for UI-Phase 4-A's
+ * dedicated page; the pre-existing search-results embedded section (the
+ * only prior caller) still omits it and uses the browser `apiClient`.
+ */
+export function pendingReviewModelsQueryOptions(client?: ApiClientType) {
   return queryOptions<ModelListResponse>({
     queryKey: modelKeys.pendingReview(),
     queryFn: ({ signal }) =>
-      listModels({ registration_status: 'pending_review', signal }),
+      listModels({ registration_status: 'pending_review', client, signal }),
   });
 }

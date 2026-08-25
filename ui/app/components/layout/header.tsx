@@ -30,6 +30,7 @@ import {
 } from '@heroicons/react/16/solid';
 
 import { loginHref, signOut, useUser, type CurrentUser } from '~/api/auth/user';
+import { useCapabilities } from '~/api/auth/capabilities';
 
 interface NavbarDropdownItemProps extends DropdownItemProps {
   isActive?: boolean;
@@ -258,6 +259,7 @@ export function Header() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
   const { user } = useUser();
+  const { capabilities } = useCapabilities();
 
   const navLinkClassnames = ({ isActive }: { isActive: boolean }) =>
     cn(
@@ -341,6 +343,17 @@ export function Header() {
                 My Runs
               </NavLink>
             </NavbarItem>
+            {/* `/pending-reviews` is `requireCapability`-gated on
+                `upload_reviewer` (MISM-291) — same reasoning as above, one
+                level further: hidden from anyone who doesn't hold the role,
+                not just anyone signed out. */}
+            {capabilities.upload_reviewer && (
+              <NavbarItem>
+                <NavLink to="/pending-reviews" className={navLinkClassnames}>
+                  Pending Reviews
+                </NavLink>
+              </NavbarItem>
+            )}
           </>
         )}
         <NavbarItem>
