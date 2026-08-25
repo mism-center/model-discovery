@@ -111,10 +111,31 @@ function summarize(apiError: ApiError | undefined) {
     };
   }
 
+  // Every other status (4xx business-rule rejections in particular, e.g. a
+  // model with no container image failing at launch) falls through to here.
+  // The backend already writes these as clear, complete sentences meant to
+  // be read (see model-discovery's and execution-platform's shared
+  // `APIError`/`PlatformError` convention) — show that verbatim instead of a
+  // one-size-fits-all "unexpected error" that discards it. `hasServerMessage`
+  // excludes the middleware's own synthetic `HTTP ${status}` placeholder,
+  // which carries no more information than the generic copy it would replace.
+  if (hasServerMessage(apiError)) {
+    return {
+      description: apiError.message,
+      Icon: ExclamationCircleIcon,
+    };
+  }
+
   return {
     description: 'An unexpected error occurred while loading this content.',
     Icon: ExclamationCircleIcon,
   };
+}
+
+function hasServerMessage(
+  apiError: ApiError | undefined
+): apiError is ApiError {
+  return Boolean(apiError && apiError.message !== `HTTP ${apiError.status}`);
 }
 
 function DevDetails({ error }: { error: unknown }) {
