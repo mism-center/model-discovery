@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import cn from 'classnames';
 import {
   addToast,
   Button,
@@ -224,6 +225,18 @@ export function RunModelModal({
     (slot, i) => slot.required && !resourceIds[i]?.trim()
   );
 
+  // Pre-check for the backend's validate_image_approved_if_shipped gate
+  // (MISM-291): a model that ships a container can't run until its image is
+  // approved, distinct from — and reachable even after — the can_execute
+  // pre-check RunControls already applies (UI-Phase 3-A gates *who* can
+  // launch; this gates *whether the model itself is ready to*). Undefined
+  // (search-originated launches, see RunnableModel's comment) is treated as
+  // not blocked — best-effort, since the server remains the authoritative
+  // check either way.
+  const imageRejected = model.image_review_status === 'image_rejected';
+  const imagePending = model.image_review_status === 'pending_image_check';
+  const imageBlocked = imageRejected || imagePending;
+
   // Entry-point section: the selector and any argument inputs for the chosen
   // entry point. Built as a variable to keep the render free of nested
   // ternaries.
@@ -309,6 +322,21 @@ export function RunModelModal({
             />
           )}
 
+          {imageBlocked && (
+            <p
+              className={cn(
+                'rounded-md p-3 text-sm',
+                imageRejected
+                  ? 'bg-danger-50 text-danger-700'
+                  : 'bg-warning-50 text-warning-700'
+              )}
+            >
+              {imageRejected
+                ? "This model's container image was rejected during review. The owner must resubmit it before this model can run."
+                : "This model's container image is still pending review. It can't run until a reviewer approves the image."}
+            </p>
+          )}
+
           {inputs.length === 0 ? (
             <p className="text-sm text-default-700">
               This model doesn&apos;t accept a custom input dataset.
@@ -351,7 +379,7 @@ export function RunModelModal({
             color="primary"
             onPress={handleSubmit}
             isLoading={mutation.isPending}
-            isDisabled={requiredMissing}
+            isDisabled={requiredMissing || imageBlocked}
           >
             Launch run
           </Button>

@@ -36,7 +36,16 @@ export type UserRunItem = components['schemas']['UserRunItem'];
 export type RunnableModel = Pick<
   components['schemas']['SearchResultItem'],
   'id' | 'name' | 'execution_type' | 'io_spec' | 'entry_points' | 'owner'
->;
+> & {
+  /**
+   * Backs `RunModelModal`'s image-review blocking message (MISM-291).
+   * Optional, not `Pick`'d, because `SearchResultItem` doesn't carry this
+   * field at all — a known backend/schema gap (see UI-Phase 1-C's deferred
+   * finding: list/search views don't surface it). `undefined` is treated
+   * the same as `'not_applicable'` — unknown, so don't block on it.
+   */
+  image_review_status?: string;
+};
 
 export const TERMINAL_RUN_STATUSES: ReadonlySet<RunStatus> = new Set([
   'completed',
