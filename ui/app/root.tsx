@@ -22,6 +22,7 @@ import { Header } from './components/layout/header';
 import { AuthErrorBanner } from './components/layout/auth-error-banner';
 import { NavigationProgress } from './components/layout/navigation-progress';
 import { prefetchUser } from './api/auth/user';
+import { prefetchCapabilities } from './api/auth/capabilities';
 import { serverApiClient } from './api/client/server-client';
 import { getQueryClient } from './api/query/query-client';
 import './styles/index.css';
@@ -48,16 +49,21 @@ export function links() {
 }
 
 /**
- * Prefetch the current user on the server so the first paint matches the
- * client-side hydration. Forwards the inbound cookie to the API via
- * `serverApiClient` — without that, `apiClient`'s `credentials: 'include'`
- * has no cookie jar to draw from in Node.
+ * Prefetch the current user and their capabilities on the server so the
+ * first paint matches the client-side hydration. Forwards the inbound
+ * cookie to the API via `serverApiClient` — without that, `apiClient`'s
+ * `credentials: 'include'` has no cookie jar to draw from in Node.
  */
 export async function loader({ request }: Route.LoaderArgs) {
   const queryClient = getQueryClient();
-  // The only place the user is prefetched. This boundary wraps the whole route
-  // tree, so every route inherits the hydrated user without prefetching it again.
-  await prefetchUser(queryClient, serverApiClient(request), request);
+  const client = serverApiClient(request);
+  // The only place these are prefetched. This boundary wraps the whole route
+  // tree, so every route inherits the hydrated values without prefetching
+  // them again.
+  await Promise.all([
+    prefetchUser(queryClient, client, request),
+    prefetchCapabilities(queryClient, client, request),
+  ]);
   return { dehydratedState: dehydrate(queryClient) };
 }
 

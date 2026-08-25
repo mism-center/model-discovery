@@ -48,9 +48,14 @@ export async function fetchCapabilities(
  * is in flight, before `isLoading` resolves) — never `null`/`undefined`, so
  * callers can index straight into `capabilities.upload_reviewer` etc.
  * without a presence check first.
+ *
+ * `can(role)` is the same data by name instead of property access, for call
+ * sites that pick the role dynamically (e.g. a queue page choosing which
+ * capability gates it without a switch statement).
  */
 export function useCapabilities(): {
   capabilities: AuthCapabilities;
+  can: (role: keyof AuthCapabilities) => boolean;
   isLoading: boolean;
 } {
   const { data, isLoading } = useQuery({
@@ -58,7 +63,12 @@ export function useCapabilities(): {
     queryFn: () => fetchCapabilities(),
     staleTime: 5 * 60_000,
   });
-  return { capabilities: data ?? NO_CAPABILITIES, isLoading };
+  const capabilities = data ?? NO_CAPABILITIES;
+  return {
+    capabilities,
+    can: (role) => capabilities[role],
+    isLoading,
+  };
 }
 
 /**
@@ -87,9 +97,9 @@ export function resolveCapabilities(
 
 /**
  * Prefetch the capabilities query into the supplied query client, so SSR has
- * capability state on first paint. Not yet wired into `root.tsx` — that is
- * UI-Phase 2-B's job, once capabilities join the app-wide session context
- * alongside `useUser()`.
+ * capability state on first paint. Called from `root.tsx`'s loader alongside
+ * `prefetchUser`, for the same reason: every route inherits the hydrated
+ * value without prefetching it again.
  */
 export async function prefetchCapabilities(
   queryClient: QueryClient,
