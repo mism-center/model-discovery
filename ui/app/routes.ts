@@ -6,6 +6,7 @@ export default [
   route('models/:id', 'routes/model-details.tsx'),
   route('runs', 'routes/runs.tsx'),
   route('pending-reviews', 'routes/pending-reviews.tsx'),
+  route('image-review', 'routes/image-review.tsx'),
   route('upload', 'routes/upload.tsx'),
   route('annotation-review', 'routes/annotation-review.tsx'),
   route('healthz', 'routes/healthz.tsx'),

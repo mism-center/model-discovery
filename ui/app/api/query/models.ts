@@ -19,6 +19,7 @@ export const modelKeys = {
   annotationPackage: (modelId: string) =>
     [...modelKeys.all, 'annotation-package', modelId] as const,
   pendingReview: () => [...modelKeys.all, 'pending-review'] as const,
+  imageReviewQueue: () => [...modelKeys.all, 'image-review-queue'] as const,
 };
 
 /**
@@ -61,5 +62,45 @@ export function pendingReviewModelsQueryOptions(client?: ApiClientType) {
     queryKey: modelKeys.pendingReview(),
     queryFn: ({ signal }) =>
       listModels({ registration_status: 'pending_review', client, signal }),
+  });
+}
+
+/**
+ * Models awaiting Dockerfile/image review
+ * (`image_review_status === 'pending_image_check'`), for the Image Review
+ * queue (MISM-291, UI-Phase 6-A).
+ *
+ * Unlike `pendingReviewModelsQueryOptions`, `GET /models` has no
+ * `image_review_status` filter param at all — confirmed against
+ * `list_models` in `mismapi/api/v1/models.py`, only `registration_status`
+ * is filterable server-side. So this filters client-side over the
+ * `registration_status=approved` page (the only registration status
+ * `pending_image_check` can occur under). Inherits `listModels`'s
+ * hardcoded `limit: 100`, so a store with more than 100 approved models
+ * could hide a pending-image-check candidate beyond that page — the same
+ * known cap `pendingReviewModelsQueryOptions` already accepts, not a new
+ * limitation introduced here.
+ *
+ * Unlike the pending-review queue's ownership-only visibility gap
+ * (UI-Phase 4-A), `approved` is the one registration status
+ * `model_visible_to()` treats as fully public (`PUBLIC_REGISTRATION_STATUSES`
+ * in `_authz.py`) — so every candidate model here is visible to every
+ * caller regardless of role, and this queue has no equivalent
+ * backend-visibility limitation to document.
+ */
+export function imageReviewQueueModelsQueryOptions(client?: ApiClientType) {
+  return queryOptions<ModelListResponse>({
+    queryKey: modelKeys.imageReviewQueue(),
+    queryFn: async ({ signal }) => {
+      const response = await listModels({
+        registration_status: 'approved',
+        client,
+        signal,
+      });
+      const results = response.results.filter(
+        (m) => m.image_review_status === 'pending_image_check'
+      );
+      return { total: results.length, results };
+    },
   });
 }

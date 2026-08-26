@@ -354,6 +354,16 @@ export function Header() {
                 </NavLink>
               </NavbarItem>
             )}
+            {/* `/image-review` is `requireCapability`-gated on
+                `image_checker` (MISM-291, UI-Phase 6-A) — same reasoning
+                as `/pending-reviews` above. */}
+            {capabilities.image_checker && (
+              <NavbarItem>
+                <NavLink to="/image-review" className={navLinkClassnames}>
+                  Image Review
+                </NavLink>
+              </NavbarItem>
+            )}
           </>
         )}
         <NavbarItem>
