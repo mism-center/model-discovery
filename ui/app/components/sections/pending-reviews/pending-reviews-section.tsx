@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { pendingReviewModelsQueryOptions } from '~/api/query/models';
 import { ApiErrorDisplay } from '~/components/common/api-error-display';
 import { CompactBreadcrumbs } from '~/components/layout/breadcrumbs';
-import { PendingReviewCard } from '~/components/sections/search/search-results/pending-review-card';
+import { ReviewQueueCard } from './review-queue-card';
 
 function CardSkeleton() {
   return (
@@ -51,8 +51,8 @@ function EmptyState() {
  * no `upload_reviewer` carve-out. Until that backend gap closes, this page
  * only shows the *caller's own* pending submissions, not the full review
  * backlog other uploaders created — the UI half of a reviewer queue, not
- * yet a working one end-to-end. Approve/reject wiring is UI-Phase 4-B; the
- * "Review" button below still points at the old self-approve flow.
+ * yet a working one end-to-end. Approve/reject wiring (UI-Phase 4-B) is
+ * real and works for whatever this page's own visibility gap lets through.
  */
 export function PendingReviewsSection() {
   const { data, isLoading, error, refetch } = useQuery(
@@ -82,7 +82,7 @@ export function PendingReviewsSection() {
     body = (
       <div className="flex flex-col">
         {models.map((model) => (
-          <PendingReviewCard key={model.id} model={model} />
+          <ReviewQueueCard key={model.id} model={model} />
         ))}
       </div>
     );
