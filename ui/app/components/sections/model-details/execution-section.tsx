@@ -12,6 +12,7 @@ import {
   hasItems,
   hasValue,
 } from './primitives';
+import { SubmitContainerImageAction } from './submit-container-image-action';
 
 type Compute = NonNullable<ModelDetailResponse['compute']>;
 
@@ -88,6 +89,7 @@ export function ExecutionSection({ model }: { model: ModelDetailResponse }) {
           No execution environment has been recorded, so this model cannot be
           run from the portal.
         </SectionAbsence>
+        <SubmitContainerImageAction model={model} />
       </SectionCard>
     );
   }
@@ -116,6 +118,8 @@ export function ExecutionSection({ model }: { model: ModelDetailResponse }) {
           {block.render(model)}
         </div>
       ))}
+
+      <SubmitContainerImageAction model={model} />
     </SectionCard>
   );
 }
