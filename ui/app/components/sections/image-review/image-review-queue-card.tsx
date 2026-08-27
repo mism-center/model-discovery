@@ -149,7 +149,7 @@ export function ImageReviewQueueCard({ model }: ImageReviewQueueCardProps) {
         </Button>
         <Button
           size="sm"
-          color="success"
+          color="primary"
           className="min-w-24 rounded-lg text-white font-bold"
           startContent={<CheckIcon className="size-4" />}
           onPress={() => approveMutation.mutate()}

@@ -118,8 +118,6 @@ export function ExecutionSection({ model }: { model: ModelDetailResponse }) {
           {block.render(model)}
         </div>
       ))}
-
-      <SubmitContainerImageAction model={model} />
     </SectionCard>
   );
 }
@@ -182,6 +180,7 @@ const EXECUTION_BLOCKS: Array<
           ))}
         </ul>
         <ImageReviewStatus model={model} />
+        <SubmitContainerImageAction model={model} />
       </>
     ),
   },
