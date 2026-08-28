@@ -348,11 +348,10 @@ export function Header() {
                 My Runs
               </NavLink>
             </NavbarItem>
-            {/* `/pending-reviews` is `requireCapability`-gated on
-                `upload_reviewer` (MISM-291) — same reasoning as above, one
-                level further: hidden from anyone who doesn't hold the role,
-                not just anyone signed out. */}
-            {capabilities.upload_reviewer && (
+            {/* `/pending-reviews` is auth-gated (MISM-291) — visible to any
+                signed-in user so they can see and approve their own pending
+                models. No role required. */}
+            {!!user && (
               <NavbarItem>
                 <NavLink to="/pending-reviews" className={navLinkClassnames}>
                   Pending Reviews

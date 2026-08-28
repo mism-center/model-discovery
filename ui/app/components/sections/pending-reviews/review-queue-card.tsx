@@ -8,6 +8,7 @@ import { Link } from 'react-router';
 import { reviewModelMetadata } from '~/api';
 import type { ModelListItem } from '~/api/endpoints/models';
 import { modelKeys } from '~/api/query/models';
+import { useUser } from '~/api/auth/user';
 import { ApiErrorDisplay } from '~/components/common/api-error-display';
 import { RejectReviewModal } from './reject-review-modal';
 
@@ -44,6 +45,8 @@ interface ReviewQueueCardProps {
 export function ReviewQueueCard({ model }: ReviewQueueCardProps) {
   const queryClient = useQueryClient();
   const rejectModal = useDisclosure();
+  const { user } = useUser();
+  const isOwner = !!user && user.sub === model.owner;
   const displayDate = model.date_published ?? model.created_at;
 
   const approveMutation = useMutation({
@@ -135,7 +138,7 @@ export function ReviewQueueCard({ model }: ReviewQueueCardProps) {
           )}
           startContent={<XMarkIcon className="size-4" />}
           onPress={rejectModal.onOpen}
-          isDisabled={approveMutation.isPending}
+          isDisabled={!isOwner || approveMutation.isPending}
         >
           Reject
         </Button>
@@ -146,6 +149,7 @@ export function ReviewQueueCard({ model }: ReviewQueueCardProps) {
           startContent={<CheckIcon className="size-4" />}
           onPress={() => approveMutation.mutate()}
           isLoading={approveMutation.isPending}
+          isDisabled={!isOwner || approveMutation.isPending}
         >
           Approve
         </Button>

@@ -41,18 +41,14 @@ function EmptyState() {
 }
 
 /**
- * Reviewer-facing queue of models pending metadata review (MISM-291,
- * UI-Phase 4-A), gated on the `upload_reviewer` capability at the route
- * loader (`~/routes/pending-reviews`, via `requireCapability`).
+ * Owner-facing list of models the signed-in user submitted that are still
+ * awaiting their metadata approval (MISM-291). Gated on authentication only
+ * (`~/routes/pending-reviews`, via `requireUser`).
  *
- * KNOWN LIMITATION, not fixed here (see Docs/OpenFGA/MISM-291-UI-Plan.md,
- * UI-Phase 4-A's own note): `pendingReviewModelsQueryOptions()` filters
- * through the backend's `model_visible_to()`, a pure ownership check with
- * no `upload_reviewer` carve-out. Until that backend gap closes, this page
- * only shows the *caller's own* pending submissions, not the full review
- * backlog other uploaders created — the UI half of a reviewer queue, not
- * yet a working one end-to-end. Approve/reject wiring (UI-Phase 4-B) is
- * real and works for whatever this page's own visibility gap lets through.
+ * The backend's `model_visible_to()` filter returns only the caller's own
+ * resources, so this page naturally shows only the user's own pending
+ * submissions — which is the intended behavior: each uploader reviews and
+ * approves their own models rather than a shared reviewer queue.
  */
 export function PendingReviewsSection() {
   const { data, isLoading, error, refetch } = useQuery(

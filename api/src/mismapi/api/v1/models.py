@@ -422,13 +422,10 @@ async def review_model_metadata_package(
     service: RegistryServiceDep,
     principal: AuthenticatedPrincipalDep,
 ) -> RegisterModelResponse:
-    """An UPLOAD_REVIEWER's approve/reject decision on a PENDING_REVIEW model.
+    """The model owner's approve/reject decision on their own PENDING_REVIEW model.
 
-    Gated on the platform-wide ``upload_reviewer`` role, not ownership — the
-    human-review step (workflow steps e/f) that replaces
-    ``write_metadata_package_raw``'s old self-approve behavior. Self-review
-    is allowed here: the caller may hold ``upload_reviewer`` and also be the
-    model's uploader.
+    Gated on ownership — only the principal who originally uploaded the model
+    may approve or reject its metadata package (workflow steps e/f).
     """
     resource = await service.review_metadata_package(
         principal,
