@@ -74,6 +74,11 @@ gateway:
     # CAIRNS recommendation API (currently unauthenticated), empty disables it.
     CAIRNS_API_URL: ""
     CAIRNS_TIMEOUT_SECONDS: "180"
+    # Resolves biomodels-sourced CAIRNS evidence against the public BioModels
+    # API. Empty disables that enrichment step.
+    BIOMODELS_API_URL: "https://www.biomodels.org"
+    BIOMODELS_TIMEOUT_SECONDS: "15"
+    BIOMODELS_MAX_CONCURRENCY: "8"
     # Note: DATABASE_URL and REDIS_URL are built in deployment templates and do not need to be set here
 
 storage:

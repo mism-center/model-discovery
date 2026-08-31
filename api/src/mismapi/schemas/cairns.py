@@ -1,5 +1,10 @@
 from pydantic import BaseModel, Field
 
+from mismapi.schemas.biomodels import BioModelsRecordDTO, normalize_model_id
+
+BIOMODELS_SOURCE = "biomodels"
+_BIOMODELS_TOOL_ID_PREFIX = "biomodels_"
+
 
 class CairnsRecommendRequest(BaseModel):
     question: str = Field(
@@ -22,6 +27,26 @@ class CairnsEvidenceCardDTO(BaseModel):
     snippet: str = ""
     why_matched: list[str] = Field(default_factory=list)
     url: str = ""
+    # Populated iff `source == "biomodels"`
+    biomodels: BioModelsRecordDTO | None = Field(
+        default=None,
+        description="Metadata resolved from the BioModels repository.",
+    )
+
+    @property
+    def biomodels_model_id(self) -> str | None:
+        """BioModels model id this card refers to, or None if it isn't one.
+
+        CAIRNS embeds the id in `tool_id`, prefixed by its source
+        ("biomodels_biomd0000000732" -> "BIOMD0000000732").
+        """
+        if self.source.strip().lower() != BIOMODELS_SOURCE:
+            return None
+
+        raw = self.tool_id.strip()
+        if raw.lower().startswith(_BIOMODELS_TOOL_ID_PREFIX):
+            raw = raw[len(_BIOMODELS_TOOL_ID_PREFIX) :]
+        return normalize_model_id(raw)
 
 
 class CairnsRecommendResponse(BaseModel):

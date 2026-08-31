@@ -2,8 +2,9 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from mismapi.clients.biomodels_client import BioModelsClient
 from mismapi.clients.cairns_client import CairnsClient
-from mismapi.core.deps import _get_cairns_client
+from mismapi.core.deps import _get_biomodels_client, _get_cairns_client
 from mismapi.core.errors import APIError
 from mismapi.main import create_app
 from mismapi.schemas.cairns import CairnsRecommendRequest
@@ -33,9 +34,16 @@ def _client_with_transport(handler: httpx.MockTransport) -> CairnsClient:
     return client
 
 
-def _make_app(cairns_client: CairnsClient) -> TestClient:
+def _make_app(
+    cairns_client: CairnsClient,
+    biomodels_client: BioModelsClient | None = None,
+) -> TestClient:
+    # Default to an unconfigured BioModels client so enrichment is a no-op and
+    # these tests assert the proxy alone. See test_cairns_enrichment.py.
+    biomodels = biomodels_client or BioModelsClient(base_url="")
     app = create_app(settings=minimal_oidc_settings())
     app.dependency_overrides[_get_cairns_client] = lambda: cairns_client
+    app.dependency_overrides[_get_biomodels_client] = lambda: biomodels
     return TestClient(app)
 
 

@@ -109,6 +109,14 @@ class Settings(BaseSettings):
     # latencies are tens of seconds, so this ceiling is far above the HTTP norm.
     cairns_timeout_seconds: float = Field(default=180.0, alias="CAIRNS_TIMEOUT_SECONDS", gt=0)
 
+    # BioModels repository (public, unauthenticated)
+    biomodels_api_url: BaseUrl = Field(
+        default="https://www.biomodels.org", alias="BIOMODELS_API_URL"
+    )
+    biomodels_timeout_seconds: float = Field(default=15.0, alias="BIOMODELS_TIMEOUT_SECONDS", gt=0)
+    # There is no bulk endpoint, so max concurrent requests per CAIRNS request.
+    biomodels_max_concurrency: int = Field(default=8, alias="BIOMODELS_MAX_CONCURRENCY", gt=0)
+
     # Authentication
     auth_mode: Literal["oidc"] = Field(default="oidc", alias="AUTH_MODE")
     disable_auth: bool = Field(default=False, alias="DISABLE_AUTH")
