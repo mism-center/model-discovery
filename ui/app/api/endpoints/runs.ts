@@ -45,6 +45,16 @@ export type RunnableModel = Pick<
    * the same as `'not_applicable'` — unknown, so don't block on it.
    */
   image_review_status?: string;
+  /**
+   * Backs `RunModelModal`'s registration-review blocking message (MISM-291).
+   * Optional, not `Pick`'d, because `SearchResultItem` doesn't carry this
+   * field — search results are always `approved` (the search gate in
+   * `RegistryService.search` forces `registration_status=approved` on every
+   * query), so there is nothing to block there. `undefined` is treated as
+   * not blocked (best-effort); the server-side `validate_registration_approved`
+   * check in `prepare_run` remains authoritative either way.
+   */
+  registration_status?: string;
 };
 
 export const TERMINAL_RUN_STATUSES: ReadonlySet<RunStatus> = new Set([

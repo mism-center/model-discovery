@@ -17,12 +17,16 @@ interface DeletePendingReviewModalProps {
   model: ModelListItem;
   isOpen: boolean;
   onClose: () => void;
+  /** Called after the deletion succeeds, before `onClose`. Use to invalidate
+   *  extra query keys beyond `modelKeys.pendingReview()`. */
+  onDeleted?: () => void;
 }
 
 export function DeletePendingReviewModal({
   model,
   isOpen,
   onClose,
+  onDeleted,
 }: DeletePendingReviewModalProps) {
   const queryClient = useQueryClient();
 
@@ -30,6 +34,7 @@ export function DeletePendingReviewModal({
     mutationFn: () => deleteModel(model.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: modelKeys.pendingReview() });
+      onDeleted?.();
       mutation.reset();
       onClose();
     },

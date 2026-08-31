@@ -20,6 +20,8 @@ export const modelKeys = {
     [...modelKeys.all, 'annotation-package', modelId] as const,
   pendingReview: () => [...modelKeys.all, 'pending-review'] as const,
   imageReviewQueue: () => [...modelKeys.all, 'image-review-queue'] as const,
+  pendingImageReview: (userId: string) =>
+    [...modelKeys.all, 'pending-image-review', userId] as const,
 };
 
 /**
@@ -94,6 +96,41 @@ export function imageReviewQueueModelsQueryOptions(client?: ApiClientType) {
     queryFn: async ({ signal }) => {
       const response = await listModels({
         registration_status: 'approved',
+        client,
+        signal,
+      });
+      const results = response.results.filter(
+        (m) => m.image_review_status === 'pending_image_check'
+      );
+      return { total: results.length, results };
+    },
+  });
+}
+
+/**
+ * The current user's own models awaiting Dockerfile/image review
+ * (`image_review_status === 'pending_image_check'`), for the owner-facing
+ * "Image Pending Review" section embedded in search results.
+ *
+ * Differs from `imageReviewQueueModelsQueryOptions` (the reviewer's queue) in
+ * two ways: (1) it passes `owner: userId` so only the caller's own models are
+ * returned, and (2) the cache key is keyed per user so two different users
+ * browsing the same browser session never see each other's data.
+ *
+ * Like `imageReviewQueueModelsQueryOptions`, the client-side filter is
+ * necessary because `GET /models` has no `image_review_status` query param —
+ * only `registration_status` is filterable server-side.
+ */
+export function pendingImageReviewModelsQueryOptions(
+  userId: string,
+  client?: ApiClientType
+) {
+  return queryOptions<ModelListResponse>({
+    queryKey: modelKeys.pendingImageReview(userId),
+    queryFn: async ({ signal }) => {
+      const response = await listModels({
+        registration_status: 'approved',
+        owner: userId,
         client,
         signal,
       });

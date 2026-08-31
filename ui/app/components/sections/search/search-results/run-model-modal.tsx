@@ -237,6 +237,29 @@ export function RunModelModal({
   const imagePending = model.image_review_status === 'pending_image_check';
   const imageBlocked = imageRejected || imagePending;
 
+  // Pre-check for the backend's validate_registration_approved gate (MISM-291):
+  // only approved models are executable. Non-approved models are only visible
+  // to their owner (model_visible_to enforces it), so this block is reachable
+  // only by an owner whose metadata hasn't been approved yet. Undefined
+  // (search-originated launches) is treated as not blocked — the search gate
+  // already enforces approved-only, so those launches are always unblocked.
+  const registrationBlocked =
+    model.registration_status !== undefined &&
+    model.registration_status !== 'approved';
+  const registrationRejected = model.registration_status === 'rejected';
+  const registrationPending = model.registration_status === 'pending_review';
+  let registrationBlockMessage = '';
+  if (registrationRejected) {
+    registrationBlockMessage =
+      "This model's metadata was rejected during review. The owner must resubmit it before this model can run.";
+  } else if (registrationPending) {
+    registrationBlockMessage =
+      "This model's metadata is pending review. It can't run until it's approved.";
+  } else if (registrationBlocked) {
+    registrationBlockMessage =
+      "This model hasn't completed metadata review and can't run yet.";
+  }
+
   // Entry-point section: the selector and any argument inputs for the chosen
   // entry point. Built as a variable to keep the render free of nested
   // ternaries.
@@ -337,6 +360,19 @@ export function RunModelModal({
             </p>
           )}
 
+          {registrationBlocked && (
+            <p
+              className={cn(
+                'rounded-md p-3 text-sm',
+                registrationRejected
+                  ? 'bg-danger-50 text-danger-700'
+                  : 'bg-warning-50 text-warning-700'
+              )}
+            >
+              {registrationBlockMessage}
+            </p>
+          )}
+
           {inputs.length === 0 ? (
             <p className="text-sm text-default-700">
               This model doesn&apos;t accept a custom input dataset.
@@ -379,7 +415,7 @@ export function RunModelModal({
             color="primary"
             onPress={handleSubmit}
             isLoading={mutation.isPending}
-            isDisabled={requiredMissing || imageBlocked}
+            isDisabled={requiredMissing || imageBlocked || registrationBlocked}
           >
             Launch run
           </Button>
