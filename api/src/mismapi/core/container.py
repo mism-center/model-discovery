@@ -26,6 +26,7 @@ from mismapi.auth.oauth_registry import build_oauth_registry, get_oidc_client
 from mismapi.auth.oidc_service import OIDCService
 from mismapi.auth.session import RedisSessionStore, SessionStore
 from mismapi.auth.session_refresh import SessionRefresher
+from mismapi.clients.cairns_client import CairnsClient
 from mismapi.clients.execution_client import ExecutionClient
 from mismapi.clients.local_upload_client import LocalFileUploadClient
 from mismapi.clients.upload_client import UploadServiceClient
@@ -55,6 +56,7 @@ class AppContainer:
     # Both implement the same async protocol consumed by the upload route.
     upload_client: UploadServiceClient | LocalFileUploadClient
     execution_client: ExecutionClient
+    cairns_client: CairnsClient
     auth_validator: AuthValidator
     oidc_client: StarletteOAuth2App
     oidc_service: OIDCService
@@ -111,6 +113,11 @@ class AppContainer:
             stub_upstream=settings.stub_upstream_services,
         )
 
+        cairns_client = CairnsClient(
+            base_url=settings.cairns_api_url,
+            timeout_seconds=settings.cairns_timeout_seconds,
+        )
+
         redis_client: Redis = Redis.from_url(  # pyright: ignore[reportUnknownMemberType]
             settings.redis_url,
             decode_responses=False,
@@ -145,6 +152,7 @@ class AppContainer:
             upload_session_store_service=upload_session_store_service,
             upload_client=upload_client,
             execution_client=execution_client,
+            cairns_client=cairns_client,
             auth_validator=auth_validator,
             oidc_client=oidc_client,
             oidc_service=oidc_service,
@@ -170,6 +178,7 @@ class AppContainer:
         for name, close in (
             ("upload_client", self.upload_client.close),
             ("execution_client", self.execution_client.close),
+            ("cairns_client", self.cairns_client.close),
             ("redis", self.redis.aclose),
         ):
             try:

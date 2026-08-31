@@ -102,6 +102,13 @@ class Settings(BaseSettings):
     annotation_openai_base_url: str = Field(default="", alias="ANNOTATION_OPENAI_BASE_URL")
     annotation_model: str = Field(default="gpt-5.6-luna", alias="ANNOTATION_MODEL")
 
+    # CAIRNS service integration
+    # Empty disables the integration, endpoints return 503 when disabled.
+    cairns_api_url: BaseUrl = Field(default="", alias="CAIRNS_API_URL")
+    # CAIRNS runs retrieval plus an LLM synthesis step per request; observed
+    # latencies are tens of seconds, so this ceiling is far above the HTTP norm.
+    cairns_timeout_seconds: float = Field(default=180.0, alias="CAIRNS_TIMEOUT_SECONDS", gt=0)
+
     # Authentication
     auth_mode: Literal["oidc"] = Field(default="oidc", alias="AUTH_MODE")
     disable_auth: bool = Field(default=False, alias="DISABLE_AUTH")

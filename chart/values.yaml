@@ -71,6 +71,9 @@ gateway:
     ANNOTATION_JOB_PROMPT: ""
     ANNOTATION_OPENAI_BASE_URL: ""
     ANNOTATION_MODEL: "gpt-5.6-luna"
+    # CAIRNS recommendation API (currently unauthenticated), empty disables it.
+    CAIRNS_API_URL: ""
+    CAIRNS_TIMEOUT_SECONDS: "180"
     # Note: DATABASE_URL and REDIS_URL are built in deployment templates and do not need to be set here
 
 storage:

@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from mismapi.auth.session import SessionStore
     from mismapi.auth.session_refresh import SessionRefresher
     from mismapi.auth.validator import AuthValidator
+    from mismapi.clients.cairns_client import CairnsClient
     from mismapi.clients.execution_client import ExecutionClient
     from mismapi.clients.local_upload_client import LocalFileUploadClient
     from mismapi.clients.upload_client import UploadServiceClient
@@ -76,6 +77,10 @@ def _get_execution_client(container: ContainerDep) -> ExecutionClient:
     return container.execution_client
 
 
+def _get_cairns_client(container: ContainerDep) -> CairnsClient:
+    return container.cairns_client
+
+
 def _get_registry_service(
     container: ContainerDep,
 ) -> Generator[RegistryService, None, None]:
@@ -101,4 +106,5 @@ UploadClientDep = Annotated[
     "UploadServiceClient | LocalFileUploadClient", Depends(_get_upload_client)
 ]
 ExecutionClientDep = Annotated["ExecutionClient", Depends(_get_execution_client)]
+CairnsClientDep = Annotated["CairnsClient", Depends(_get_cairns_client)]
 RegistryServiceDep = Annotated[RegistryService, Depends(_get_registry_service)]
