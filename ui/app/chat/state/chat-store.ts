@@ -1,6 +1,11 @@
 import { useSyncExternalStore } from 'react';
 
 import { recommend } from '~/api/endpoints/cairns';
+import {
+  deleteConversation as deleteStoredConversation,
+  loadConversations,
+  saveConversation,
+} from './chat-storage';
 import type { ChatState, ChatTurn, Conversation } from './types';
 
 /** CAIRNS keeps no server-side memory, so the client replays context itself. */
@@ -57,6 +62,16 @@ export function isGenerating(conversation: Conversation | undefined): boolean {
 
 // ── Mutation ────────────────────────────────────────────────────
 
+/**
+ * An empty conversation is not history. Writing one would fill the stored list
+ * with entries the user opened and never used.
+ */
+function persist(id: string): void {
+  const conversation = state.conversations[id];
+  if (!conversation || conversation.turns.length === 0) return;
+  void saveConversation(conversation);
+}
+
 function updateConversation(
   id: string,
   update: (conversation: Conversation) => Conversation
@@ -67,6 +82,7 @@ function updateConversation(
     ...state,
     conversations: { ...state.conversations, [id]: update(existing) },
   });
+  persist(id);
 }
 
 function updateTurn(
@@ -80,6 +96,70 @@ function updateTurn(
       turn.id === turnId ? { ...turn, ...patch } : turn
     ),
   }));
+}
+
+/**
+ * A turn left pending belongs to a request that died with the page, so it can
+ * never arrive. It is restored as cancelled, which is resendable, rather than
+ * as a spinner that would run forever.
+ */
+function restored(conversation: Conversation): Conversation {
+  if (!conversation.turns.some((turn) => turn.status === 'pending')) {
+    return conversation;
+  }
+  return {
+    ...conversation,
+    turns: conversation.turns.map((turn) =>
+      turn.status === 'pending' ? { ...turn, status: 'cancelled' } : turn
+    ),
+  };
+}
+
+/**
+ * Conversation ids, newest first.
+ *
+ * Built by insertion rather than sorting: `Array#sort` is banned by lint in
+ * favour of `toSorted`, which this project's `lib` target does not provide.
+ */
+function newestFirst(conversations: Record<string, Conversation>): string[] {
+  const order: string[] = [];
+  for (const conversation of Object.values(conversations)) {
+    const index = order.findIndex(
+      (id) => conversations[id].createdAt < conversation.createdAt
+    );
+    if (index === -1) {
+      order.push(conversation.id);
+    } else {
+      order.splice(index, 0, conversation.id);
+    }
+  }
+  return order;
+}
+
+let hydrated = false;
+
+/**
+ * Merge persisted conversations into the store, newest first.
+ *
+ * Safe to call more than once and safe to race with `ask`: a conversation
+ * created in this session is newer than anything on disk and is left alone.
+ * Returns the conversation to open, or undefined when there is no history.
+ */
+export async function hydrate(): Promise<string | undefined> {
+  if (hydrated) return state.order[0];
+  hydrated = true;
+
+  const stored = await loadConversations();
+  if (stored.length === 0) return state.order[0];
+
+  const conversations = { ...state.conversations };
+  for (const conversation of stored) {
+    conversations[conversation.id] ??= restored(conversation);
+  }
+
+  const order = newestFirst(conversations);
+  setState({ conversations, order });
+  return order[0];
 }
 
 export function createConversation(): string {
@@ -208,4 +288,24 @@ export function retry(conversationId: string, turnId: string): void {
  */
 export function cancel(conversationId: string): void {
   inFlight.get(conversationId)?.abort();
+}
+
+export function removeConversation(id: string): void {
+  // Its answer has nowhere to land once the conversation is gone.
+  cancel(id);
+
+  const conversations = { ...state.conversations };
+  delete conversations[id];
+  setState({
+    conversations,
+    order: state.order.filter((candidate) => candidate !== id),
+  });
+  void deleteStoredConversation(id);
+}
+
+/** Conversations in display order, newest first. */
+export function conversationList(chatState: ChatState): Conversation[] {
+  return chatState.order
+    .map((id) => chatState.conversations[id])
+    .filter((conversation) => conversation !== undefined);
 }

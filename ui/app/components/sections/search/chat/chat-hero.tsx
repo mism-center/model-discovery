@@ -14,23 +14,32 @@ const EXAMPLE_QUESTIONS = [
  */
 export function ChatHero({
   isCollapsed,
+  animate,
   onAsk,
 }: {
   isCollapsed: boolean;
+  /**
+   * False until restored history has painted. Collapsing to match what was
+   * already on disk is not a state change the user made, so it must not be
+   * animated on load.
+   */
+  animate: boolean;
   onAsk: (question: string) => void;
 }) {
   return (
     <div
       className={cn(
-        'grid transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
-        'motion-reduce:transition-none',
+        'grid',
+        animate &&
+          'transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none',
         isCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'
       )}
     >
       <div
         className={cn(
-          'overflow-hidden transition-opacity duration-200 ease-in-out',
-          'motion-reduce:transition-none',
+          'overflow-hidden',
+          animate &&
+            'transition-opacity duration-200 ease-in-out motion-reduce:transition-none',
           isCollapsed ? 'opacity-0' : 'opacity-100'
         )}
       >
