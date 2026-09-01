@@ -53,5 +53,11 @@ function extractErrorMessage(body: unknown): string | undefined {
     const first = record.detail[0] as Record<string, unknown>;
     if (typeof first?.msg === 'string') return first.msg;
   }
+  // The gateway wraps every `APIError` as `{ error: { code, detail } }`
+  // (`mismapi/core/errors.py`).
+  if (record.error && typeof record.error === 'object') {
+    const nested = record.error as Record<string, unknown>;
+    if (typeof nested.detail === 'string') return nested.detail;
+  }
   return;
 }
