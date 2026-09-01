@@ -8,7 +8,7 @@ from mism_registry.resource import Resource
 from mismapi.core.deps import _get_registry_service
 from mismapi.main import create_app
 from mismapi.services.registry_service import RegistryService
-from tests.conftest import override_principal
+from tests.conftest import default_principal, override_principal
 
 
 def _make_dataset(
@@ -155,6 +155,7 @@ def test_list_datasets_returns_results() -> None:
     assert payload["results"][1]["id"] == "d-2"
 
     service.list_datasets.assert_called_once_with(
+        principal=default_principal(),
         name_contains=None,
         owner=None,
         tags=None,
@@ -186,6 +187,7 @@ def test_list_datasets_passes_filters() -> None:
     assert response.status_code == 200
 
     filter_kwargs = dict(
+        principal=default_principal(),
         name_contains="climate",
         owner="bob",
         tags=["csv", "public"],
@@ -212,6 +214,7 @@ def test_list_datasets_pagination() -> None:
     assert payload["results"][1]["id"] == "d-2"
 
     service.list_datasets.assert_called_once_with(
+        principal=default_principal(),
         name_contains=None,
         owner=None,
         tags=None,
