@@ -74,6 +74,7 @@ def _make_service(
 def _client(allowed: bool) -> MagicMock:
     client = MagicMock(spec=OpenFGAClient)
     client.check = AsyncMock(return_value=allowed)
+    client.write_tuple = AsyncMock()
     return client
 
 
@@ -185,3 +186,60 @@ async def test_create_run_missing_model_returns_404_before_authz_check() -> None
     assert excinfo.value.status_code == 404
     assert excinfo.value.code == "not_found"
     client.check.assert_not_awaited()
+
+
+# ── OpenFGA run-owner tuple writes (Phase 1b) ────────────────────────────
+
+
+async def test_create_run_writes_owner_tuple() -> None:
+    """create_run grants owner on run:{id} so OpenFGA can_view / can_cancel resolve."""
+    client = _client(allowed=True)
+    service, _ = _make_service(client, model=_approved_model())
+
+    run = await service.create_run(_principal("alice"), model_id="m-1")
+
+    client.write_tuple.assert_awaited_once_with(
+        user="user:alice",
+        relation="owner",
+        object_=f"run:{run.id}",
+    )
+
+
+async def test_create_run_rolls_back_when_owner_tuple_write_fails() -> None:
+    """A FGA failure on run creation rolls back the DB to keep the two stores in sync."""
+    client = _client(allowed=True)
+    client.write_tuple = AsyncMock(
+        side_effect=APIError(status_code=502, code="openfga_write_failed", detail="boom")
+    )
+    service, session = _make_service(client, model=_approved_model())
+
+    with pytest.raises(APIError) as excinfo:
+        await service.create_run(_principal("alice"), model_id="m-1")
+
+    assert excinfo.value.code == "openfga_write_failed"
+    session.commit.assert_not_called()
+    session.rollback.assert_called_once()
+
+
+async def test_create_run_without_openfga_client_skips_owner_tuple() -> None:
+    """No client configured — run is created and committed with no tuple write."""
+    service, session = _make_service(None, model=_approved_model())
+
+    run = await service.create_run(_principal("alice"), model_id="m-1")
+
+    assert run.model_id == "m-1"
+    session.commit.assert_called_once()
+
+
+async def test_create_run_local_issuer_skips_owner_tuple() -> None:
+    """disable_auth dev mode skips all OpenFGA, including the run-owner tuple write."""
+    client = _client(allowed=True)
+    service, _ = _make_service(client, model=_approved_model())
+    local_principal = AuthenticatedPrincipal(
+        subject="anonymous", issuer="local", audience="local", scopes=set()
+    )
+
+    run = await service.create_run(local_principal, model_id="m-1")
+
+    assert run.model_id == "m-1"
+    client.write_tuple.assert_not_awaited()

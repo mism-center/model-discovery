@@ -35,6 +35,7 @@ def _principal(subject: str = "erin") -> AuthenticatedPrincipal:
 def _client(allowed: bool) -> MagicMock:
     client = MagicMock(spec=OpenFGAClient)
     client.check = AsyncMock(return_value=allowed)
+    client.write_tuple = AsyncMock()
     return client
 
 
@@ -160,3 +161,76 @@ async def test_review_illegal_transition_does_not_commit() -> None:
 
     session.commit.assert_not_called()
     session.rollback.assert_called_once()
+
+
+# ── OpenFGA viewer-tuple writes (Phase 1a) ───────────────────────────────
+
+
+async def test_approve_writes_viewer_wildcard_tuple() -> None:
+    """Approving a model writes viewer@user:* so anonymous can_view checks succeed."""
+    client = _client(allowed=True)
+    service = _make_service(client)
+
+    await service.review_metadata_package(_principal("erin"), model_id="m-1", approve=True)
+
+    client.write_tuple.assert_awaited_once_with(
+        user="user:*", relation="viewer", object_="model:m-1"
+    )
+
+
+async def test_reject_does_not_write_viewer_tuple() -> None:
+    """Rejecting must not write a viewer tuple — the model stays private."""
+    client = _client(allowed=True)
+    service = _make_service(client)
+
+    await service.review_metadata_package(
+        _principal("erin"), model_id="m-1", approve=False, reason="Needs fixes."
+    )
+
+    client.write_tuple.assert_not_awaited()
+
+
+async def test_approve_rolls_back_when_viewer_tuple_write_fails() -> None:
+    """A FGA failure on approve rolls back the DB so the two stores stay in sync."""
+    client = _client(allowed=True)
+    client.write_tuple = AsyncMock(
+        side_effect=APIError(status_code=502, code="openfga_write_failed", detail="boom")
+    )
+    service = _make_service(client)
+    session = cast(MagicMock, service._session)
+
+    with pytest.raises(APIError) as excinfo:
+        await service.review_metadata_package(_principal("erin"), model_id="m-1", approve=True)
+
+    assert excinfo.value.code == "openfga_write_failed"
+    session.commit.assert_not_called()
+    session.rollback.assert_called_once()
+
+
+async def test_approve_without_openfga_client_skips_viewer_tuple() -> None:
+    """No client configured — state still transitions, no crash, no tuple write."""
+    # No FGA client → _assert_model_owner falls back to ownership string-equality,
+    # so the principal must match the resource owner.
+    service = _make_service(None, owner="dana")
+    session = cast(MagicMock, service._session)
+
+    resource = await service.review_metadata_package(
+        _principal("dana"), model_id="m-1", approve=True
+    )
+
+    assert resource.registration_status == ResourceRegistrationStatus.APPROVED
+    session.commit.assert_called_once()
+
+
+async def test_approve_local_issuer_skips_viewer_tuple() -> None:
+    """disable_auth dev mode skips all OpenFGA, including the viewer tuple write."""
+    client = _client(allowed=True)
+    service = _make_service(client)
+    local_principal = AuthenticatedPrincipal(
+        subject="erin", issuer="local", audience="local", scopes=set()
+    )
+
+    resource = await service.review_metadata_package(local_principal, model_id="m-1", approve=True)
+
+    assert resource.registration_status == ResourceRegistrationStatus.APPROVED
+    client.write_tuple.assert_not_awaited()

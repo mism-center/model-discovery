@@ -7,7 +7,6 @@ from mism_registry.enums import RunStatus
 from mism_registry.resource import Resource
 from mism_registry.types import Container
 
-from mismapi.api.v1._authz import assert_model_visible, model_visible_to
 from mismapi.api.v1._run_helpers import resource_summary as _resource_summary
 from mismapi.api.v1._run_helpers import run_detail as _run_detail
 from mismapi.auth.base import AuthenticatedPrincipalDep, OptionalPrincipalDep
@@ -189,6 +188,7 @@ async def list_models(
     offset: int = Query(default=0, ge=0),
 ) -> ModelListResponse:
     resources = service.list_models(
+        principal=principal,
         name_contains=name,
         owner=owner,
         tags=tags,
@@ -197,15 +197,8 @@ async def list_models(
         registration_status=registration_status,
     )
 
-    # Same visibility rule as GET /models/{model_id} and the search gate:
-    # approved models are public, anything still in draft / annotating /
-    # pending_review / rejected is visible only to its owner. Filtering before
-    # pagination keeps `total` and the page contents consistent — counting
-    # hidden rows would leak their existence through the count alone.
-    visible = [r for r in resources if model_visible_to(r, principal)]
-
-    total = len(visible)
-    page = visible[offset : offset + limit]
+    total = len(resources)
+    page = resources[offset : offset + limit]
 
     return ModelListResponse(total=total, results=[_model_list_item(r) for r in page])
 
@@ -234,7 +227,7 @@ async def get_model(
     ``owner = principal.subject``.
     """
     resource = service.get_model(model_id)
-    assert_model_visible(resource, principal)
+    await service.assert_can_view_model(principal, resource=resource)
     return _model_detail_response(resource)
 
 
@@ -567,7 +560,7 @@ async def list_model_runs(
 
     Runs arrive newest-first from the registry; the order is not re-derived here.
     """
-    assert_model_visible(service.get_model(model_id), principal)
+    await service.assert_can_view_model(principal, resource=service.get_model(model_id))
 
     summary = service.get_model_run_details(
         model_id=model_id,
