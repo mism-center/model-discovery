@@ -79,8 +79,7 @@ def test_get_run_calls_dal_then_execution_then_dal() -> None:
     This ordering is intentional: authorizing after the Execution round-trip
     would let an unauthorized caller trigger a live side effect (and observe
     its timing/error shape) on a run they don't own, before ever being
-    rejected. See ``_authz.assert_run_owner`` and the docstring on
-    ``get_run`` in ``runs.py``.
+    rejected. See the docstring on ``get_run`` in ``runs.py``.
     """
     run = _make_run(status=RunStatus.COMPLETED)
     input_ds = _make_dataset(id="d-1", name="Input")
@@ -283,8 +282,7 @@ def test_cancel_run_calls_dal_then_execution_then_dal() -> None:
 
     Authorizing before the cancel call is the security property under test:
     cancelling is destructive, so an unauthorized caller must never be able to
-    trigger it — see ``_authz.assert_run_owner`` and the docstring on
-    ``cancel_run`` in ``runs.py``.
+    trigger it — see the docstring on ``cancel_run`` in ``runs.py``.
     """
     run = _make_run(status=RunStatus.CANCELLED)
 
@@ -414,6 +412,9 @@ def test_get_run_someone_elses_run_returns_404() -> None:
     run = _make_run(id="run-1", triggered_by="user-2")
     service = MagicMock(spec=RegistryService)
     service.get_run.return_value = (run, [], [])
+    service.assert_can_view_run = AsyncMock(
+        side_effect=APIError(status_code=404, code="not_found", detail="Not found.")
+    )
 
     exec_client = AsyncMock(spec=ExecutionClient)
 
@@ -430,6 +431,9 @@ def test_cancel_run_someone_elses_run_returns_404_and_never_calls_execution() ->
     run = _make_run(id="run-1", triggered_by="user-2")
     service = MagicMock(spec=RegistryService)
     service.get_run.return_value = (run, [], [])
+    service.assert_can_cancel_run = AsyncMock(
+        side_effect=APIError(status_code=404, code="not_found", detail="Not found.")
+    )
 
     exec_client = AsyncMock(spec=ExecutionClient)
 
@@ -447,6 +451,9 @@ def test_get_run_empty_triggered_by_is_owned_by_nobody() -> None:
     run = _make_run(id="run-1", triggered_by="")
     service = MagicMock(spec=RegistryService)
     service.get_run.return_value = (run, [], [])
+    service.assert_can_view_run = AsyncMock(
+        side_effect=APIError(status_code=404, code="not_found", detail="Not found.")
+    )
 
     exec_client = AsyncMock(spec=ExecutionClient)
 
@@ -461,6 +468,9 @@ def test_cancel_run_empty_triggered_by_is_owned_by_nobody() -> None:
     run = _make_run(id="run-1", triggered_by="")
     service = MagicMock(spec=RegistryService)
     service.get_run.return_value = (run, [], [])
+    service.assert_can_cancel_run = AsyncMock(
+        side_effect=APIError(status_code=404, code="not_found", detail="Not found.")
+    )
 
     exec_client = AsyncMock(spec=ExecutionClient)
 
@@ -497,10 +507,6 @@ def test_post_run_requires_auth() -> None:
 
 def test_post_run_authenticated_triggers_annotation() -> None:
     service = MagicMock(spec=RegistryService)
-    # The path param is a *resource* id (forwarded as `resource_id`), and the
-    # caller must own it — `_make_dataset` is owned by "user-1", the subject
-    # `override_principal` installs.
-    service.get_model.return_value = _make_dataset(id="run-1")
     exec_client = AsyncMock(spec=ExecutionClient)
     exec_client.annotate.return_value = {"job_id": "job-1", "status": "queued"}
 
@@ -520,13 +526,17 @@ def test_post_run_authenticated_triggers_annotation() -> None:
     assert exec_client.annotate.call_args.kwargs["resource_id"] == "run-1"
 
 
-def test_post_run_someone_elses_resource_returns_404_and_never_annotates() -> None:
-    """Annotation spends the deployment's LLM budget — visibility isn't enough."""
-    resource = _make_dataset(id="res-1")
-    resource.owner = "someone-else"
+def test_post_run_someone_elses_resource_returns_403_and_never_annotates() -> None:
+    """Annotation spends the deployment's LLM budget — ownership is required.
 
+    _assert_model_owner raises 403 (not 404): the mutation gate uses the
+    same convention as get_resource_and_assert_ownership, not the 404
+    id-oracle-avoidance convention used by visibility checks.
+    """
     service = MagicMock(spec=RegistryService)
-    service.get_model.return_value = resource
+    service._assert_model_owner = AsyncMock(
+        side_effect=APIError(status_code=403, code="not_authorized", detail="Not owner.")
+    )
     exec_client = AsyncMock(spec=ExecutionClient)
 
     app = create_app(settings=minimal_oidc_settings())
@@ -537,17 +547,16 @@ def test_post_run_someone_elses_resource_returns_404_and_never_annotates() -> No
     with TestClient(app) as client:
         response = client.post("/api/v1/runs/res-1")
 
-    assert response.status_code == 404
+    assert response.status_code == 403
     exec_client.annotate.assert_not_awaited()
 
 
 def test_post_run_unowned_resource_is_owned_by_nobody() -> None:
     """An empty `owner` must not be treated as "owned by whoever asks"."""
-    resource = _make_dataset(id="res-1")
-    resource.owner = ""
-
     service = MagicMock(spec=RegistryService)
-    service.get_model.return_value = resource
+    service._assert_model_owner = AsyncMock(
+        side_effect=APIError(status_code=403, code="not_authorized", detail="Not owner.")
+    )
     exec_client = AsyncMock(spec=ExecutionClient)
 
     app = create_app(settings=minimal_oidc_settings())
@@ -558,5 +567,5 @@ def test_post_run_unowned_resource_is_owned_by_nobody() -> None:
     with TestClient(app) as client:
         response = client.post("/api/v1/runs/res-1")
 
-    assert response.status_code == 404
+    assert response.status_code == 403
     exec_client.annotate.assert_not_awaited()

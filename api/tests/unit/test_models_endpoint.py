@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,6 +13,7 @@ from mism_registry.enums import (
 from mism_registry.resource import Resource
 
 from mismapi.core.deps import _get_registry_service
+from mismapi.core.errors import APIError
 from mismapi.main import create_app
 from mismapi.services.registry_service import RegistryService
 from tests.conftest import minimal_oidc_settings, override_anonymous, override_principal
@@ -620,6 +621,9 @@ def test_get_model_detail_unapproved_model_404s_for_anonymous_caller(
     service.get_model.return_value = _make_model(
         owner="user-1", registration_status=registration_status
     )
+    service.assert_can_view_model = AsyncMock(
+        side_effect=APIError(status_code=404, code="not_found", detail="Not found.")
+    )
 
     client = _make_app_with_service(service, authenticated=False)
     response = client.get("/api/v1/models/m-1")
@@ -642,6 +646,9 @@ def test_get_model_detail_unapproved_model_404s_for_non_owner(
     service = MagicMock(spec=RegistryService)
     service.get_model.return_value = _make_model(
         owner="someone-else", registration_status=registration_status
+    )
+    service.assert_can_view_model = AsyncMock(
+        side_effect=APIError(status_code=404, code="not_found", detail="Not found.")
     )
 
     # override_principal defaults to subject "user-1" — not the owner above.

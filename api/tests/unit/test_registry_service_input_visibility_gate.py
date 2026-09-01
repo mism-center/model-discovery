@@ -6,9 +6,9 @@ Covers `_assert_input_resource_visible`: `create_run` previously passed
 caller could name someone else's private dataset as a run input and have its
 contents surfaced back via the run's mounted filesystem/outputs
 (`Docs/OpenFGA/MISM-OpenFGA-Auth-Model.md`, goal 1, checklist item 8). This is
-an interim string-equality check (same predicate as `_authz.py`'s
-`model_visible_to`), not a real OpenFGA `can_view` check — see the docstring
-on `_assert_input_resource_visible` for why.
+an interim string-equality check (approved OR owner match), not a real
+OpenFGA `can_view` check — see the docstring on
+`_assert_input_resource_visible` for why.
 
 The model itself is always caller-owned and OpenFGA-unconfigured (`client=None`)
 in these tests so `_assert_can_execute` (Checkpoint 5-A) never interferes —
