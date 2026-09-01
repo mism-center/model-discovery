@@ -82,3 +82,25 @@
   transform-origin: left center;
   animation: nav-progress-fill 5s cubic-bezier(0.1, 0.8, 0.25, 1) forwards;
 }
+
+@keyframes evidence-target-flash {
+  0% {
+    background-color: hsl(var(--heroui-secondary) / 0.18);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+/**
+ * Marks the evidence row a citation just jumped to. Driven by `:target` so the
+ * jump and the highlight cannot disagree about which row was addressed.
+ */
+@utility animate-evidence-target {
+  animation: evidence-target-flash 2s ease-out forwards;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    background-color: hsl(var(--heroui-secondary) / 0.12);
+  }
+}

@@ -34,7 +34,7 @@ export function ChatHero({
           isCollapsed ? 'opacity-0' : 'opacity-100'
         )}
       >
-        <div className="relative border-b border-default bg-primary-gradient px-6 pb-14 pt-10">
+        <div className="relative border-b border-default bg-primary-gradient pb-14 pt-10">
           <div
             className="pointer-events-none absolute inset-0 opacity-[0.025]"
             style={{
@@ -43,7 +43,7 @@ export function ChatHero({
             }}
           />
 
-          <div className="relative z-10 mx-auto w-full max-w-[1080px]">
+          <div className="relative z-10 mx-auto w-full max-w-[1080px] px-6">
             <div className="mb-5 flex items-center gap-3">
               <div className="flex shrink-0 items-center justify-center rounded-lg border border-success/20 bg-success/15 p-2 text-success">
                 <SparklesIcon className="size-5" />

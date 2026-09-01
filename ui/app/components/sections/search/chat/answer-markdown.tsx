@@ -1,5 +1,20 @@
+import { type ReactNode, isValidElement, useMemo } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+
+import type { CairnsEvidenceCard } from '~/api/endpoints/cairns';
+import { citationToolId, evidenceAnchorId } from '~/chat/state/citations';
+
+/** Flattens a rendered markdown run back to plain text for id matching. */
+function nodeText(node: ReactNode): string {
+  if (typeof node === 'string') return node;
+  if (typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map((child) => nodeText(child)).join('');
+  if (isValidElement(node)) {
+    return nodeText((node.props as { children?: ReactNode }).children);
+  }
+  return '';
+}
 
 /**
  * Tailwind's preflight strips default element styling, so every tag CAIRNS can
@@ -7,7 +22,7 @@ import remarkGfm from 'remark-gfm';
  *
  * `default` is a light surface ramp: only 800 and 900 clear WCAG AA on white.
  */
-const components: Components = {
+const baseComponents: Components = {
   p: ({ children }) => (
     <p className="mb-4 leading-7 text-default-900 last:mb-0">{children}</p>
   ),
@@ -38,9 +53,6 @@ const components: Components = {
   ),
   li: ({ children }) => (
     <li className="leading-7 text-default-900 pl-1">{children}</li>
-  ),
-  strong: ({ children }) => (
-    <strong className="font-semibold text-primary">{children}</strong>
   ),
   em: ({ children }) => <em className="italic">{children}</em>,
   a: ({ children, href }) => (
@@ -86,7 +98,81 @@ const components: Components = {
   ),
 };
 
-export function AnswerMarkdown({ children }: { children: string }) {
+function CitationLink({
+  anchorId,
+  children,
+}: {
+  anchorId: string;
+  children: ReactNode;
+}) {
+  return (
+    <a
+      className="font-semibold text-primary underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
+      href={`#${anchorId}`}
+      onClick={(event) => {
+        // Re-navigating to the hash already in the address bar is a no-op, so
+        // a second click on the same citation would neither scroll nor
+        // re-highlight. Drive both directly in that case.
+        if (globalThis.location.hash !== `#${anchorId}`) return;
+        const row = document.querySelector<HTMLElement>(
+          `#${CSS.escape(anchorId)}`
+        );
+        if (!row) return;
+
+        event.preventDefault();
+        row.scrollIntoView({ block: 'start' });
+        row.style.animation = 'none';
+        void row.offsetHeight; // Reflow, so the restarted animation is observed.
+        row.style.animation = '';
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
+/**
+ * CAIRNS cites a record by bolding its name followed by the evidence card's
+ * `tool_id` in brackets. A bolded run carrying a known id becomes a link to
+ * that card; every other bolded run stays plain text, so nothing is dressed as
+ * a link that cannot be followed.
+ */
+function buildComponents(
+  cards: CairnsEvidenceCard[],
+  turnId: string
+): Components {
+  return {
+    ...baseComponents,
+    strong: ({ children }) => {
+      const toolId = citationToolId(nodeText(children), cards);
+      if (!toolId) {
+        return (
+          <strong className="font-semibold text-default-900">{children}</strong>
+        );
+      }
+      return (
+        <CitationLink anchorId={evidenceAnchorId(turnId, toolId)}>
+          {children}
+        </CitationLink>
+      );
+    },
+  };
+}
+
+export function AnswerMarkdown({
+  children,
+  cards,
+  turnId,
+}: {
+  children: string;
+  cards: CairnsEvidenceCard[];
+  turnId: string;
+}) {
+  const components = useMemo(
+    () => buildComponents(cards, turnId),
+    [cards, turnId]
+  );
+
   return (
     <ReactMarkdown components={components} remarkPlugins={[remarkGfm]}>
       {children}

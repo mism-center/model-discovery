@@ -21,3 +21,27 @@ export function citedToolIds(
   }
   return cited;
 }
+
+/**
+ * The card a single run of answer text cites, if any.
+ *
+ * Only bolded runs carrying a known id are citations; ordinary emphasis is not,
+ * and must not be dressed as a link.
+ */
+export function citationToolId(
+  text: string,
+  cards: CairnsEvidenceCard[]
+): string | undefined {
+  for (const card of cards) {
+    if (card.tool_id && text.includes(`[${card.tool_id}]`)) return card.tool_id;
+  }
+  return;
+}
+
+/**
+ * Anchor for an evidence row. Scoped by turn because one thread renders an
+ * evidence list per answer, and ids must stay unique across all of them.
+ */
+export function evidenceAnchorId(turnId: string, toolId: string): string {
+  return `evidence-${turnId}-${toolId.replaceAll(/[^\w-]/g, '-')}`;
+}

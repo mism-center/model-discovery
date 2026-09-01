@@ -183,14 +183,20 @@ export function ChatTurnView({
 
         {turn.status === 'answered' && turn.answer ? (
           <>
-            <AnswerMarkdown>{turn.answer}</AnswerMarkdown>
+            <AnswerMarkdown cards={turn.evidence ?? []} turnId={turn.id}>
+              {turn.answer}
+            </AnswerMarkdown>
             <AnswerMeta onAskAgain={onRetry} turn={turn} />
           </>
         ) : undefined}
       </div>
 
       {turn.status === 'answered' && turn.evidence?.length ? (
-        <EvidenceList cards={turn.evidence} />
+        <EvidenceList
+          answer={turn.answer ?? ''}
+          cards={turn.evidence}
+          turnId={turn.id}
+        />
       ) : undefined}
     </article>
   );
