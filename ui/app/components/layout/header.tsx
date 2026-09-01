@@ -354,7 +354,7 @@ export function Header() {
             {!!user && (
               <NavbarItem>
                 <NavLink to="/pending-reviews" className={navLinkClassnames}>
-                  Pending Reviews
+                  Annotation Review
                 </NavLink>
               </NavbarItem>
             )}

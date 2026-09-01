@@ -12,7 +12,10 @@ import {
 } from '~/components/common/facets';
 import { useSearch } from '~/search/context/search-context';
 import { useUser } from '~/api/auth/user';
-import { pendingReviewModelsQueryOptions } from '~/api/query/models';
+import {
+  pendingReviewModelsQueryOptions,
+  pendingImageReviewModelsQueryOptions,
+} from '~/api/query/models';
 import {
   facetsForResourceType,
   type FacetConfig,
@@ -25,6 +28,11 @@ export function SearchSidebar() {
 
   const { data: pendingReviewData } = useQuery({
     ...pendingReviewModelsQueryOptions(),
+    enabled: !!user,
+  });
+
+  const { data: pendingImageReviewData } = useQuery({
+    ...pendingImageReviewModelsQueryOptions(user?.sub ?? ''),
     enabled: !!user,
   });
 
@@ -46,13 +54,16 @@ export function SearchSidebar() {
       data.aggs?.['execution_type']?.buckets ?? []
     ).reduce((sum, b) => sum + b.count, 0);
     const pendingCount = pendingReviewData?.total ?? 0;
-    return {
-      buckets: [
-        { key: 'executable', count: executableCount },
-        { key: 'pending_review', count: pendingCount },
-      ],
-    };
-  }, [data, pendingReviewData]);
+    const pendingImageCount = pendingImageReviewData?.total ?? 0;
+    const buckets: AggResult['buckets'] = [
+      { key: 'executable', count: executableCount },
+      { key: 'annotation_review', count: pendingCount },
+    ];
+    if (pendingImageCount > 0) {
+      buckets.push({ key: 'image_pending_review', count: pendingImageCount });
+    }
+    return { buckets };
+  }, [data, pendingReviewData, pendingImageReviewData]);
 
   return (
     <div className="flex flex-col h-full min-w-[320px]">

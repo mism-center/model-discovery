@@ -31,7 +31,7 @@ function PendingReviewSection({ models }: { models: ModelListItem[] }) {
   return (
     <div className="mb-6">
       <p className="text-[11px] font-bold uppercase tracking-widest text-default-500 px-6 mb-1">
-        Pending Review
+        Annotation Review
       </p>
       <div className="flex flex-col">
         {models.map((model) => (
@@ -182,14 +182,19 @@ export function SearchResults() {
   const modelStatus = getFacet('model_status');
   const selectedStatuses =
     modelStatus?.kind === 'terms' ? modelStatus.values : [];
-  const pendingReviewOn = selectedStatuses.includes('pending_review');
+  const pendingReviewOn = selectedStatuses.includes('annotation_review');
   const executableOn = selectedStatuses.includes('executable');
-  const anyFilterOn = pendingReviewOn || executableOn;
+  const imagePendingReviewOn = selectedStatuses.includes(
+    'image_pending_review'
+  );
+  const anyFilterOn = pendingReviewOn || executableOn || imagePendingReviewOn;
 
   const showPendingSection =
     isModelTab && hasPendingModels && (!anyFilterOn || pendingReviewOn);
   const showPendingImageSection =
-    isModelTab && hasPendingImageModels && !anyFilterOn;
+    isModelTab &&
+    hasPendingImageModels &&
+    (!anyFilterOn || imagePendingReviewOn);
   const showMainResults = !anyFilterOn || executableOn;
   const filterToExecutable = isModelTab && executableOn;
 

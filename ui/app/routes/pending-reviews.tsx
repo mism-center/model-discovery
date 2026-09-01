@@ -7,7 +7,7 @@ import type { Route } from './+types/pending-reviews';
 
 export function meta() {
   return [
-    { title: 'Pending Reviews | Multiscale Model Portal | MISM' },
+    { title: 'Annotation Review | Multiscale Model Portal | MISM' },
     {
       name: 'description',
       content:

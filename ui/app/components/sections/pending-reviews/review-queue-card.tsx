@@ -76,7 +76,7 @@ export function ReviewQueueCard({ model }: ReviewQueueCardProps) {
               'text-white text-[10px] font-bold uppercase tracking-wide'
             )}
           >
-            Model Pending Review
+            Annotation Pending Review
           </span>
         </div>
 

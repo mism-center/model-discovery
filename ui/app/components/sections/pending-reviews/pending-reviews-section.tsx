@@ -30,7 +30,7 @@ function EmptyState() {
       />
       <div className="flex flex-col gap-1 max-w-sm">
         <h3 className="text-base font-semibold text-default-900">
-          No pending reviews
+          No annotation review
         </h3>
         <p className="text-sm text-default-600 leading-relaxed">
           Nothing is waiting on review right now.
@@ -61,7 +61,7 @@ export function PendingReviewsSection() {
     body = (
       <ApiErrorDisplay
         error={error}
-        title="Couldn't load pending reviews"
+        title="Couldn't load annotation review"
         onRetry={refetch}
       />
     );
@@ -90,10 +90,10 @@ export function PendingReviewsSection() {
         <div className="mb-6">
           <CompactBreadcrumbs className="mb-3">
             <BreadcrumbItem href="/">Home</BreadcrumbItem>
-            <BreadcrumbItem>Pending Reviews</BreadcrumbItem>
+            <BreadcrumbItem>Annotation Review</BreadcrumbItem>
           </CompactBreadcrumbs>
           <h1 className="text-3xl font-headline font-extrabold text-primary tracking-tight">
-            Pending Reviews
+            Annotation Review
           </h1>
           <p className="mt-3 text-[16px] font-medium text-default-800/90">
             Models awaiting metadata review.

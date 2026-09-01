@@ -53,7 +53,7 @@ export function PendingReviewCard({ model }: PendingReviewCardProps) {
                 'text-white text-[10px] font-bold uppercase tracking-wide'
               )}
             >
-              Model Pending Review
+              Annotation Pending Review
             </span>
           </div>
         </div>

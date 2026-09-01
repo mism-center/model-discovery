@@ -254,7 +254,7 @@ export function RunModelModal({
       "This model's metadata was rejected during review. The owner must resubmit it before this model can run.";
   } else if (registrationPending) {
     registrationBlockMessage =
-      "This model's metadata is pending review. It can't run until it's approved.";
+      "This model's metadata is pending annotation review. It can't run until it's approved.";
   } else if (registrationBlocked) {
     registrationBlockMessage =
       "This model hasn't completed metadata review and can't run yet.";
