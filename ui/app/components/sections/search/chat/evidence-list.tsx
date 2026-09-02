@@ -28,14 +28,14 @@ export function EvidenceList({
 
   return (
     <section className="mt-6">
-      <div className="mb-1 flex items-baseline justify-between gap-4">
-        <h3 className="text-[10px] font-bold uppercase tracking-wide text-default-800">
-          Evidence ({visible.length}
-          {canFilter && !showAll ? ` of ${cards.length}` : ''})
+      <div className="mb-4 flex items-center gap-4">
+        <h3 className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-default-800">
+          Search Results
         </h3>
+        <hr className="min-w-0 flex-1 border-t border-default-200" />
         {canFilter ? (
           <button
-            className="text-xs text-secondary underline underline-offset-2 hover:text-primary"
+            className="shrink-0 text-xs text-secondary underline underline-offset-2 hover:text-primary"
             onClick={() => setShowAll((previous) => !previous)}
             type="button"
           >

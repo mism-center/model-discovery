@@ -1,11 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ChevronDoubleLeftIcon,
-  ChevronDoubleRightIcon,
   PlusIcon,
   TrashIcon,
 } from '@heroicons/react/16/solid';
-import { Button } from '@heroui/react';
+import {
+  Button,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+} from '@heroui/react';
 import cn from 'classnames';
 
 import {
@@ -13,9 +19,14 @@ import {
   conversationTitle,
   groupConversations,
 } from '~/chat/state/conversation-groups';
+import { timeAgo } from '~/chat/state/relative-time';
 import type { Conversation } from '~/chat/state/types';
 
 const COLLAPSED_KEY = 'mism-chat-sidebar-collapsed';
+
+/** Matches the rail's own width transition so labels travel with it. */
+const LABEL_TRANSITION =
+  'transition-[max-width,opacity] duration-300 motion-reduce:transition-none';
 
 function readCollapsed(): boolean {
   try {
@@ -36,61 +47,50 @@ function writeCollapsed(collapsed: boolean): void {
 function ConversationRow({
   conversation,
   isActive,
-  isConfirming,
+  now,
   onSelect,
   onRequestDelete,
-  onConfirmDelete,
-  onCancelDelete,
 }: {
   conversation: Conversation;
   isActive: boolean;
-  isConfirming: boolean;
+  now: number;
   onSelect: () => void;
   onRequestDelete: () => void;
-  onConfirmDelete: () => void;
-  onCancelDelete: () => void;
 }) {
-  if (isConfirming) {
-    return (
-      <li className="rounded-lg bg-danger-50 px-3 py-2">
-        <p className="text-xs text-default-900">Delete this conversation?</p>
-        <div className="mt-2 flex gap-2">
-          <button
-            className="text-xs font-semibold text-danger-600 underline underline-offset-2"
-            onClick={onConfirmDelete}
-            type="button"
-          >
-            Delete
-          </button>
-          <button
-            className="text-xs text-default-800 underline underline-offset-2"
-            onClick={onCancelDelete}
-            type="button"
-          >
-            Cancel
-          </button>
-        </div>
-      </li>
-    );
-  }
+  const title = conversationTitle(conversation);
 
   return (
-    <li className="group/row relative">
+    /*
+     * Hover styling lives on the row, not the select button, so moving onto the
+     * delete control does not read as leaving the row.
+     */
+    <li
+      className={cn(
+        'group/row relative rounded-lg',
+        isActive ? 'bg-primary/10' : 'hover:bg-default-100'
+      )}
+    >
       <button
-        className={cn(
-          'w-full rounded-lg px-3 py-2 pr-9 text-left',
-          'text-xs leading-5 line-clamp-2',
-          isActive
-            ? 'bg-primary/10 font-semibold text-primary'
-            : 'text-default-900 hover:bg-default-100'
-        )}
+        className="w-full rounded-lg px-2 py-2 pr-9 text-left"
         onClick={onSelect}
         type="button"
       >
-        {conversationTitle(conversation)}
+        <span
+          className={cn(
+            'block truncate text-[13px] leading-5',
+            isActive
+              ? 'font-medium text-primary'
+              : 'font-medium text-default-900'
+          )}
+        >
+          {title}
+        </span>
+        <span className="mt-0.5 block text-[11px] text-default-800">
+          {timeAgo(conversation.createdAt, now)}
+        </span>
       </button>
       <button
-        aria-label={`Delete conversation: ${conversationTitle(conversation)}`}
+        aria-label={`Delete conversation: ${title}`}
         className={cn(
           'absolute right-2 top-2 rounded p-1 text-default-800',
           'opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100',
@@ -119,7 +119,9 @@ export function ChatSidebar({
   onDelete: (id: string) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
-  const [confirmingId, setConfirmingId] = useState<string | undefined>();
+  const [pendingDelete, setPendingDelete] = useState<
+    Conversation | undefined
+  >();
 
   /**
    * The stored preference cannot be read during SSR, so the rail always renders
@@ -133,100 +135,135 @@ export function ChatSidebar({
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  const groups: ConversationGroup[] = useMemo(
-    () => groupConversations(conversations, Date.now()),
-    [conversations]
-  );
+  // Recomputed per render rather than on a timer: the labels are coarse enough
+  // that a row reading "5 minutes ago" for a while is not wrong.
+  const now = Date.now();
+  const groups: ConversationGroup[] = groupConversations(conversations, now);
 
   function toggle() {
     setCollapsed((previous) => {
       writeCollapsed(!previous);
       return !previous;
     });
-    setConfirmingId(undefined);
   }
 
   return (
-    <aside
-      aria-label="Conversation history"
-      className={cn(
-        // `overflow-hidden` keeps the toggle and row text inside the rail when
-        // collapsed instead of spilling over the thread.
-        'sticky top-16 h-[calc(100dvh-4rem)] shrink-0 overflow-hidden',
-        'flex flex-col border-r border-default-200 bg-default-50',
-        animate &&
-          'transition-[width] duration-300 motion-reduce:transition-none',
-        collapsed ? 'w-14' : 'w-[304px]'
-      )}
-    >
-      <div
+    <>
+      <aside
+        aria-label="Conversation history"
         className={cn(
-          'flex shrink-0 items-center gap-2 p-3',
-          collapsed && 'justify-center'
+          // `overflow-hidden` keeps the toggle and row text inside the rail
+          // when collapsed instead of spilling over the thread.
+          'sticky top-16 h-[calc(100dvh-4rem)] shrink-0 overflow-hidden',
+          'flex flex-col border-r border-default-200 bg-default-50',
+          animate &&
+            'transition-[width] duration-300 motion-reduce:transition-none',
+          collapsed ? 'w-14' : 'w-[304px]'
         )}
       >
-        {collapsed ? undefined : (
-          <h2 className="flex-1 truncate font-headline text-[13px] font-bold uppercase tracking-widest text-default-900">
+        {/*
+         * Labels collapse to zero width alongside the rail rather than being
+         * swapped out, so the buttons travel with the animation instead of
+         * snapping into their compact form on the first frame.
+         */}
+        <div
+          className={cn(
+            'flex shrink-0 items-center p-3',
+            animate &&
+              'transition-[gap] duration-300 motion-reduce:transition-none',
+            collapsed ? 'gap-0' : 'gap-2'
+          )}
+        >
+          <h2
+            className={cn(
+              'overflow-hidden whitespace-nowrap font-headline text-[13px] font-bold uppercase tracking-widest text-default-900',
+              animate && LABEL_TRANSITION,
+              collapsed ? 'max-w-0 opacity-0' : 'max-w-full flex-1 opacity-100'
+            )}
+          >
             History
           </h2>
-        )}
-        <Button
-          aria-label={collapsed ? 'Expand history' : 'Collapse history'}
-          isIconOnly
-          onPress={toggle}
-          size="sm"
-          variant="light"
-        >
-          {collapsed ? (
-            <ChevronDoubleRightIcon className="size-4" />
-          ) : (
-            <ChevronDoubleLeftIcon className="size-4" />
+          <Button
+            aria-label={collapsed ? 'Expand history' : 'Collapse history'}
+            isIconOnly
+            onPress={toggle}
+            size="sm"
+            variant="light"
+          >
+            <ChevronDoubleLeftIcon
+              className={cn(
+                'size-4',
+                animate &&
+                  'transition-transform duration-300 motion-reduce:transition-none',
+                collapsed && 'rotate-180'
+              )}
+            />
+          </Button>
+        </div>
+
+        <div className="shrink-0 px-3 pb-3">
+          <Button
+            aria-label="New chat"
+            className="min-w-0 px-0 font-semibold"
+            color="primary"
+            fullWidth
+            onPress={onNewChat}
+            size="sm"
+          >
+            <span
+              className={cn(
+                'flex items-center justify-center overflow-hidden',
+                animate &&
+                  'transition-[gap] duration-300 motion-reduce:transition-none',
+                collapsed ? 'gap-0' : 'gap-2'
+              )}
+            >
+              <PlusIcon className="size-4 shrink-0" />
+              <span
+                className={cn(
+                  'overflow-hidden whitespace-nowrap',
+                  animate && LABEL_TRANSITION,
+                  collapsed ? 'max-w-0 opacity-0' : 'max-w-[8rem] opacity-100'
+                )}
+              >
+                New chat
+              </span>
+            </span>
+          </Button>
+        </div>
+
+        {/*
+         * Kept mounted and faded rather than unmounted, so collapsing reads as
+         * one movement instead of the contents vanishing before the rail moves.
+         */}
+        <div
+          aria-hidden={collapsed}
+          className={cn(
+            'flex min-h-0 flex-1 flex-col',
+            animate &&
+              'transition-opacity duration-200 motion-reduce:transition-none',
+            collapsed && 'pointer-events-none opacity-0'
           )}
-        </Button>
-      </div>
-
-      <div className={cn('shrink-0 px-3 pb-3', collapsed && 'px-2')}>
-        <Button
-          aria-label="New chat"
-          className={cn('font-semibold', collapsed && 'min-w-0')}
-          color="primary"
-          fullWidth={!collapsed}
-          isIconOnly={collapsed}
-          onPress={onNewChat}
-          size="sm"
-          startContent={collapsed ? undefined : <PlusIcon className="size-4" />}
-          variant="flat"
         >
-          {collapsed ? <PlusIcon className="size-4" /> : 'New chat'}
-        </Button>
-      </div>
-
-      {collapsed ? undefined : (
-        <>
-          <nav className="min-h-0 flex-1 overflow-y-auto px-3">
+          <nav className="min-h-0 w-[304px] flex-1 overflow-y-auto px-3">
             {groups.length === 0 ? (
-              <p className="px-3 py-2 text-xs text-default-800">
+              <p className="px-2 py-2 text-xs text-default-800">
                 Questions you ask will be listed here.
               </p>
             ) : (
               groups.map((group) => (
                 <section className="mb-4" key={group.label}>
-                  <h3 className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-default-800">
+                  <h3 className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-default-800">
                     {group.label}
                   </h3>
-                  <ul className="space-y-0.5">
+                  <ul className="mt-0.5 space-y-0.5">
                     {group.conversations.map((conversation) => (
                       <ConversationRow
                         conversation={conversation}
                         isActive={conversation.id === activeId}
-                        isConfirming={conversation.id === confirmingId}
                         key={conversation.id}
-                        onCancelDelete={() => setConfirmingId(undefined)}
-                        onConfirmDelete={() => {
-                          onDelete(conversation.id);
-                          setConfirmingId(undefined);
-                        }}
-                        onRequestDelete={() => setConfirmingId(conversation.id)}
+                        now={now}
+                        onRequestDelete={() => setPendingDelete(conversation)}
                         onSelect={() => onSelect(conversation.id)}
                       />
                     ))}
@@ -236,11 +273,69 @@ export function ChatSidebar({
             )}
           </nav>
 
-          <p className="shrink-0 border-t border-default-200 px-6 py-3 text-[11px] text-default-800">
+          <p className="w-[304px] shrink-0 border-t border-default-200 px-3 py-3 text-[11px] text-default-800">
             History is saved in this browser only.
           </p>
-        </>
-      )}
-    </aside>
+        </div>
+      </aside>
+
+      <Modal
+        classNames={{
+          backdrop: 'bg-slate-900/50 backdrop-blur-sm',
+          base: 'border border-default-200',
+        }}
+        hideCloseButton
+        isOpen={pendingDelete !== undefined}
+        // `onOpenChange` is the controlled pairing for `isOpen`; with only
+        // `onClose`, react-aria keeps its own open state and ignores the prop.
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(undefined);
+        }}
+        size="sm"
+      >
+        <ModalContent>
+          <ModalHeader className="flex items-start gap-3 px-5 pb-0 pt-5">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-danger/20 bg-danger/10 text-danger">
+              <TrashIcon className="size-4" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-headline text-base leading-6 tracking-tight text-default-900">
+                Delete this conversation?
+              </span>
+              <span className="mt-0.5 block truncate text-xs font-normal text-default-800">
+                {pendingDelete ? conversationTitle(pendingDelete) : ''}
+              </span>
+            </span>
+          </ModalHeader>
+          <ModalBody className="px-5 py-4">
+            <p className="text-sm font-light leading-relaxed text-default-800">
+              History is saved in this browser only, so removing the
+              conversation and its answers here cannot be undone.
+            </p>
+          </ModalBody>
+          <ModalFooter className="gap-2 border-t border-default-200 px-5 py-3">
+            <Button
+              onPress={() => setPendingDelete(undefined)}
+              size="sm"
+              variant="light"
+            >
+              Cancel
+            </Button>
+            <Button
+              className="font-semibold"
+              color="danger"
+              onPress={() => {
+                if (pendingDelete) onDelete(pendingDelete.id);
+                setPendingDelete(undefined);
+              }}
+              size="sm"
+              startContent={<TrashIcon className="size-3.5" />}
+            >
+              Delete
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+    </>
   );
 }

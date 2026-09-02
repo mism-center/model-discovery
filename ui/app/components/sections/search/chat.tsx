@@ -14,13 +14,23 @@ import {
 import { ChatComposer } from './chat/chat-composer';
 import { ChatHero } from './chat/chat-hero';
 import { ChatSidebar } from './chat/chat-sidebar';
+import { ThreadSkeleton } from './chat/thread-skeleton';
 import { ChatTurnView } from './chat/chat-turn';
+
+/** Search param naming the conversation on screen. */
+const CONVERSATION_PARAM = 'c';
 
 export default function ChatSection() {
   const state = useChatState();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [conversationId, setConversationId] = useState<string | null>(null);
+  /**
+   * The conversation being viewed lives in the URL, so it is known on the very
+   * first render. Holding it in component state instead meant the empty state
+   * painted before IndexedDB answered, then flipped to a restored thread.
+   */
+  const conversationId = searchParams.get(CONVERSATION_PARAM);
+
   // `?q=` prefills the composer once and never sends on its own.
   const [draft, setDraft] = useState(() => searchParams.get('q') ?? '');
 
@@ -34,42 +44,59 @@ export default function ChatSection() {
   const generating = isGenerating(conversation);
   const conversations = conversationList(state);
 
-  /**
-   * Reading from IndexedDB is async, so history arrives after first paint.
-   * Opening the most recent conversation only if none is active leaves a
-   * conversation started before hydration finished untouched.
-   */
+  function viewConversation(id: string | null) {
+    setSearchParams(
+      (params) => {
+        if (id) params.set(CONVERSATION_PARAM, id);
+        else params.delete(CONVERSATION_PARAM);
+        return params;
+      },
+      { replace: true, preventScrollReset: true }
+    );
+  }
+
   const [animateHero, setAnimateHero] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
   useEffect(() => {
-    void hydrate().then((id) => {
-      if (id) setConversationId((current) => current ?? id);
-      // A frame later, so the restored state paints before transitions are
-      // armed and the hero does not animate shut on every reload.
+    void hydrate().then(() => {
+      setIsHydrated(true);
+      // A frame later, so restored history paints before transitions are armed
+      // and the hero does not animate shut on load.
       requestAnimationFrame(() => setAnimateHero(true));
     });
   }, []);
 
   /**
-   * Bring a newly asked question to the top of the viewport.
+   * Scrolling, for the two cases that need it and no others.
    *
-   * Keyed on the turn count of the conversation being viewed, so only asking
-   * scrolls. An answer arriving must not move the page: it can land minutes
-   * later, against a conversation the reader has since navigated away from.
+   * Opening a different conversation starts at its top. Asking within the
+   * conversation on screen brings the new question up. Both are tracked
+   * together because a switch also changes the turn count, and treating that
+   * as "a question was asked" scrolls the reader to the bottom of a thread
+   * they just opened.
    *
-   * Positioning is instant because Chrome silently drops smooth scrolling in a
-   * tab that is not focused, which is exactly when a slow answer returns.
+   * An answer arriving never scrolls: it can land minutes later, against a
+   * conversation the reader has since navigated away from. Positioning is
+   * instant because Chrome drops smooth scrolling in an unfocused tab, which
+   * is exactly when a slow answer returns.
    */
-  const previousTurnCount = useRef(turns.length);
+  const viewed = useRef({ id: conversationId, turnCount: turns.length });
   useEffect(() => {
-    if (turns.length > previousTurnCount.current) {
+    const previous = viewed.current;
+    viewed.current = { id: conversationId, turnCount: turns.length };
+
+    if (previous.id !== conversationId) {
+      globalThis.scrollTo({ top: 0 });
+      return;
+    }
+    if (turns.length > previous.turnCount) {
       lastTurnRef.current?.scrollIntoView({ block: 'start' });
     }
-    previousTurnCount.current = turns.length;
-  }, [turns.length]);
+  }, [conversationId, turns.length]);
 
   function submit(question: string) {
     const id = ask(conversationId, question);
-    if (id !== conversationId) setConversationId(id);
+    if (id !== conversationId) viewConversation(id);
     setDraft('');
     textareaRef.current?.focus();
   }
@@ -82,15 +109,24 @@ export default function ChatSection() {
   function startNewChat() {
     // No conversation is created until a question is asked, so the history
     // never fills with entries that were opened and never used.
-    setConversationId(null);
+    viewConversation(null);
     setDraft('');
     textareaRef.current?.focus();
   }
 
   function deleteConversation(id: string) {
     removeConversation(id);
-    if (id === conversationId) setConversationId(null);
+    if (id === conversationId) viewConversation(null);
   }
+
+  /*
+   * A conversation named in the URL has no turns until IndexedDB answers, so
+   * that window shows the thread's shape instead of the empty state. The hero
+   * stays collapsed through it rather than flashing over a thread that is
+   * about to appear.
+   */
+  const isLoadingConversation = conversationId !== null && !isHydrated;
+  const heroCollapsed = turns.length > 0 || isLoadingConversation;
 
   return (
     <main className="flex grow bg-white">
@@ -99,27 +135,34 @@ export default function ChatSection() {
         conversations={conversations}
         onDelete={deleteConversation}
         onNewChat={startNewChat}
-        onSelect={setConversationId}
+        onSelect={viewConversation}
       />
 
       <div className="flex min-w-0 grow flex-col">
         <ChatHero
           animate={animateHero}
-          isCollapsed={turns.length > 0}
+          isCollapsed={heroCollapsed}
           onAsk={submit}
         />
 
+        {/*
+         * Always grows. Without it the column has nothing to fill the viewport
+         * while a URL-named conversation is still being read from IndexedDB,
+         * and the sticky composer rides up under the header.
+         */}
         <div
           aria-live="polite"
           aria-relevant="additions"
-          className="mx-auto w-full max-w-[1080px] grow px-6 empty:px-0"
+          className="mx-auto w-full max-w-[1080px] grow px-6"
           role="log"
         >
+          {isLoadingConversation ? <ThreadSkeleton /> : undefined}
+
           {turns.length > 0 ? (
             <div className="py-10">
               {turns.map((turn, index) => (
                 <div
-                  className="scroll-mt-20"
+                  className="scroll-mt-20 pb-8 last:pb-0"
                   key={turn.id}
                   ref={index === turns.length - 1 ? lastTurnRef : undefined}
                 >

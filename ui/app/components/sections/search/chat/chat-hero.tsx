@@ -9,8 +9,9 @@ const EXAMPLE_QUESTIONS = [
 ];
 
 /**
- * Collapses on the first question using the same `grid-rows` transition the
- * search hero runs (`search-bar/search-bar.tsx`).
+ * Collapses on the first question. The transition mirrors the one
+ * `search-bar/search-bar.tsx` runs, so the two Discover surfaces behave
+ * identically.
  */
 export function ChatHero({
   isCollapsed,
@@ -30,20 +31,30 @@ export function ChatHero({
     <div
       className={cn(
         'grid',
-        animate &&
-          'transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none',
         isCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'
       )}
+      style={{
+        transitionProperty: animate ? 'grid-template-rows' : 'none',
+        transitionDuration: '300ms',
+        transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
+      }}
     >
       <div
-        className={cn(
-          'overflow-hidden',
-          animate &&
-            'transition-opacity duration-200 ease-in-out motion-reduce:transition-none',
-          isCollapsed ? 'opacity-0' : 'opacity-100'
-        )}
+        className="overflow-hidden"
+        style={{
+          opacity: isCollapsed ? 0 : 1,
+          transitionProperty: animate ? 'opacity' : 'none',
+          transitionDuration: '200ms',
+          transitionTimingFunction: 'ease-in-out',
+        }}
       >
-        <div className="relative border-b border-default bg-primary-gradient pb-14 pt-10">
+        {/*
+         * Fills the viewport by its own min-height rather than by flex-grow:
+         * a `grow` that toggles with `isCollapsed` re-runs flex layout during
+         * the grid-rows transition, which is what made the collapse stutter.
+         * 11rem is the sticky header plus the composer.
+         */}
+        <div className="relative flex min-h-[calc(100dvh-11rem)] flex-col justify-center border-b border-default bg-primary-gradient py-14">
           <div
             className="pointer-events-none absolute inset-0 opacity-[0.025]"
             style={{
@@ -94,8 +105,8 @@ export function ChatHero({
             </ul>
 
             <p className="mt-8 text-xs font-light text-slate-400">
-              Answers are generated. Check the linked records before relying on
-              one.
+              Answers are AI generated. Check the linked records before relying
+              on one.
             </p>
           </div>
         </div>

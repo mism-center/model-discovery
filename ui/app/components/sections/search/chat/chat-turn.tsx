@@ -142,7 +142,7 @@ export function ChatTurnView({
   onRetry: () => void;
 }) {
   return (
-    <article className="relative pb-12 pl-6 last:pb-0">
+    <article className="relative pl-6">
       <span
         aria-hidden="true"
         className="absolute left-0 top-0 h-full w-px bg-default-200"

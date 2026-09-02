@@ -34,8 +34,11 @@ export function ChatComposer({
       <div className="mx-auto w-full max-w-[1080px] px-6 py-4">
         <form
           className={cn(
-            'flex items-end gap-2 rounded-lg border border-default-200 bg-white p-2',
-            'focus-within:ring-2 focus-within:ring-secondary/40'
+            // The textarea carries no inset of its own, so the text and the
+            // send button are both `px-3` off the border.
+            'flex items-end gap-2 rounded-lg border border-default-200 bg-white px-3 py-2.5',
+            'transition-all duration-200',
+            'focus-within:ring-2 focus-within:ring-slate-300'
           )}
           onSubmit={(event) => {
             event.preventDefault();
@@ -44,7 +47,9 @@ export function ChatComposer({
         >
           <textarea
             aria-label="Ask a question about models and tools"
-            className="max-h-50 flex-1 resize-none bg-transparent px-2 py-2 text-[15px] leading-6 text-default-900 outline-none placeholder:text-default-800"
+            // `py-1` puts a single row at 32px, matching the send button, so
+            // the two sit on one line until the field actually grows.
+            className="max-h-50 flex-1 resize-none bg-transparent py-1 text-[15px] leading-6 text-default-900 outline-none placeholder:text-default-800"
             onChange={(event) => onChange(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
@@ -75,7 +80,8 @@ export function ChatComposer({
           </Button>
         </form>
         <p className="mt-2 text-[11px] text-default-800">
-          Enter to send · Shift + Enter for a new line
+          Enter to send · Shift + Enter for a new line · Answers are AI
+          generated. Check the linked records before relying on one.
         </p>
       </div>
     </div>
