@@ -138,7 +138,32 @@ export default function ChatSection() {
         onSelect={viewConversation}
       />
 
-      <div className="flex min-w-0 grow flex-col">
+      <div className="relative flex min-w-0 grow flex-col">
+        {/*
+         * Spans the whole column, composer included, so the hero's navy runs to
+         * the bottom of the page and its radial gradients are anchored to the
+         * page's own corners. It cross-fades because a `background-image`
+         * cannot be transitioned between states on a single element.
+         */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-primary-gradient"
+          style={{
+            opacity: heroCollapsed ? 0 : 1,
+            transitionProperty: animateHero ? 'opacity' : 'none',
+            transitionDuration: '300ms',
+            transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
+          }}
+        >
+          <div
+            className="absolute inset-0 opacity-[0.025]"
+            style={{
+              backgroundImage: `linear-gradient(white 1px, transparent 1px), linear-gradient(90deg, white 1px, transparent 1px)`,
+              backgroundSize: '40px 40px',
+            }}
+          />
+        </div>
+
         <ChatHero
           animate={animateHero}
           isCollapsed={heroCollapsed}
@@ -153,7 +178,7 @@ export default function ChatSection() {
         <div
           aria-live="polite"
           aria-relevant="additions"
-          className="mx-auto w-full max-w-[1080px] grow px-6"
+          className="relative z-10 mx-auto w-full max-w-[1080px] grow px-6"
           role="log"
         >
           {isLoadingConversation ? <ThreadSkeleton /> : undefined}
@@ -181,6 +206,7 @@ export default function ChatSection() {
 
         <ChatComposer
           isGenerating={generating}
+          isOnHero={!heroCollapsed}
           onCancel={cancelCurrent}
           onChange={setDraft}
           onSubmit={() => submit(draft)}

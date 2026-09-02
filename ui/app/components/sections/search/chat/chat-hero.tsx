@@ -30,7 +30,7 @@ export function ChatHero({
   return (
     <div
       className={cn(
-        'grid',
+        'relative z-10 grid',
         isCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'
       )}
       style={{
@@ -54,16 +54,8 @@ export function ChatHero({
          * the grid-rows transition, which is what made the collapse stutter.
          * 11rem is the sticky header plus the composer.
          */}
-        <div className="relative flex min-h-[calc(100dvh-11rem)] flex-col justify-center border-b border-default bg-primary-gradient py-14">
-          <div
-            className="pointer-events-none absolute inset-0 opacity-[0.025]"
-            style={{
-              backgroundImage: `linear-gradient(white 1px, transparent 1px), linear-gradient(90deg, white 1px, transparent 1px)`,
-              backgroundSize: '40px 40px',
-            }}
-          />
-
-          <div className="relative z-10 mx-auto w-full max-w-[1080px] px-6">
+        <div className="flex min-h-[calc(100dvh-11rem)] flex-col justify-center py-14">
+          <div className="mx-auto w-full max-w-[1080px] px-6">
             <div className="mb-5 flex items-center gap-3">
               <div className="flex shrink-0 items-center justify-center rounded-lg border border-success/20 bg-success/15 p-2 text-success">
                 <SparklesIcon className="size-5" />
@@ -80,9 +72,9 @@ export function ChatHero({
               plain language
             </h1>
 
-            <p className="mb-8 max-w-[62ch] text-[15px] font-light leading-relaxed text-slate-300">
-              Answers are drawn from the BioModels repository and a curated tool
-              catalogue, with the matching records listed beneath each answer.
+            <p className="mb-8 text-[15px] font-light leading-relaxed text-slate-300">
+              Answers are drawn from a variety of model and data repositories,
+              with relevant results listed beneath each answer.
             </p>
 
             <ul className="grid gap-3 sm:grid-cols-2">
@@ -103,11 +95,6 @@ export function ChatHero({
                 </li>
               ))}
             </ul>
-
-            <p className="mt-8 text-xs font-light text-slate-400">
-              Answers are AI generated. Check the linked records before relying
-              on one.
-            </p>
           </div>
         </div>
       </div>
