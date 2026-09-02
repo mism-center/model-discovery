@@ -295,9 +295,6 @@ export function ChatSidebar({
       >
         <ModalContent>
           <ModalHeader className="flex items-start gap-3 px-5 pb-0 pt-5">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-danger/20 bg-danger/10 text-danger">
-              <TrashIcon className="size-4" />
-            </span>
             <span className="min-w-0 flex-1">
               <span className="block font-headline text-base leading-6 tracking-tight text-default-900">
                 Delete this conversation?
@@ -309,8 +306,8 @@ export function ChatSidebar({
           </ModalHeader>
           <ModalBody className="px-5 py-4">
             <p className="text-sm font-light leading-relaxed text-default-800">
-              History is saved in this browser only, so removing the
-              conversation and its answers here cannot be undone.
+              History is saved in this browser only, so deleting this
+              conversation cannot be reversed.
             </p>
           </ModalBody>
           <ModalFooter className="gap-2 border-t border-default-200 px-5 py-3">
@@ -323,7 +320,7 @@ export function ChatSidebar({
             </Button>
             <Button
               className="font-semibold"
-              color="danger"
+              color="primary"
               onPress={() => {
                 if (pendingDelete) onDelete(pendingDelete.id);
                 setPendingDelete(undefined);

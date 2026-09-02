@@ -86,7 +86,7 @@ export function EvidenceCard({
 
           {fields.publicationTitle ? (
             <div className="mt-3 flex items-start gap-1.5 text-[11px] uppercase tracking-tight text-default-800">
-              <QuotationMarkIcon className="mt-0.5 size-3.5 shrink-0" />
+              <QuotationMarkIcon className="size-3.5 shrink-0" />
               <span>
                 {fields.publicationTitle}
                 {fields.publicationJournal ? (
