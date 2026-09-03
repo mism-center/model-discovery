@@ -5,10 +5,10 @@ from fastapi.testclient import TestClient
 from mism_registry.enums import ResourceType, ResourceVersionStatus
 from mism_registry.resource import Resource
 
-from mismapi.auth.base import AuthenticatedPrincipal, require_principal
 from mismapi.core.deps import _get_registry_service
 from mismapi.main import create_app
 from mismapi.services.registry_service import RegistryService
+from tests.conftest import default_principal, override_principal
 
 
 def _make_dataset(
@@ -33,19 +33,15 @@ def _make_dataset(
     )
 
 
-async def _allow_principal() -> AuthenticatedPrincipal:
-    return AuthenticatedPrincipal(
-        subject="user-1",
-        issuer="test",
-        audience="mism-api",
-        scopes=set(),
-    )
-
-
 def _make_app_with_service(service: RegistryService) -> TestClient:
     app = create_app()
-    app.dependency_overrides[require_principal] = _allow_principal
+    # `override_principal` registers the fixed "user-1" principal for both
+    # `require_principal` and `optional_principal` — `list_datasets` uses
+    # `OptionalPrincipalDep` for its visibility filter (MISM-291 Phase A), so
+    # overriding only `require_principal` would leave the real
+    # `optional_principal` running outside a live request context.
     app.dependency_overrides[_get_registry_service] = lambda: service
+    override_principal(app)
     return TestClient(app)
 
 
@@ -159,6 +155,7 @@ def test_list_datasets_returns_results() -> None:
     assert payload["results"][1]["id"] == "d-2"
 
     service.list_datasets.assert_called_once_with(
+        principal=default_principal(),
         name_contains=None,
         owner=None,
         tags=None,
@@ -190,6 +187,7 @@ def test_list_datasets_passes_filters() -> None:
     assert response.status_code == 200
 
     filter_kwargs = dict(
+        principal=default_principal(),
         name_contains="climate",
         owner="bob",
         tags=["csv", "public"],
@@ -216,6 +214,7 @@ def test_list_datasets_pagination() -> None:
     assert payload["results"][1]["id"] == "d-2"
 
     service.list_datasets.assert_called_once_with(
+        principal=default_principal(),
         name_contains=None,
         owner=None,
         tags=None,

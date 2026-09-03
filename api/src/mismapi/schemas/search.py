@@ -48,6 +48,7 @@ class ModelListItem(BaseModel):
     containers: list[ContainerDTO] = Field(default_factory=list)
     # Registration workflow
     registration_status: str = ""
+    image_review_status: str = "not_applicable"
     # System
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime

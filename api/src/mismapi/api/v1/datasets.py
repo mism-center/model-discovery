@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, Query
 from mism_registry.resource import Resource
 
-from mismapi.auth.base import AuthenticatedPrincipalDep
+from mismapi.auth.base import AuthenticatedPrincipalDep, OptionalPrincipalDep
 from mismapi.core.deps import RegistryServiceDep
 from mismapi.schemas.registry import (
     RegisterDatasetRequest,
@@ -91,7 +91,7 @@ async def create_dataset(
     service: RegistryServiceDep,
     principal: AuthenticatedPrincipalDep,
 ) -> RegisterDatasetResponse:
-    resource = service.create_dataset(
+    resource = await service.create_dataset(
         principal,
         name=payload.name,
         location_uri=payload.location_uri,
@@ -160,6 +160,7 @@ async def update_dataset(
 @router.get("/datasets", response_model=ModelListResponse)
 async def list_datasets(
     service: RegistryServiceDep,
+    principal: OptionalPrincipalDep,
     name: str | None = Query(default=None, description="Substring match on dataset name"),
     owner: str | None = Query(default=None, description="Exact match on owner"),
     tags: list[str] | None = Query(default=None, description="Format tags (all must match)"),
@@ -169,6 +170,7 @@ async def list_datasets(
     offset: int = Query(default=0, ge=0),
 ) -> ModelListResponse:
     resources = service.list_datasets(
+        principal=principal,
         name_contains=name,
         owner=owner,
         tags=tags,

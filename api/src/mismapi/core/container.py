@@ -28,6 +28,7 @@ from mismapi.auth.session import RedisSessionStore, SessionStore
 from mismapi.auth.session_refresh import SessionRefresher
 from mismapi.clients.execution_client import ExecutionClient
 from mismapi.clients.local_upload_client import LocalFileUploadClient
+from mismapi.clients.openfga_client import OpenFGAClient
 from mismapi.clients.upload_client import UploadServiceClient
 from mismapi.core.config_validation import ensure_startup_config
 from mismapi.core.settings import Settings
@@ -55,6 +56,7 @@ class AppContainer:
     # Both implement the same async protocol consumed by the upload route.
     upload_client: UploadServiceClient | LocalFileUploadClient
     execution_client: ExecutionClient
+    openfga_client: OpenFGAClient
     auth_validator: AuthValidator
     oidc_client: StarletteOAuth2App
     oidc_service: OIDCService
@@ -111,6 +113,13 @@ class AppContainer:
             stub_upstream=settings.stub_upstream_services,
         )
 
+        openfga_client = OpenFGAClient(
+            base_url=settings.openfga_api_url,
+            store_id=settings.openfga_store_id,
+            authorization_model_id=settings.openfga_authorization_model_id,
+            timeout_seconds=settings.openfga_timeout_seconds,
+        )
+
         redis_client: Redis = Redis.from_url(  # pyright: ignore[reportUnknownMemberType]
             settings.redis_url,
             decode_responses=False,
@@ -145,6 +154,7 @@ class AppContainer:
             upload_session_store_service=upload_session_store_service,
             upload_client=upload_client,
             execution_client=execution_client,
+            openfga_client=openfga_client,
             auth_validator=auth_validator,
             oidc_client=oidc_client,
             oidc_service=oidc_service,
@@ -170,6 +180,7 @@ class AppContainer:
         for name, close in (
             ("upload_client", self.upload_client.close),
             ("execution_client", self.execution_client.close),
+            ("openfga_client", self.openfga_client.close),
             ("redis", self.redis.aclose),
         ):
             try:

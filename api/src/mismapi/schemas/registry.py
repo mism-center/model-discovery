@@ -17,7 +17,7 @@ from mism_registry.types import (
     RelatedResource,
     TestSpec,
 )
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from mismapi.core.file_storage import validate_location_uri
 
@@ -84,6 +84,7 @@ class ContainerDTO(BaseModel):
     kind: str
     file: str = ""
     image_name: str = ""
+    registry: str = ""
 
 
 class ComputeDTO(BaseModel):
@@ -287,7 +288,7 @@ def dependency_to_dto(d: Dependency) -> DependencyDTO:
 
 
 def container_to_dto(c: Container) -> ContainerDTO:
-    return ContainerDTO(kind=c.kind, file=c.file, image_name=c.image_name)
+    return ContainerDTO(kind=c.kind, file=c.file, image_name=c.image_name, registry=c.registry)
 
 
 def compute_to_dto(c: Compute) -> ComputeDTO:
@@ -417,6 +418,19 @@ class RegisterModelResponse(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
+    # Metadata-review tracking (MISM-291) — who reviewed it and why it was
+    # rejected, if it was. Empty/None until a reviewer has acted.
+    metadata_reviewed_by: str = ""
+    metadata_reviewed_at: datetime | None = None
+    metadata_rejection_reason: str = ""
+    # Dockerfile/image-review tracking (MISM-291) — mirrors the metadata-review
+    # fields above, for the IMAGE_CHECK workflow (steps i-k). "not_applicable"
+    # until a container recipe is submitted; who vetted it and why it was
+    # rejected, if it was.
+    image_review_status: str = "not_applicable"
+    image_reviewed_by: str = ""
+    image_reviewed_at: datetime | None = None
+    image_rejection_reason: str = ""
 
 
 class ModelDetailResponse(RegisterModelResponse):
@@ -800,7 +814,7 @@ class MetadataPackageRawResponse(BaseModel):
     warnings: list[str] = Field(
         default_factory=list,
         description="Non-blocking issues found while parsing the metadata-package "
-        "(missing/empty required fields); approval still succeeded.",
+        "(missing/empty required fields); the save still succeeded.",
     )
 
 
@@ -808,3 +822,42 @@ class MetadataPackageUpdateRequest(BaseModel):
     """Edited raw YAML files to write back to the metadata-package."""
 
     files: list[MetadataPackageFile] = Field(min_length=1)
+
+
+class ReviewMetadataPackageRequest(BaseModel):
+    """An UPLOAD_REVIEWER's approve/reject decision on a PENDING_REVIEW model
+    (MISM-291)."""
+
+    approve: bool
+    reason: str = ""
+
+    @model_validator(mode="after")
+    def _require_reason_on_reject(self) -> "ReviewMetadataPackageRequest":
+        if not self.approve and not self.reason.strip():
+            raise ValueError("reason is required when approve is false")
+        return self
+
+
+class SubmitContainerImageRequest(BaseModel):
+    """Submit (or resubmit) a built Dockerfile/image for IMAGE_CHECK review
+    (MISM-291, workflow steps h/l). Resubmitting after an ``IMAGE_REJECTED``
+    decision uses this same request — there is no separate "resubmit" shape."""
+
+    kind: str
+    file: str = ""
+    image_name: str = ""
+    registry: str = ""
+
+
+class ReviewContainerImageRequest(BaseModel):
+    """An IMAGE_CHECK holder's approve/reject decision on a
+    PENDING_IMAGE_CHECK model's Dockerfile/image (MISM-291)."""
+
+    approve: bool
+    reason: str = ""
+
+    @model_validator(mode="after")
+    def _require_reason_on_reject(self) -> "ReviewContainerImageRequest":
+        if not self.approve and not self.reason.strip():
+            raise ValueError("reason is required when approve is false")
+        return self

@@ -10,11 +10,12 @@ from mismapi.auth.base import AuthenticatedPrincipalDep
 from mismapi.auth.return_to import DEFAULT_LANDING_PATH, resolve_return_to
 from mismapi.core.deps import (
     OIDCServiceDep,
+    RegistryServiceDep,
     SessionStoreDep,
     SettingsDep,
 )
 from mismapi.core.errors import APIError
-from mismapi.schemas.auth import CurrentUser, LogoutResponse, OidcSessionRecord
+from mismapi.schemas.auth import AuthCapabilities, CurrentUser, LogoutResponse, OidcSessionRecord
 from mismapi.utils import merge_query_params
 
 logger = logging.getLogger(__name__)
@@ -156,6 +157,24 @@ async def me(
         name=_str_or_none(claims.get("name")),
         preferred_username=_str_or_none(claims.get("preferred_username")),
     )
+
+
+@router.get("/capabilities")
+async def capabilities(
+    principal: AuthenticatedPrincipalDep,
+    service: RegistryServiceDep,
+) -> AuthCapabilities:
+    """The caller's platform-wide OpenFGA role grants, as booleans.
+
+    A dedicated endpoint rather than extra fields on `GET /auth/me`: keeps
+    identity (`CurrentUser`) separate from authorization state, avoids
+    adding OpenFGA round-trips to every `/auth/me` call (including ones that
+    don't need them, e.g. a header avatar fetch), and gives the UI a single
+    place to refetch permissions after an admin grants/revokes a role
+    mid-session.
+    """
+    grants = await service.get_platform_capabilities(principal)
+    return AuthCapabilities(**grants)
 
 
 @router.post("/logout")

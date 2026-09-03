@@ -23,6 +23,23 @@ class CurrentUser(BaseModel):
     preferred_username: str | None = None
 
 
+class AuthCapabilities(BaseModel):
+    """The calling principal's platform-wide OpenFGA role grants (MISM-291).
+
+    Returned by ``GET /api/auth/capabilities`` so the UI can gate
+    buttons/pages up front instead of guessing from ``/auth/me`` or
+    403-probing individual endpoints. Kept separate from ``CurrentUser``
+    (identity) since computing this requires OpenFGA round-trips that most
+    ``/auth/me`` callers don't need, and it gives the UI a single place to
+    refetch permissions after an admin grants/revokes a role mid-session.
+    """
+
+    uploader: bool
+    upload_reviewer: bool
+    image_checker: bool
+    executor: bool
+
+
 class LogoutResponse(BaseModel):
     """Result of ``POST /api/auth/logout``.
 

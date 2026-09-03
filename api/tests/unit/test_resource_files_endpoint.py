@@ -11,12 +11,11 @@ from fastapi.testclient import TestClient
 from mism_registry.enums import ResourceType, ResourceVersionStatus
 from mism_registry.resource import Resource
 
-from mismapi.auth.base import AuthenticatedPrincipal, require_principal
 from mismapi.core.deps import _get_registry_service
 from mismapi.core.errors import APIError
 from mismapi.main import create_app
 from mismapi.services.registry_service import RegistryService
-from tests.conftest import minimal_oidc_settings
+from tests.conftest import minimal_oidc_settings, override_principal
 
 
 @pytest.fixture
@@ -47,19 +46,15 @@ def _make_resource(
     )
 
 
-async def _allow_principal() -> AuthenticatedPrincipal:
-    return AuthenticatedPrincipal(
-        subject="user-1",
-        issuer="test",
-        audience="mism-api",
-        scopes=set(),
-    )
-
-
 def _make_app(service: RegistryService) -> TestClient:
     app = create_app(settings=minimal_oidc_settings())
-    app.dependency_overrides[require_principal] = _allow_principal
+    # `override_principal` registers the fixed "user-1" principal for both
+    # `require_principal` and `optional_principal` — these two endpoints use
+    # `OptionalPrincipalDep` for the new visibility gate (MISM-291 Phase A),
+    # so overriding only `require_principal` would leave the real
+    # `optional_principal` running and resolve to an anonymous caller.
     app.dependency_overrides[_get_registry_service] = lambda: service
+    override_principal(app)
     return TestClient(app)
 
 
