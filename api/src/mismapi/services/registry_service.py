@@ -142,35 +142,6 @@ class RegistryService:
                 detail="Principal does not hold the platform image_checker role.",
             )
 
-    async def _assert_model_owner(
-        self, principal: AuthenticatedPrincipal, *, model_id: str
-    ) -> None:
-        """Gate per-model actions on the OpenFGA ``owner`` relation for
-        ``model:{model_id}`` (MISM-291).
-
-        Unlike the platform-role gates above (which check a fixed
-        ``platform:main`` object), this checks the specific
-        ``model:{model_id}`` object — the same tuple
-        ``create_model`` writes at registration time, so no new writes are
-        needed here.
-
-        When no OpenFGA client is available (``issuer == "local"`` or client
-        not configured), falls back to ``get_resource_and_assert_ownership``'s
-        Postgres string-equality check so local dev without a running OpenFGA
-        instance continues to work.
-        """
-        client = self._openfga_client_for(principal)
-        if client is None:
-            self.get_resource_and_assert_ownership(principal, resource_id=model_id)
-            return
-        allowed = await client.check(
-            user=f"user:{principal.subject}",
-            relation="owner",
-            object_=f"model:{model_id}",
-        )
-        if not allowed:
-            raise self._not_authorized_error()
-
     async def _assert_can_execute(self, principal: AuthenticatedPrincipal, model_id: str) -> None:
         """Gate execution on the per-model `can_execute` relation (MISM-291,
         workflow steps g/n).
