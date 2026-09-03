@@ -34,6 +34,7 @@ from mism_registry.search import (
     SearchResult,
 )
 from mism_registry.types import Author, IOSpec, Publication
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from mismapi.auth.principal import AuthenticatedPrincipal
@@ -68,7 +69,7 @@ class RegistryService:
         *,
         name: str,
         location_uri: str,
-        execution_type: ExecutionType,
+        execution_type: ExecutionType | None,
         execution_ref: str = "",
         io_spec: IOSpec | None = None,
         description: str = "",
@@ -131,6 +132,17 @@ class RegistryService:
         except RegistryValidationError as exc:
             self._session.rollback()
             raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+        except IntegrityError as exc:
+            # Rolling back is not optional: an aborted transaction poisons the
+            # session for the rest of the request. Reachable when two imports of
+            # the same upstream model race past their duplicate checks and
+            # collide on uq_resources_source.
+            self._session.rollback()
+            raise APIError(
+                status_code=409,
+                code="resource_conflict",
+                detail="A conflicting resource already exists.",
+            ) from exc
 
         logger.info("Registered model %s (%s) by %s", resource.id, resource.name, principal.subject)
         return resource
@@ -177,6 +189,22 @@ class RegistryService:
         return [
             r for r in resources if r.registration_status == ResourceRegistrationStatus.ANNOTATING
         ]
+
+    def find_by_source(
+        self,
+        *,
+        repository: str,
+        identifiers: list[str] | None = None,
+    ) -> list[Resource]:
+        """Look resources up by upstream provenance, across every owner and status.
+
+        Goes to the registry's own ``find_resources`` rather than the operation
+        helper of the same name, which does not forward the source filters.
+        """
+        return self._registry.find_resources(
+            source_repository=repository,
+            source_identifiers=identifiers,
+        )
 
     def update_model(
         self,

@@ -27,6 +27,9 @@ ERROR_RESPONSE_SCHEMA: dict[str, Any] = {
             "properties": {
                 "code": {"type": "string"},
                 "detail": {"type": "string"},
+                # Machine-readable context for errors the client must act on,
+                # e.g. the id of the model a duplicate import collided with.
+                "meta": {"type": "object", "additionalProperties": True},
             },
             "required": ["code", "detail"],
         },
@@ -39,12 +42,21 @@ class APIError(Exception):
     status_code: int
     code: str
     detail: str
+    meta: dict[str, Any] | None
 
-    def __init__(self, *, status_code: int, code: str, detail: str) -> None:
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        code: str,
+        detail: str,
+        meta: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(detail)
         self.status_code = status_code
         self.code = code
         self.detail = detail
+        self.meta = meta
 
 
 class ValidationFieldError(APIError):
@@ -104,15 +116,11 @@ def register_exception_handlers(app: FastAPI) -> None:
                 exc.detail,
             )
 
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={
-                "error": {
-                    "code": exc.code,
-                    "detail": exc.detail,
-                },
-            },
-        )
+        error: dict[str, Any] = {"code": exc.code, "detail": exc.detail}
+        if exc.meta is not None:
+            error["meta"] = exc.meta
+
+        return JSONResponse(status_code=exc.status_code, content={"error": error})
 
     @app.exception_handler(RequestValidationError)
     async def request_validation_error_handler(

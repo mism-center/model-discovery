@@ -5,6 +5,7 @@ from mismapi.api.internal import router as internal_router
 from mismapi.api.v1.cairns import router as cairns_router
 from mismapi.api.v1.datasets import router as datasets_router
 from mismapi.api.v1.github_import import router as github_import_router
+from mismapi.api.v1.imports import router as imports_router
 from mismapi.api.v1.models import router as models_router
 from mismapi.api.v1.resource_files import router as resource_files_router
 from mismapi.api.v1.runs import router as runs_router
@@ -19,6 +20,7 @@ def build_api_router() -> APIRouter:
     v1_router = APIRouter(prefix="/v1")
     v1_router.include_router(models_router, tags=["Models"])
     v1_router.include_router(github_import_router, tags=["Models"])
+    v1_router.include_router(imports_router, tags=["Imports"])
     v1_router.include_router(datasets_router, tags=["Datasets"])
     v1_router.include_router(runs_router, tags=["Runs"])
     v1_router.include_router(resource_files_router, tags=["Files"])
