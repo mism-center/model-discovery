@@ -14,7 +14,7 @@ from mism_registry.search import SearchResult
 from mismapi.core.deps import _get_registry_service
 from mismapi.main import create_app
 from mismapi.services.registry_service import RegistryService
-from tests.conftest import override_anonymous, override_principal
+from tests.conftest import default_principal, override_anonymous, override_principal
 
 
 def _make_resource(
@@ -65,6 +65,7 @@ def test_list_models_returns_results() -> None:
     assert payload["results"][1]["id"] == "r-2"
 
     service.list_models.assert_called_once_with(
+        principal=default_principal(),
         name_contains=None,
         owner=None,
         tags=None,
@@ -97,6 +98,7 @@ def test_list_models_passes_filters() -> None:
     assert response.status_code == 200
 
     filter_kwargs = dict(
+        principal=default_principal(),
         name_contains="hydro",
         owner="alice",
         tags=["csv", "public"],
@@ -124,6 +126,7 @@ def test_list_models_pagination() -> None:
     assert payload["results"][1]["id"] == "r-2"
 
     service.list_models.assert_called_once_with(
+        principal=default_principal(),
         name_contains=None,
         owner=None,
         tags=None,
@@ -334,37 +337,40 @@ def _anonymous_client(service: RegistryService) -> TestClient:
 
 
 def test_list_models_hides_unapproved_from_anonymous_callers() -> None:
+    # Visibility filtering is now in RegistryService.list_models (Phase 5).
+    # This test verifies the endpoint passes principal=None for anonymous
+    # callers so the service can apply its gate. The mock simulates what the
+    # service returns after filtering — only the approved model.
     service = MagicMock(spec=RegistryService)
-    service.list_models.return_value = [
-        _make_resource(id="approved", name="Public"),
-        _make_resource(
-            id="draft",
-            name="Secret",
-            registration_status=ResourceRegistrationStatus.DRAFT,
-        ),
-    ]
+    service.list_models.return_value = [_make_resource(id="approved", name="Public")]
 
     response = _anonymous_client(service).get("/api/v1/models")
 
     assert response.status_code == 200
     payload = response.json()
     assert [r["id"] for r in payload["results"]] == ["approved"]
-    # `total` must reflect the filtered set — a count of 2 would betray the
-    # hidden model's existence on its own.
     assert payload["total"] == 1
+    service.list_models.assert_called_once_with(
+        principal=None,
+        name_contains=None,
+        owner=None,
+        tags=None,
+        organisms=None,
+        scales=None,
+        registration_status=None,
+    )
 
 
 def test_list_models_shows_owner_their_own_unapproved_models() -> None:
+    # Visibility filtering is in RegistryService.list_models (Phase 5).
+    # This test verifies the endpoint forwards the authenticated principal
+    # so the service can include the caller's own unapproved models.
+    # The mock simulates what the service returns: only "mine" (the caller's own).
     service = MagicMock(spec=RegistryService)
     service.list_models.return_value = [
         _make_resource(
             id="mine",
             owner="user-1",
-            registration_status=ResourceRegistrationStatus.PENDING_REVIEW,
-        ),
-        _make_resource(
-            id="theirs",
-            owner="someone-else",
             registration_status=ResourceRegistrationStatus.PENDING_REVIEW,
         ),
     ]
@@ -374,12 +380,25 @@ def test_list_models_shows_owner_their_own_unapproved_models() -> None:
 
     assert response.status_code == 200
     assert [r["id"] for r in response.json()["results"]] == ["mine"]
+    service.list_models.assert_called_once_with(
+        principal=default_principal(),
+        name_contains=None,
+        owner=None,
+        tags=None,
+        organisms=None,
+        scales=None,
+        registration_status=None,
+    )
 
 
 def test_list_models_pagination_applies_after_the_visibility_filter() -> None:
+    # Visibility filtering is in RegistryService.list_models (Phase 5); the
+    # service returns an already-filtered list. This test verifies the router
+    # paginates that result correctly — limit=1 on a 2-item list yields the
+    # first item, not a confusingly empty page. For filter-before-paginate unit
+    # coverage see test_registry_service_list_visibility.py.
     service = MagicMock(spec=RegistryService)
     service.list_models.return_value = [
-        _make_resource(id="draft", registration_status=ResourceRegistrationStatus.DRAFT),
         _make_resource(id="a"),
         _make_resource(id="b"),
     ]
@@ -388,7 +407,5 @@ def test_list_models_pagination_applies_after_the_visibility_filter() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    # Without filter-before-paginate the hidden draft would consume the page and
-    # return an empty result set for a page the client was told exists.
     assert [r["id"] for r in payload["results"]] == ["a"]
     assert payload["total"] == 2
