@@ -89,6 +89,10 @@ class RegistryService:
         organisms: list[str] | None = None,
         domains: list[str] | None = None,
         date_published: date | None = None,
+        source_repository: str = "",
+        source_identifier: str = "",
+        source_url: str = "",
+        source_revision: str = "",
     ) -> Resource:
         try:
             resource = register_model(
@@ -116,6 +120,10 @@ class RegistryService:
                 organisms=organisms or [],
                 domains=domains or [],
                 date_published=date_published,
+                source_repository=source_repository,
+                source_identifier=source_identifier,
+                source_url=source_url,
+                source_revision=source_revision,
             )
             # FUTURE: fga.write_tuple(user=principal.subject,
             #   relation="owner", object=f"model:{resource.id}")

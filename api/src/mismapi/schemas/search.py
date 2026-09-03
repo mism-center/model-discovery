@@ -41,6 +41,11 @@ class ModelListItem(BaseModel):
     size_bytes: int | None = None
     external_ids: dict[str, str] = Field(default_factory=dict)
     license: str = ""
+    # Source provenance — non-empty only for imported resources.
+    source_repository: str = ""
+    source_identifier: str = ""
+    source_url: str = ""
+    source_revision: str = ""
     # Execution
     execution_ref: str = ""
     io_spec: IOSpecDTO | None = None
@@ -117,6 +122,11 @@ class SearchResultItem(BaseModel):
     size_bytes: int | None = None
     external_ids: dict[str, str] = Field(default_factory=dict)
     license: str = ""
+    # Source provenance — non-empty only for imported resources.
+    source_repository: str = ""
+    source_identifier: str = ""
+    source_url: str = ""
+    source_revision: str = ""
     # System
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime

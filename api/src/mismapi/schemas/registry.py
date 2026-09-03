@@ -413,6 +413,13 @@ class RegisterModelResponse(BaseModel):
     size_bytes: int | None = None
     external_ids: dict[str, str] = Field(default_factory=dict)
     license: str = ""
+    # Source provenance — non-empty only for resources imported from an
+    # upstream repository. Written once at import; metadata review never
+    # rewrites them, unlike `external_ids`.
+    source_repository: str = ""
+    source_identifier: str = ""
+    source_url: str = ""
+    source_revision: str = ""
     # System
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
