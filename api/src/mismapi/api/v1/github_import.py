@@ -14,7 +14,6 @@ import asyncio
 import io
 import logging
 import re
-import tarfile
 from pathlib import Path
 
 import httpx
@@ -22,6 +21,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, field_validator
 
 from mismapi.auth.base import AuthenticatedPrincipalDep
+from mismapi.core.archive import extract_tarball
 from mismapi.core.deps import RegistryServiceDep, SettingsDep
 from mismapi.core.errors import APIError
 from mismapi.utils import upload_dir
@@ -125,49 +125,6 @@ async def _get_default_branch(client: httpx.AsyncClient, owner: str, repo: str) 
     return str(default_branch) if default_branch else "main"
 
 
-def _is_relative_to(child: Path, parent: Path) -> bool:
-    """Return True if *child* is inside *parent* (path-traversal guard)."""
-    try:
-        child.relative_to(parent)
-        return True
-    except ValueError:
-        return False
-
-
-def _extract_tarball(buf: io.BytesIO, dest_dir: Path) -> tuple[int, int]:
-    """Extract a GitHub ``.tar.gz`` tarball into *dest_dir*.
-
-    GitHub tarballs always have a single top-level directory named
-    ``{owner}-{repo}-{sha}/``.  That component is stripped so files land
-    directly under *dest_dir*.
-
-    Returns ``(files_extracted, total_bytes)``.
-    """
-    count = total = 0
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(fileobj=buf, mode="r:gz") as tf:
-        for member in tf.getmembers():
-            # Strip the leading "{owner}-{repo}-{sha}/" component.
-            slash = member.name.find("/")
-            if slash == -1:
-                continue
-            stripped = member.name[slash + 1 :]
-            if not stripped or member.isdir():
-                continue
-            dest_path = (dest_dir / stripped).resolve()
-            if not _is_relative_to(dest_path, dest_dir.resolve()):
-                continue  # path-traversal guard
-            src = tf.extractfile(member)
-            if src is None:
-                continue
-            dest_path.parent.mkdir(parents=True, exist_ok=True)
-            data = src.read()
-            dest_path.write_bytes(data)
-            count += 1
-            total += len(data)
-    return count, total
-
-
 @router.post(
     "/models/{model_id}/github-import",
     response_model=GitHubImportResponse,
@@ -266,7 +223,19 @@ async def import_from_github(
                     buf.write(chunk)
                 buf.seek(0)
 
-            files_extracted, total_bytes = await asyncio.to_thread(_extract_tarball, buf, dest_dir)
+            # A GitHub tarball wraps everything in a single
+            # "{owner}-{repo}-{sha}/" directory, which is stripped so files
+            # land directly in the working tree.
+            extracted = await asyncio.to_thread(
+                lambda: extract_tarball(
+                    buf,
+                    dest_dir,
+                    max_total_bytes=settings.upload_max_bytes,
+                    strip_root_dir=True,
+                )
+            )
+            files_extracted = extracted.file_count
+            total_bytes = extracted.total_bytes
 
     except httpx.TimeoutException as exc:
         raise APIError(
