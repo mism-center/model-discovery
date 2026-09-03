@@ -116,6 +116,11 @@ class Settings(BaseSettings):
     biomodels_timeout_seconds: float = Field(default=15.0, alias="BIOMODELS_TIMEOUT_SECONDS", gt=0)
     # There is no bulk endpoint, so max concurrent requests per CAIRNS request.
     biomodels_max_concurrency: int = Field(default=8, alias="BIOMODELS_MAX_CONCURRENCY", gt=0)
+    # An imported OMEX archive is buffered in memory before extraction, so this
+    # is deliberately lower than UPLOAD_MAX_BYTES, which streams to disk.
+    biomodels_max_archive_bytes: int = Field(
+        default=100 * 1024 * 1024, alias="BIOMODELS_MAX_ARCHIVE_BYTES", gt=0
+    )
 
     # Authentication
     auth_mode: Literal["oidc"] = Field(default="oidc", alias="AUTH_MODE")
