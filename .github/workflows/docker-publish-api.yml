@@ -12,6 +12,7 @@ on:
     paths:
       - 'api/**'
       - '.github/workflows/docker-publish-api.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
