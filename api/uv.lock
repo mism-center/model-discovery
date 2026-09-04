@@ -641,7 +641,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.116.1" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "itsdangerous", specifier = ">=2.2.0" },
-    { name = "mism-registry", extras = ["postgres"], git = "https://github.com/mism-center/metadata-schema.git?rev=develop" },
+    { name = "mism-registry", extras = ["postgres"], git = "https://github.com/mism-center/metadata-schema.git?rev=feat%2Fsource-provenance" },
     { name = "pathvalidate", specifier = ">=3.3.1" },
     { name = "pydantic-settings", specifier = ">=2.10.1" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10.1" },
@@ -665,7 +665,7 @@ dev = [
 [[package]]
 name = "mism-registry"
 version = "0.1.0"
-source = { git = "https://github.com/mism-center/metadata-schema.git?rev=develop#8166f83d994662ef0efcc089c98f235b1a054ea0" }
+source = { git = "https://github.com/mism-center/metadata-schema.git?rev=feat%2Fsource-provenance#66eb37c28f6078d82908f2dc7feec195ebed299b" }
 
 [package.optional-dependencies]
 postgres = [

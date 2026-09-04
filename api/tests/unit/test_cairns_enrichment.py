@@ -24,7 +24,19 @@ _CURATED_RECORD: dict[str, Any] = {
         "accession": "9785481",
         "journal": "Journal of mathematical biology",
         "title": "Modeling immunotherapy of the tumor-immune interaction.",
+        "affiliation": "Department of Mathematics, Tulane University",
         "synopsis": "A number of lines of evidence suggest that immunotherapy...",
+        # `year` is an int and `month` a string in the same upstream record.
+        "year": 1998,
+        "month": "7",
+        "volume": "37",
+        "issue": "3",
+        "pages": "235-52",
+        "link": "http://identifiers.org/pubmed/9785481",
+        "authors": [
+            {"name": "D Kirschner", "institution": "Department of Mathematics"},
+            {"name": "J C Panetta"},
+        ],
     },
     "files": {
         "main": [
@@ -34,13 +46,32 @@ _CURATED_RECORD: dict[str, Any] = {
                 "fileSize": "43735",
                 "mimeType": "application/xml",
                 "md5sum": "6fc274441ab732233706200c0a8223da",
+                "sha1sum": "1bd00d4efaa4279e96a4420d40578ef85ad9bb45",
+                "sha256sum": "e4738f53e1941d6d2bce0c37de6ce6493567ac39f6a0dfb0e9845e6c470b1ff0",
             }
         ],
         "additional": [{"name": "Kirschner_1998-biopax2.owl", "mimeType": "application/rdf+xml"}],
     },
+    "history": {
+        "revisions": [
+            {
+                "version": 1,
+                "submitted": 1277287200,
+                "submitter": "Camille Laibe",
+                "comment": "Original import of Kirschner1998_Immunotherapy_Tumour",
+            },
+            {
+                "version": 2,
+                "submitted": 1724285866,
+                "submitter": "Lucian Smith",
+                "comment": "CRBM-sponsored manual and automated updates.",
+            },
+        ]
+    },
     "firstPublished": 1725285431,
     "submissionId": "MODEL1006230038",
     "publicationId": "BIOMD0000000732",
+    "vcsIdentifier": "aaa",
     "modellingApproach": {
         "accession": "MAMO_0000046",
         "name": "ordinary differential equation model",
@@ -54,6 +85,7 @@ _CURATED_RECORD: dict[str, Any] = {
                 "email": "lpsmith@uw.edu",
                 "affiliation": "University of Washington",
                 "orcid": "0000-0001-7002-6386",
+                "external": False,
             }
         ],
         "Modeller": [
@@ -184,6 +216,73 @@ async def test_get_model_maps_upstream_record() -> None:
     assert record.files.main[0].file_size == 43735
     assert record.files.main[0].mime_type == "application/xml"
     assert [f.name for f in record.files.additional] == ["Kirschner_1998-biopax2.owl"]
+
+
+def _key_paths(node: Any, prefix: str = "") -> set[str]:
+    """Every dotted key path in `node`, merging list entries so sparse ones count."""
+    if isinstance(node, dict):
+        return {
+            path
+            for key, value in node.items()
+            for path in {f"{prefix}{key}", *_key_paths(value, f"{prefix}{key}.")}
+        }
+    if isinstance(node, list):
+        return {path for entry in node for path in _key_paths(entry, prefix)}
+    return set()
+
+
+async def test_get_model_drops_no_upstream_field() -> None:
+    """The record is written verbatim to the annotation manifest, so a field the
+    DTO fails to declare is data the agent silently never sees."""
+    record = await _biomodels_client().get_model("BIOMD0000000732")
+
+    emitted = {p.replace("_", "").lower() for p in _key_paths(record.model_dump(mode="json"))}
+    # The two shapes the DTO deliberately normalizes: annotations are renamed,
+    # and contributors are flattened out of their per-role map.
+    upstream = {
+        p.replace("modelLevelAnnotations", "annotations")
+        .replace("contributors.Curator", "contributors")
+        .replace("contributors.Modeller", "contributors")
+        .replace("_", "")
+        .lower()
+        for p in _key_paths(_CURATED_RECORD)
+    }
+
+    assert not upstream - emitted
+
+
+async def test_get_model_maps_the_full_citation() -> None:
+    record = await _biomodels_client().get_model("BIOMD0000000732")
+
+    assert record.publication is not None
+    publication = record.publication
+    assert publication.year == 1998
+    assert publication.month == "7"
+    assert publication.volume == "37"
+    assert publication.issue == "3"
+    assert publication.pages == "235-52"
+    assert publication.link == "http://identifiers.org/pubmed/9785481"
+    assert publication.affiliation == "Department of Mathematics, Tulane University"
+    assert [(a.name, a.institution) for a in publication.authors] == [
+        ("D Kirschner", "Department of Mathematics"),
+        ("J C Panetta", ""),
+    ]
+
+
+async def test_get_model_maps_history_and_checksums() -> None:
+    record = await _biomodels_client().get_model("BIOMD0000000732")
+
+    assert record.vcs_identifier == "aaa"
+    assert record.history is not None
+    assert [r.version for r in record.history.revisions] == [1, 2]
+    assert record.history.revisions[0].submitter == "Camille Laibe"
+    assert record.history.revisions[1].submitted is not None
+    assert record.history.revisions[1].submitted.year == 2024
+    assert record.files is not None
+    assert record.files.main[0].sha256sum == (
+        "e4738f53e1941d6d2bce0c37de6ce6493567ac39f6a0dfb0e9845e6c470b1ff0"
+    )
+    assert record.files.main[0].sha1sum == "1bd00d4efaa4279e96a4420d40578ef85ad9bb45"
 
 
 async def test_get_model_flattens_contributors_and_keeps_emails() -> None:
