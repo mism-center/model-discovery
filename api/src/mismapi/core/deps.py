@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from mismapi.clients.cairns_client import CairnsClient
     from mismapi.clients.execution_client import ExecutionClient
     from mismapi.clients.local_upload_client import LocalFileUploadClient
+    from mismapi.clients.openfga_client import OpenFGAClient
     from mismapi.clients.upload_client import UploadServiceClient
     from mismapi.services.upload_session_store_service import UploadSessionStoreService
 
@@ -86,6 +87,10 @@ def _get_biomodels_client(container: ContainerDep) -> BioModelsClient:
     return container.biomodels_client
 
 
+def _get_openfga_client(container: ContainerDep) -> OpenFGAClient:
+    return container.openfga_client
+
+
 def _get_registry_service(
     container: ContainerDep,
 ) -> Generator[RegistryService, None, None]:
@@ -96,7 +101,7 @@ def _get_registry_service(
     responsibility.
     """
     with container.open_session() as session:
-        yield RegistryService(PostgresRegistry(session), session)
+        yield RegistryService(PostgresRegistry(session), session, container.openfga_client)
 
 
 SettingsDep = Annotated[Settings, Depends(_get_settings)]
@@ -113,4 +118,5 @@ UploadClientDep = Annotated[
 ExecutionClientDep = Annotated["ExecutionClient", Depends(_get_execution_client)]
 CairnsClientDep = Annotated["CairnsClient", Depends(_get_cairns_client)]
 BioModelsClientDep = Annotated["BioModelsClient", Depends(_get_biomodels_client)]
+OpenFGAClientDep = Annotated["OpenFGAClient", Depends(_get_openfga_client)]
 RegistryServiceDep = Annotated[RegistryService, Depends(_get_registry_service)]

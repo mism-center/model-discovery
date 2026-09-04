@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 from mism_registry import (
+    InvalidStateTransitionError,
     ResourceNotFoundError,
     ResourceType,
     RunStatus,
@@ -16,12 +17,15 @@ from mism_registry import (
     prepare_run,
     register_dataset,
     register_model,
+    set_image_review_status,
+    set_registration_status,
+    submit_container_image,
 )
 from mism_registry import (
     ValidationError as RegistryValidationError,
 )
 from mism_registry.backends.postgres import PostgresRegistry
-from mism_registry.enums import ExecutionType, ResourceRegistrationStatus
+from mism_registry.enums import ExecutionType, ImageReviewStatus, ResourceRegistrationStatus
 from mism_registry.protocol import Registry
 from mism_registry.resource import Resource
 from mism_registry.run import Run
@@ -33,10 +37,11 @@ from mism_registry.search import (
     SearchQuery,
     SearchResult,
 )
-from mism_registry.types import Author, IOSpec, Publication
+from mism_registry.types import Author, Container, IOSpec, Publication
 from sqlalchemy.orm import Session
 
 from mismapi.auth.principal import AuthenticatedPrincipal
+from mismapi.clients.openfga_client import OpenFGAClient
 from mismapi.core.errors import APIError
 from mismapi.core.file_storage import resolve_location_uri, safe_join
 from mismapi.core.settings import get_settings
@@ -52,17 +57,364 @@ logger = logging.getLogger(__name__)
 # The metadata-package YAML files, in review/display order.
 _PACKAGE_FILES = (METADATA_FILE, EXECUTION_FILE)
 
+#: Platform-wide singleton object every model's `platform` relation points at
+#: (MISM-291). Lets any `platform:main#executor` holder execute any model via
+#: `model#can_execute`'s tupleToUserset, without a per-model grant.
+_PLATFORM_OBJECT = "platform:main"
+
+#: The four platform-wide roles `GET /auth/capabilities` reports (MISM-291).
+#: Kept in sync by hand with `mismapi.cli.manage_openfga_roles.VALID_ROLES`
+#: and the OpenFGA schema — see Docs/OpenFGA/MISM-OpenFGA-Auth-Model.md.
+#: Deliberately excludes `can_execute`: that's a per-model *derived* relation
+#: (owner OR `executor`, via `model#platform`'s tupleToUserset), not a role a
+#: principal directly holds the way the four below are.
+_PLATFORM_ROLES: tuple[str, ...] = ("uploader", "upload_reviewer", "image_checker", "executor")
+
 
 class RegistryService:
     """Orchestrates registry operations, session management, and (future) authz."""
 
-    def __init__(self, registry: Registry, session: Session) -> None:
+    def __init__(
+        self,
+        registry: Registry,
+        session: Session,
+        openfga_client: OpenFGAClient | None = None,
+    ) -> None:
         self._registry = registry
         self._session = session
+        self._openfga_client = openfga_client
+
+    def _openfga_client_for(self, principal: AuthenticatedPrincipal) -> OpenFGAClient | None:
+        """The configured OpenFGA client, or None if OpenFGA calls should be
+        skipped for this request.
+
+        None when no client is configured (e.g. tests constructing
+        RegistryService directly), or when ``issuer == "local"`` — set on
+        every request when ``settings.disable_auth`` is True (see
+        ``auth/base.py``'s ``require_principal``), matching the bypass
+        ``get_resource_and_assert_ownership`` already uses for ownership
+        checks. Local dev commonly runs without an OpenFGA instance at all
+        (see `docker-compose.test.yaml`), so *every* OpenFGA interaction —
+        role checks and tuple writes alike — is skipped in that mode, not
+        just the check, otherwise a tuple write would fail with a real
+        network error and reject the request anyway.
+        """
+        if self._openfga_client is None or principal.issuer == "local":
+            return None
+        return self._openfga_client
+
+    async def _assert_uploader(self, principal: AuthenticatedPrincipal) -> None:
+        """Gate resource creation on the platform-wide `uploader` role (MISM-291)."""
+        client = self._openfga_client_for(principal)
+        if client is None:
+            return
+        allowed = await client.check(
+            user=f"user:{principal.subject}", relation="uploader", object_=_PLATFORM_OBJECT
+        )
+        if not allowed:
+            raise APIError(
+                status_code=403,
+                code="not_authorized",
+                detail="Principal does not hold the platform uploader role.",
+            )
+
+    async def _assert_upload_reviewer(self, principal: AuthenticatedPrincipal) -> None:
+        """Gate metadata-review actions on the platform-wide `upload_reviewer` role
+        (MISM-291).
+
+        Global, not per-submission (see
+        ``Docs/OpenFGA/MISM-OpenFGA-Auth-Model.md``'s open question #11): any
+        holder of this role may review any ``PENDING_REVIEW`` model, including
+        one they uploaded themselves — self-review is explicitly allowed, so
+        this does not compare ``principal.subject`` against ``resource.owner``.
+        """
+        client = self._openfga_client_for(principal)
+        if client is None:
+            return
+        allowed = await client.check(
+            user=f"user:{principal.subject}",
+            relation="upload_reviewer",
+            object_=_PLATFORM_OBJECT,
+        )
+        if not allowed:
+            raise APIError(
+                status_code=403,
+                code="not_authorized",
+                detail="Principal does not hold the platform upload_reviewer role.",
+            )
+
+    async def _assert_image_checker(self, principal: AuthenticatedPrincipal) -> None:
+        """Gate Dockerfile/image-review actions on the platform-wide `image_checker`
+        role (MISM-291, workflow steps i-k).
+
+        Global, not per-submission, mirroring `_assert_upload_reviewer` exactly.
+        Self-review is explicitly allowed (decided for this role, not carried over
+        by assumption from `upload_reviewer`'s precedent): any holder of this role
+        may vet any model's image, including one they themselves uploaded, so this
+        does not compare `principal.subject` against `resource.owner`.
+        """
+        client = self._openfga_client_for(principal)
+        if client is None:
+            return
+        allowed = await client.check(
+            user=f"user:{principal.subject}",
+            relation="image_checker",
+            object_=_PLATFORM_OBJECT,
+        )
+        if not allowed:
+            raise APIError(
+                status_code=403,
+                code="not_authorized",
+                detail="Principal does not hold the platform image_checker role.",
+            )
+
+    async def _assert_can_execute(self, principal: AuthenticatedPrincipal, model_id: str) -> None:
+        """Gate execution on the per-model `can_execute` relation (MISM-291,
+        workflow steps g/n).
+
+        Unlike the three platform-role gates above (which check a fixed
+        `platform:main` object), `can_execute` is checked against the specific
+        `model:{model_id}` object — it's a union of `owner` OR
+        `platform#executor` via `model#platform`'s `tupleToUserset` (Phase 2's
+        `create_model` writes both the `owner` and `platform` tuples needed for
+        this to resolve). Same `_openfga_client_for` skip rules as the other
+        gates (no client configured, or `issuer == "local"`).
+        """
+        client = self._openfga_client_for(principal)
+        if client is None:
+            return
+        allowed = await client.check(
+            user=f"user:{principal.subject}",
+            relation="can_execute",
+            object_=f"model:{model_id}",
+        )
+        if not allowed:
+            raise APIError(
+                status_code=403,
+                code="not_authorized",
+                detail="Principal is not authorized to execute this model.",
+            )
+
+    async def assert_can_view_model(
+        self,
+        principal: AuthenticatedPrincipal | None,
+        *,
+        resource: Resource,
+    ) -> None:
+        """Raise APIError(404) if ``principal`` cannot view ``resource`` (MISM-291 Phase 2).
+
+        Raises 404 (not 403) on the id-oracle-avoidance convention for
+        visibility checks: a caller who can't see a resource must not be told it
+        exists.
+
+        Three resolution paths:
+        * Anonymous (``principal is None``): approved == public; no identity to
+          check ownership against.
+        * Authenticated + FGA client: ``can_view`` on ``model:{id}``.  The
+          ``viewer@user:*`` wildcard written at approval time (Phase 1a) makes
+          approved models pass for any caller; the ``owner`` tuple written at
+          ``create_model`` time passes for the owner while still in
+          draft/pending.
+        * Authenticated, no FGA client (``issuer == "local"`` or unconfigured):
+          string-equality fallback — approved OR owner match. Services may not
+          import from ``api/``, so this is written inline.
+        """
+        _not_visible = APIError(
+            status_code=404,
+            code="not_found",
+            detail=f"Model '{resource.id}' not found.",
+        )
+        if principal is None:
+            if resource.registration_status != ResourceRegistrationStatus.APPROVED:
+                raise _not_visible
+            return
+
+        client = self._openfga_client_for(principal)
+        if client is not None:
+            allowed = await client.check(
+                user=f"user:{principal.subject}",
+                relation="can_view",
+                object_=f"model:{resource.id}",
+            )
+            if not allowed:
+                raise _not_visible
+            return
+
+        # No FGA client (local dev or unconfigured): string-equality fallback.
+        # Approved models are public; anything else is visible only to its owner.
+        public = resource.registration_status == ResourceRegistrationStatus.APPROVED
+        owned = bool(resource.owner) and resource.owner == principal.subject
+        if not (public or owned):
+            raise _not_visible
+
+    async def get_platform_capabilities(self, principal: AuthenticatedPrincipal) -> dict[str, bool]:
+        """Report which platform-wide OpenFGA roles `principal` holds (MISM-291).
+
+        Powers `GET /auth/capabilities`, giving the UI a single place to check
+        role membership up front instead of guessing from `/auth/me` or
+        403-probing individual endpoints. Checks each of `_PLATFORM_ROLES`
+        against the same singleton `platform:main` object the
+        `_assert_uploader`/`_assert_upload_reviewer`/`_assert_image_checker`
+        gates check (`executor` here mirrors `_assert_can_execute`'s
+        `platform:main#executor` half only — see `_PLATFORM_ROLES`'s docstring
+        for why `can_execute` itself isn't one of the four).
+
+        Deliberately asymmetric with `_openfga_client_for`'s combined skip
+        rule for one of its two conditions: `issuer == "local"` still means
+        "treat as fully permitted" (all four True), matching every
+        `_assert_*` gate's dev-mode bypass — but an *unconfigured* OpenFGA
+        client reports all four False here, not True. `_assert_*` treats a
+        missing client as permissive so local dev without a running OpenFGA
+        instance doesn't block resource creation; this is a read-only status
+        endpoint whose entire purpose is telling the UI what's true, so
+        reporting "yes" for a check that was never actually performed would
+        be actively misleading rather than merely permissive.
+
+        Four sequential `check` calls, not one batched request —
+        `OpenFGAClient` doesn't currently expose a batch-check call (its
+        `/check` wrapper is single-tuple only). Adding one was out of scope
+        for a single new endpoint; worth revisiting if a second caller ever
+        needs the same four-relation fan-out.
+        """
+        if self._openfga_client is None:
+            return dict.fromkeys(_PLATFORM_ROLES, False)
+        if principal.issuer == "local":
+            return dict.fromkeys(_PLATFORM_ROLES, True)
+        client = self._openfga_client
+        user = f"user:{principal.subject}"
+        return {
+            role: await client.check(user=user, relation=role, object_=_PLATFORM_OBJECT)
+            for role in _PLATFORM_ROLES
+        }
+
+    def _assert_input_resource_visible(
+        self, principal: AuthenticatedPrincipal, resource: Resource
+    ) -> None:
+        """Reject naming a run input the caller may not view (MISM-291 Phase 5).
+
+        Closes the gap flagged in ``Docs/OpenFGA/MISM-OpenFGA-Auth-Model.md``
+        (goal 1, checklist item 8): ``create_run`` previously passed
+        ``input_resource_ids`` straight to ``prepare_run`` with no visibility
+        check, so a caller could name someone else's private dataset (or
+        model — ``prepare_run`` places no type restriction on inputs) as a run
+        input and have its contents surfaced back via the run's mounted
+        filesystem/outputs.
+
+        Interim string-equality check (not OpenFGA), matching this phase's
+        decision to reuse existing visibility logic rather than build a real
+        `can_view` check now — a real check would need the deferred
+        `viewer@user:*` wildcard tuple-writing (goal 1) as a prerequisite, or
+        it would incorrectly deny access to public/approved resources today.
+
+        Visibility predicate: approved (public) OR owned by the caller. Written
+        inline rather than imported — no `services` module imports from `api`
+        anywhere in this codebase. Raises 404 (not 403) on the
+        id-oracle-avoidance convention for *visibility* checks specifically —
+        as opposed to `get_resource_and_assert_ownership`'s 403, which gates
+        mutation-ownership, a different question. Label is generic ("Resource"),
+        not "Model" or "Dataset", since an input can be either.
+        """
+        public = resource.registration_status == ResourceRegistrationStatus.APPROVED
+        owned_by_caller = bool(resource.owner) and resource.owner == principal.subject
+        if not (public or owned_by_caller):
+            raise APIError(
+                status_code=404,
+                code="not_found",
+                detail=f"Resource '{resource.id}' not found.",
+            )
+
+    async def _assert_run_relation(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        run: Run,
+        relation: str,
+    ) -> None:
+        """Check ``relation`` on ``run:{id}`` (MISM-291 Phase 3).
+
+        Private helper shared by ``assert_can_view_run`` and
+        ``assert_can_cancel_run``.  Both relations currently resolve through the
+        ``owner`` tuple written at ``create_run`` time (Phase 1b), but keeping
+        them as separate callers means the FGA schema can diverge later (e.g.
+        admins cancel but don't view) without touching this layer.
+
+        Raises 404 (not 403) on the id-oracle-avoidance convention for
+        visibility checks: a caller who can't see a run must not be told it
+        exists. Fallback when no FGA client: string equality on
+        ``run.triggered_by``.
+        """
+        _not_visible = APIError(
+            status_code=404,
+            code="not_found",
+            detail=f"Run '{run.id}' not found.",
+        )
+        client = self._openfga_client_for(principal)
+        if client is not None:
+            allowed = await client.check(
+                user=f"user:{principal.subject}",
+                relation=relation,
+                object_=f"run:{run.id}",
+            )
+            if not allowed:
+                raise _not_visible
+            return
+
+        # No FGA client (local dev or unconfigured): string-equality fallback.
+        # Empty triggered_by is owned by nobody — historical rows stay invisible.
+        if not run.triggered_by or run.triggered_by != principal.subject:
+            raise _not_visible
+
+    async def assert_can_view_run(self, principal: AuthenticatedPrincipal, *, run: Run) -> None:
+        """Gate GET /runs/{id}: principal must be the run's owner (MISM-291 Phase 3)."""
+        await self._assert_run_relation(principal, run=run, relation="can_view")
+
+    async def assert_can_cancel_run(self, principal: AuthenticatedPrincipal, *, run: Run) -> None:
+        """Gate DELETE /runs/{id}: principal must be the run's owner (MISM-291 Phase 3)."""
+        await self._assert_run_relation(principal, run=run, relation="can_cancel")
+
+    async def _assert_model_owner(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        model_id: str,
+    ) -> None:
+        """Gate mutation operations on per-model ownership (MISM-291 Phase 4).
+
+        Checks the ``owner`` relation on ``model:{model_id}`` — raises 403 (not
+        404) matching ``get_resource_and_assert_ownership``'s convention for
+        mutation gates (the caller is expected to know the resource exists).
+
+        Unlike the platform-role gates (which check ``platform:main``), this
+        targets the per-resource object — the same ``owner`` tuple written by
+        ``create_model`` at upload time (Phase 1b).
+
+        Two resolution paths:
+        * FGA client: ``check(owner, model:{model_id})`` → 403 on denial.
+        * No FGA client (``issuer == "local"`` or unconfigured): delegates to
+          ``get_resource_and_assert_ownership`` (Postgres string equality,
+          also 403) so local dev without a running OpenFGA instance is
+          unaffected.
+        """
+        client = self._openfga_client_for(principal)
+        if client is not None:
+            allowed = await client.check(
+                user=f"user:{principal.subject}",
+                relation="owner",
+                object_=f"model:{model_id}",
+            )
+            if not allowed:
+                raise APIError(
+                    status_code=403,
+                    code="not_authorized",
+                    detail=f"Principal is not the owner of model '{model_id}'.",
+                )
+            return
+        # No FGA client: fall back to the existing Postgres ownership gate.
+        self.get_resource_and_assert_ownership(principal, resource_id=model_id)
 
     # ── Model operations ─────────────────────────────────────────────
 
-    def create_model(
+    async def create_model(
         self,
         principal: AuthenticatedPrincipal,
         *,
@@ -90,6 +442,7 @@ class RegistryService:
         domains: list[str] | None = None,
         date_published: date | None = None,
     ) -> Resource:
+        await self._assert_uploader(principal)
         try:
             resource = register_model(
                 self._registry,
@@ -117,12 +470,26 @@ class RegistryService:
                 domains=domains or [],
                 date_published=date_published,
             )
-            # FUTURE: fga.write_tuple(user=principal.subject,
-            #   relation="owner", object=f"model:{resource.id}")
+            # MISM-291: grant ownership + the platform boilerplate tuple so
+            # model#can_execute's tupleToUserset (owner OR platform executor)
+            # can resolve. Skipped per _openfga_client_for's rules (no client
+            # configured, or local/disable_auth dev mode).
+            client = self._openfga_client_for(principal)
+            if client is not None:
+                model_object = f"model:{resource.id}"
+                await client.write_tuple(
+                    user=f"user:{principal.subject}", relation="owner", object_=model_object
+                )
+                await client.write_tuple(
+                    user=_PLATFORM_OBJECT, relation="platform", object_=model_object
+                )
             self._session.commit()
         except RegistryValidationError as exc:
             self._session.rollback()
             raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+        except APIError:
+            self._session.rollback()
+            raise
 
         logger.info("Registered model %s (%s) by %s", resource.id, resource.name, principal.subject)
         return resource
@@ -204,8 +571,16 @@ class RegistryService:
         except ResourceNotFoundError as exc:
             raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
 
+        # Ownership check (goal 1 stopgap — string equality, not yet OpenFGA).
+        # Missing model still 404s (checked above) before this; only an
+        # existing-but-not-owned model reaches this 403. Mirrors
+        # `get_resource_and_assert_ownership`'s `issuer == "local"` bypass so
+        # local dev with auth disabled isn't blocked from updating models.
+        #
         # FUTURE: fga.check(user=principal.subject,
         #   relation="editor", object=f"model:{model_id}")
+        if principal.issuer != "local" and resource.owner != principal.subject:
+            raise self._not_authorized_error()
 
         if name is not None:
             resource.name = name
@@ -266,7 +641,7 @@ class RegistryService:
 
     # ── Run operations ───────────────────────────────────────────────
 
-    def create_run(
+    async def create_run(
         self,
         principal: AuthenticatedPrincipal,
         *,
@@ -277,6 +652,28 @@ class RegistryService:
         triggered_by: str = "",
         notes: str = "",
     ) -> Run:
+        # Fetched (and its absence mapped to 404) before the OpenFGA check so a
+        # bad model_id still 404s, matching this method's pre-existing behavior,
+        # rather than surfacing as a 403 that reveals nothing was checked yet.
+        try:
+            self._registry.get_resource(model_id)
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+        await self._assert_can_execute(principal, model_id)
+
+        # MISM-291 Phase 5: each input must be visible to the caller before it
+        # gets mounted into the run (goal 1's create_run gap). Fetched (and
+        # 404-mapped) the same way as model_id above — prepare_run re-fetches
+        # each one too, an accepted minor duplicate read, same tradeoff as the
+        # model_id check above.
+        for input_resource_id in input_resource_ids or []:
+            try:
+                input_resource = self._registry.get_resource(input_resource_id)
+            except ResourceNotFoundError as exc:
+                raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+            self._assert_input_resource_visible(principal, input_resource)
+
         try:
             run = prepare_run(
                 self._registry,
@@ -287,8 +684,18 @@ class RegistryService:
                 triggered_by=triggered_by or principal.subject,
                 notes=notes,
             )
-            # FUTURE: fga.write_tuple(user=principal.subject,
-            #   relation="owner", object=f"run:{run.id}")
+            # MISM-291 Phase 1b: grant the requesting principal ownership of
+            # the new run so OpenFGA can answer can_view / can_cancel checks.
+            # Placed before commit so a FGA failure rolls back the DB and the
+            # two stores stay in sync.  Skipped per _openfga_client_for's rules
+            # (no client configured, or local/disable_auth dev mode).
+            client = self._openfga_client_for(principal)
+            if client is not None:
+                await client.write_tuple(
+                    user=f"user:{principal.subject}",
+                    relation="owner",
+                    object_=f"run:{run.id}",
+                )
             self._session.commit()
         except ResourceNotFoundError as exc:
             self._session.rollback()
@@ -296,6 +703,9 @@ class RegistryService:
         except RegistryValidationError as exc:
             self._session.rollback()
             raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+        except APIError:
+            self._session.rollback()
+            raise
 
         logger.info("Created run %s for model %s by %s", run.id, model_id, principal.subject)
         return run
@@ -513,14 +923,18 @@ class RegistryService:
         tolerated by ``build_resource_from_package`` itself and reported here
         as non-blocking warnings rather than failing.
 
-        Clicking approve means the caller is vouching for the reviewed
-        content, though, so if the package fails to parse at all — the
-        top-level ``model``/``execution`` structure itself is broken — that
-        is raised as an error, not downgraded to a warning: the model is
-        *not* approved and the DB is left untouched. The edited YAML text has
-        already been written to disk by this point (validated above as
-        syntactically-valid YAML), so the user's edits aren't lost; they can
-        fix the structural issue and re-submit.
+        This no longer decides approval (MISM-291) — that's
+        ``review_metadata_package``'s job. If the package fails to parse at
+        all — the top-level ``model``/``execution`` structure itself is
+        broken — that is raised as an error, not downgraded to a warning: the
+        DB is left untouched. The edited YAML text has already been written
+        to disk by this point (validated above as syntactically-valid YAML),
+        so the user's edits aren't lost; they can fix the structural issue
+        and re-submit. On success, ``registration_status`` is left alone,
+        with one exception: resubmitting a manually-fixed ``REJECTED``
+        package moves it back to ``PENDING_REVIEW`` (the state machine's
+        "resubmit after manual fix" transition) and clears
+        ``metadata_rejection_reason``, so it re-enters the reviewer queue.
 
         Raises 403 (not owner), 404 (missing model/resource), 400 (unknown
         filename, syntactically malformed YAML, or a metadata-package that
@@ -617,10 +1031,17 @@ class RegistryService:
         resource.tests = parsed.tests
         resource.io = parsed.io
 
-        # Parsing already succeeded (or we'd have raised above) — per-entry
-        # warnings from build_resource_from_package (missing/empty fields on
-        # individual entries) don't block approval.
-        resource.registration_status = ResourceRegistrationStatus.APPROVED
+        # Resubmitting a manually-fixed rejected package re-enters the
+        # reviewer queue automatically — the state machine already allows
+        # REJECTED -> PENDING_REVIEW for exactly this "resubmit after manual
+        # fix" case. Every other status (PENDING_REVIEW, APPROVED,
+        # DRAFT/ANNOTATING/ANNOTATION_FAILED — the latter three unreachable
+        # here in practice since _metadata_package_dir 404s before a package
+        # exists) is left untouched: this endpoint no longer decides
+        # approval at all — see RegistryService.review_metadata_package.
+        if resource.registration_status == ResourceRegistrationStatus.REJECTED:
+            resource.registration_status = ResourceRegistrationStatus.PENDING_REVIEW
+            resource.metadata_rejection_reason = ""
 
         try:
             self._registry.update_resource(resource)
@@ -635,6 +1056,182 @@ class RegistryService:
             (name, (pkg_dir / name).read_text(encoding="utf-8")) for name in _PACKAGE_FILES
         ]
         return files_out, warnings
+
+    async def review_metadata_package(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        model_id: str,
+        approve: bool,
+        reason: str = "",
+    ) -> Resource:
+        """An UPLOAD_REVIEWER's approve/reject decision on a model's metadata
+        review (MISM-291, workflow steps e/f).
+
+        Gated on the platform-wide ``upload_reviewer`` role — global, not
+        per-submission, and self-review is explicitly allowed (a reviewer may
+        act on a model they themselves uploaded). Delegates the actual
+        ``PENDING_REVIEW -> APPROVED/REJECTED`` transition to
+        ``mism_registry.set_registration_status``, which enforces the
+        registration state machine and stamps ``metadata_reviewed_by``/
+        ``metadata_reviewed_at``/``metadata_rejection_reason``.
+
+        Raises 403 (not a reviewer), 404 (model missing), 400 (illegal
+        transition, e.g. reviewing a model that isn't PENDING_REVIEW).
+        """
+        await self._assert_upload_reviewer(principal)
+
+        target = (
+            ResourceRegistrationStatus.APPROVED if approve else ResourceRegistrationStatus.REJECTED
+        )
+        try:
+            resource = set_registration_status(
+                self._registry,
+                resource_id=model_id,
+                target=target,
+                reviewed_by=principal.subject,
+                reason=reason,
+            )
+            # MISM-291 Phase 1a: write the public viewer tuple when a model is
+            # approved so OpenFGA can answer can_view checks for any caller
+            # (including anonymous, via the user:* wildcard).  Placed before
+            # commit so a FGA failure rolls back the DB and the two stores stay
+            # in sync.  Skipped per _openfga_client_for's rules (no client
+            # configured, or local/disable_auth dev mode).
+            client = self._openfga_client_for(principal)
+            if client is not None and target == ResourceRegistrationStatus.APPROVED:
+                await client.write_tuple(
+                    user="user:*", relation="viewer", object_=f"model:{model_id}"
+                )
+            self._session.commit()
+        except ResourceNotFoundError as exc:
+            self._session.rollback()
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+        except InvalidStateTransitionError as exc:
+            self._session.rollback()
+            raise APIError(
+                status_code=400, code="invalid_state_transition", detail=str(exc)
+            ) from exc
+        except APIError:
+            self._session.rollback()
+            raise
+
+        logger.info(
+            "Metadata review for model %s: %s by %s",
+            model_id,
+            target.value,
+            principal.subject,
+        )
+        return resource
+
+    def submit_container_image(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        model_id: str,
+        container: Container,
+    ) -> Resource:
+        """Submit (or resubmit) a built Dockerfile/image for IMAGE_CHECK review
+        (MISM-291, workflow steps h/l).
+
+        Ownership-gated, not `image_checker`-gated — the design doc names no
+        gating role for this step (only the review action itself, steps i-k,
+        is role-gated), mirroring `write_metadata_package_raw`'s ownership
+        gate rather than `review_metadata_package`'s role gate. Delegates to
+        `mism_registry.submit_container_image`, which requires the model's
+        metadata registration to already be APPROVED and moves
+        `image_review_status` to `PENDING_IMAGE_CHECK`, replacing any
+        existing container recipe.
+
+        This same call is also the resubmission action after a rejection:
+        calling it again while `image_review_status` is `IMAGE_REJECTED`
+        auto-transitions back to `PENDING_IMAGE_CHECK` — the state machine
+        already allows that transition, and there is no separate "resubmit"
+        endpoint, matching the metadata-review flow's
+        `REJECTED -> PENDING_REVIEW` bounceback convention.
+
+        Raises 403 (not owner), 404 (model missing), 400 (registration not
+        yet APPROVED, or an illegal image-review transition, e.g.
+        resubmitting while a review is already PENDING_IMAGE_CHECK).
+        """
+        self.get_resource_and_assert_ownership(principal, resource_id=model_id)
+
+        try:
+            resource = submit_container_image(
+                self._registry,
+                resource_id=model_id,
+                container=container,
+            )
+            self._session.commit()
+        except RegistryValidationError as exc:
+            self._session.rollback()
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+        except InvalidStateTransitionError as exc:
+            self._session.rollback()
+            raise APIError(
+                status_code=400, code="invalid_state_transition", detail=str(exc)
+            ) from exc
+
+        logger.info(
+            "Submitted container image for model %s (%s) by %s",
+            model_id,
+            container.image_name or container.file,
+            principal.subject,
+        )
+        return resource
+
+    async def review_container_image(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        model_id: str,
+        approve: bool,
+        reason: str = "",
+    ) -> Resource:
+        """An IMAGE_CHECK holder's approve/reject decision on a model's
+        Dockerfile/image (MISM-291, workflow steps i-k).
+
+        Gated on the platform-wide ``image_checker`` role — global, not
+        per-submission, and self-review is explicitly allowed (an image
+        checker may act on a model they themselves uploaded, decided
+        2026-08-21 as its own per-role choice, not carried over from
+        ``upload_reviewer``'s precedent). Delegates the actual
+        ``PENDING_IMAGE_CHECK -> IMAGE_APPROVED/IMAGE_REJECTED`` transition to
+        ``mism_registry.set_image_review_status``, which enforces the
+        image-review state machine and stamps ``image_reviewed_by``/
+        ``image_reviewed_at``/``image_rejection_reason``.
+
+        Raises 403 (not an image checker), 404 (model missing), 400 (illegal
+        transition, e.g. reviewing a model that isn't PENDING_IMAGE_CHECK).
+        """
+        await self._assert_image_checker(principal)
+
+        target = ImageReviewStatus.IMAGE_APPROVED if approve else ImageReviewStatus.IMAGE_REJECTED
+        try:
+            resource = set_image_review_status(
+                self._registry,
+                resource_id=model_id,
+                target=target,
+                reviewed_by=principal.subject,
+                reason=reason,
+            )
+            self._session.commit()
+        except ResourceNotFoundError as exc:
+            self._session.rollback()
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+        except InvalidStateTransitionError as exc:
+            self._session.rollback()
+            raise APIError(
+                status_code=400, code="invalid_state_transition", detail=str(exc)
+            ) from exc
+
+        logger.info(
+            "Image review for model %s: %s by %s",
+            model_id,
+            target.value,
+            principal.subject,
+        )
+        return resource
 
     def resolve_resource_file(self, resource_id: str, rel_path: str) -> tuple[Resource, Path]:
         """Resolve a single file inside a resource's directory.
@@ -753,6 +1350,7 @@ class RegistryService:
     def list_models(
         self,
         *,
+        principal: AuthenticatedPrincipal | None = None,
         name_contains: str | None = None,
         owner: str | None = None,
         tags: list[str] | None = None,
@@ -760,7 +1358,17 @@ class RegistryService:
         scales: list[str] | None = None,
         registration_status: str | None = None,
     ) -> list[Resource]:
-        # FUTURE: batch fga check for visibility filtering
+        """Return models visible to ``principal`` matching the given filters (MISM-291 Phase 5).
+
+        Visibility filter (string-equality, not OpenFGA): approved models are
+        public; anything still in the registration workflow is visible only to
+        its owner. Written inline — services may not import from ``api/``.
+        Filtering happens before the list is returned so callers always receive
+        a fully-gated result; pagination is left to the router.
+
+        The ``registration_status`` pre-filter (when supplied) narrows the DB
+        result before the visibility filter runs so the two compose correctly.
+        """
         resources = find_resources(
             self._registry,
             resource_type=ResourceType.MODEL,
@@ -772,7 +1380,12 @@ class RegistryService:
         )
         if registration_status is not None:
             resources = [r for r in resources if r.registration_status.value == registration_status]
-        return resources
+        return [
+            r
+            for r in resources
+            if r.registration_status == ResourceRegistrationStatus.APPROVED
+            or (principal is not None and bool(r.owner) and r.owner == principal.subject)
+        ]
 
     # ── Search ────────────────────────────────────────────────────────
 
@@ -831,7 +1444,7 @@ class RegistryService:
 
     # ── Dataset operations ─────────────────────────────────────────
 
-    def create_dataset(
+    async def create_dataset(
         self,
         principal: AuthenticatedPrincipal,
         *,
@@ -856,6 +1469,7 @@ class RegistryService:
         domains: list[str] | None = None,
         date_published: date | None = None,
     ) -> Resource:
+        await self._assert_uploader(principal)
         try:
             resource = register_dataset(
                 self._registry,
@@ -923,8 +1537,16 @@ class RegistryService:
         except ResourceNotFoundError as exc:
             raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
 
+        # Ownership check (goal 1 stopgap — string equality, not yet OpenFGA).
+        # Missing dataset still 404s (checked above) before this; only an
+        # existing-but-not-owned dataset reaches this 403. Mirrors
+        # `get_resource_and_assert_ownership`'s `issuer == "local"` bypass so
+        # local dev with auth disabled isn't blocked from updating datasets.
+        #
         # FUTURE: fga.check(user=principal.subject,
         #   relation="editor", object=f"dataset:{dataset_id}")
+        if principal.issuer != "local" and resource.owner != principal.subject:
+            raise self._not_authorized_error()
 
         if name is not None:
             resource.name = name
@@ -980,14 +1602,19 @@ class RegistryService:
     def list_datasets(
         self,
         *,
+        principal: AuthenticatedPrincipal | None = None,
         name_contains: str | None = None,
         owner: str | None = None,
         tags: list[str] | None = None,
         organisms: list[str] | None = None,
         scales: list[str] | None = None,
     ) -> list[Resource]:
-        # FUTURE: batch fga check for visibility filtering
-        return find_resources(
+        """Return datasets visible to ``principal`` matching the given filters (MISM-291 Phase 5).
+
+        Same visibility predicate as ``list_models`` (approved OR owner) —
+        see that method's docstring for the rationale.
+        """
+        resources = find_resources(
             self._registry,
             resource_type=ResourceType.DATASET,
             name_contains=name_contains,
@@ -996,6 +1623,12 @@ class RegistryService:
             organisms=organisms,
             scales=scales,
         )
+        return [
+            r
+            for r in resources
+            if r.registration_status == ResourceRegistrationStatus.APPROVED
+            or (principal is not None and bool(r.owner) and r.owner == principal.subject)
+        ]
 
     # ── Upload lifecycle ─────────────────────────────────────────────
 

@@ -25,6 +25,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from mism_registry.resource import Resource
 
+from mismapi.auth.base import OptionalPrincipalDep
 from mismapi.core.deps import RegistryServiceDep
 from mismapi.schemas.registry import ResourceFileItem, ResourceFilesResponse
 
@@ -198,13 +199,19 @@ def _attachment_disposition(filename: str) -> str:
 async def list_resource_files(
     resource_id: str,
     service: RegistryServiceDep,
+    principal: OptionalPrincipalDep,
 ) -> ResourceFilesResponse:
     """List every file in the resource's artifact directory.
 
     A resource with no directory on the mount yet returns an empty list, not a
     404 — see ``RegistryService.find_resource_directory``.
+
+    Visibility-gated the same way as ``GET /models/{model_id}``: not-yet-public
+    resources are only listable by their owner (404, not 403 — avoids an id
+    oracle for resources the caller may not know exist).
     """
     resource, directory = service.find_resource_directory(resource_id)
+    await service.assert_can_view_model(principal, resource=resource)
     files = [] if directory is None else _walk_files(directory)
     return ResourceFilesResponse(
         resource_id=resource.id,
@@ -221,6 +228,7 @@ async def list_resource_files(
 async def download_resource(
     resource_id: str,
     service: RegistryServiceDep,
+    principal: OptionalPrincipalDep,
     file: str | None = Query(
         default=None,
         description=(
@@ -239,9 +247,14 @@ async def download_resource(
         ),
     ),
 ) -> StreamingResponse | FileResponse:
-    """Download artifacts for a resource — single file or whole directory zip."""
+    """Download artifacts for a resource — single file or whole directory zip.
+
+    Visibility-gated the same way as ``GET /models/{model_id}``: not-yet-public
+    resources are only downloadable by their owner (404, not 403).
+    """
     if file is not None:
         resource, file_path = service.resolve_resource_file(resource_id, file)
+        await service.assert_can_view_model(principal, resource=resource)
         logger.info("Serving file %s for resource %s (%s)", file, resource.id, disposition)
         if disposition == "inline":
             # Guess the type from the extension so browsers render images/text
@@ -261,6 +274,7 @@ async def download_resource(
         )
 
     resource, directory = service.get_resource_directory(resource_id)
+    await service.assert_can_view_model(principal, resource=resource)
     logger.info("Streaming zip of %s for resource %s", directory, resource.id)
     return StreamingResponse(
         _zip_directory_stream(directory),

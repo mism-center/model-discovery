@@ -31,6 +31,10 @@ class UploadConfigurationError(StartupConfigurationError):
     """Raised when production upload settings are missing or unsafe."""
 
 
+class OpenFGAConfigurationError(StartupConfigurationError):
+    """Raised when OpenFGA authorization is active but required settings are missing."""
+
+
 _REQUIRED_OIDC_FIELDS: tuple[tuple[str, str], ...] = (
     ("oidc_client_id", "OIDC_CLIENT_ID"),
     ("oidc_client_secret", "OIDC_CLIENT_SECRET"),
@@ -44,12 +48,14 @@ def ensure_startup_config(settings: Settings) -> None:
     """
     Validate cross-field settings constraints before app wiring.
 
-    Validates OIDC-mode configuration and production-only upload safety
-    settings. If in the future we add another auth mode or another mandatory
-    integration, we will need to add different validation here.
+    Validates OIDC-mode configuration, OpenFGA (MISM-291 authorization)
+    configuration, and production-only upload safety settings. If in the
+    future we add another auth mode or another mandatory integration, we
+    will need to add different validation here.
     """
     if not settings.disable_auth:
         _ensure_oidc_config(settings)
+        _ensure_openfga_config(settings)
     if settings.production_mode:
         _ensure_production_upload_config(settings)
 
@@ -72,6 +78,25 @@ def _ensure_oidc_config(settings: Settings) -> None:
     raise OIDCConfigurationError(
         "OIDC authentication is enabled but required OIDC configuration is missing or empty: "
         f"{joined}. Set these environment variables before starting the API."
+    )
+
+
+def _ensure_openfga_config(settings: Settings) -> None:
+    """Require a store id whenever OpenFGA gating is actually active.
+
+    Gated the same way as OIDC (skipped when disable_auth is True) because
+    RegistryService._openfga_client_for also bypasses OpenFGA entirely for
+    that mode's "local"-issuer principal — so requiring a store id there
+    would demand configuration nothing would ever use.
+    """
+    if settings.openfga_store_id:
+        return
+
+    raise OpenFGAConfigurationError(
+        "OpenFGA authorization (MISM-291) is active but required configuration is "
+        "missing or empty: OPENFGA_STORE_ID. Set this environment variable before "
+        "starting the API, or set DISABLE_AUTH=true for local development without "
+        "an OpenFGA instance."
     )
 
 

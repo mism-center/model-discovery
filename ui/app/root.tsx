@@ -19,6 +19,7 @@ import {
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import type { Route } from './+types/root';
 import { Header } from './components/layout/header';
+import { Footer } from './components/layout/footer';
 import { AuthErrorBanner } from './components/layout/auth-error-banner';
 import { NavigationProgress } from './components/layout/navigation-progress';
 import { prefetchUser } from './api/auth/user';
@@ -109,8 +110,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <Header />
             <AuthErrorBanner />
             {children}
+            {/* Inside the flex column so `grow` on page <main>s pins the
+                footer to the viewport bottom on short pages. */}
+            <Footer />
           </div>
-          {/* <Footer /> */}
           <ScrollRestoration />
           <Scripts />
         </Providers>

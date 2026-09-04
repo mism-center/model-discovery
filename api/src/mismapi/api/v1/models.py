@@ -5,8 +5,8 @@ from typing import Any
 from fastapi import APIRouter, Query
 from mism_registry.enums import RunStatus
 from mism_registry.resource import Resource
+from mism_registry.types import Container
 
-from mismapi.api.v1._authz import assert_model_visible, model_visible_to
 from mismapi.api.v1._run_helpers import resource_summary as _resource_summary
 from mismapi.api.v1._run_helpers import run_detail as _run_detail
 from mismapi.auth.base import AuthenticatedPrincipalDep, OptionalPrincipalDep
@@ -27,6 +27,9 @@ from mismapi.schemas.registry import (
     ModelRunDetailsResponse,
     RegisterModelRequest,
     RegisterModelResponse,
+    ReviewContainerImageRequest,
+    ReviewMetadataPackageRequest,
+    SubmitContainerImageRequest,
     UpdateModelRequest,
     author_from_dto,
     author_to_dto,
@@ -82,6 +85,7 @@ def _model_list_item(r: Resource) -> ModelListItem:
         external_ids=dict(r.external_ids),
         license=r.license,
         registration_status=r.registration_status.value,
+        image_review_status=r.image_review_status.value,
         metadata=dict(r.metadata),
         created_at=r.created_at,
         updated_at=r.updated_at,
@@ -121,6 +125,13 @@ def _model_response(r: Resource) -> RegisterModelResponse:
         metadata=dict(r.metadata),
         created_at=r.created_at,
         updated_at=r.updated_at,
+        metadata_reviewed_by=r.metadata_reviewed_by,
+        metadata_reviewed_at=r.metadata_reviewed_at,
+        metadata_rejection_reason=r.metadata_rejection_reason,
+        image_review_status=r.image_review_status.value,
+        image_reviewed_by=r.image_reviewed_by,
+        image_reviewed_at=r.image_reviewed_at,
+        image_rejection_reason=r.image_rejection_reason,
     )
 
 
@@ -177,6 +188,7 @@ async def list_models(
     offset: int = Query(default=0, ge=0),
 ) -> ModelListResponse:
     resources = service.list_models(
+        principal=principal,
         name_contains=name,
         owner=owner,
         tags=tags,
@@ -185,15 +197,8 @@ async def list_models(
         registration_status=registration_status,
     )
 
-    # Same visibility rule as GET /models/{model_id} and the search gate:
-    # approved models are public, anything still in draft / annotating /
-    # pending_review / rejected is visible only to its owner. Filtering before
-    # pagination keeps `total` and the page contents consistent — counting
-    # hidden rows would leak their existence through the count alone.
-    visible = [r for r in resources if model_visible_to(r, principal)]
-
-    total = len(visible)
-    page = visible[offset : offset + limit]
+    total = len(resources)
+    page = resources[offset : offset + limit]
 
     return ModelListResponse(total=total, results=[_model_list_item(r) for r in page])
 
@@ -222,7 +227,7 @@ async def get_model(
     ``owner = principal.subject``.
     """
     resource = service.get_model(model_id)
-    assert_model_visible(resource, principal)
+    await service.assert_can_view_model(principal, resource=resource)
     return _model_detail_response(resource)
 
 
@@ -232,7 +237,7 @@ async def create_model(
     service: RegistryServiceDep,
     principal: AuthenticatedPrincipalDep,
 ) -> RegisterModelResponse:
-    resource = service.create_model(
+    resource = await service.create_model(
         principal,
         name=payload.name,
         location_uri=payload.location_uri,
@@ -390,7 +395,10 @@ async def update_model_metadata_package_raw(
     etc.) are tolerated and reported in ``warnings``, not raised — see
     ``RegistryService.write_metadata_package_raw``. If the package fails to
     parse at all (the top-level ``model``/``execution`` structure itself is
-    broken), this raises a 400 and does not approve the model.
+    broken), this raises a 400 and the DB is left untouched. Approval/
+    rejection is not decided here — see ``POST .../review`` — except that
+    resubmitting a fixed ``REJECTED`` package moves it back to
+    ``PENDING_REVIEW`` automatically.
     """
     files, warnings = service.write_metadata_package_raw(
         principal,
@@ -398,6 +406,83 @@ async def update_model_metadata_package_raw(
         files=[(f.filename, f.content) for f in payload.files],
     )
     return _raw_response(model_id, files, warnings)
+
+
+@router.post("/models/{model_id}/review", response_model=RegisterModelResponse)
+async def review_model_metadata_package(
+    model_id: str,
+    payload: ReviewMetadataPackageRequest,
+    service: RegistryServiceDep,
+    principal: AuthenticatedPrincipalDep,
+) -> RegisterModelResponse:
+    """An UPLOAD_REVIEWER's approve/reject decision on a PENDING_REVIEW model.
+
+    Gated on the platform-wide ``upload_reviewer`` role, not ownership — the
+    human-review step (workflow steps e/f) that replaces
+    ``write_metadata_package_raw``'s old self-approve behavior. Self-review
+    is allowed here: the caller may hold ``upload_reviewer`` and also be the
+    model's uploader.
+    """
+    resource = await service.review_metadata_package(
+        principal,
+        model_id=model_id,
+        approve=payload.approve,
+        reason=payload.reason,
+    )
+    return _model_response(resource)
+
+
+@router.post("/models/{model_id}/image", response_model=RegisterModelResponse)
+async def submit_model_container_image(
+    model_id: str,
+    payload: SubmitContainerImageRequest,
+    service: RegistryServiceDep,
+    principal: AuthenticatedPrincipalDep,
+) -> RegisterModelResponse:
+    """Submit (or resubmit) a built Dockerfile/image for IMAGE_CHECK review.
+
+    Ownership-gated (workflow steps h/l) — the design doc names no gating
+    role for submission itself, only for the review action
+    (``POST .../image-review``). Requires the model's metadata registration
+    to already be ``APPROVED``. Resubmitting after ``IMAGE_REJECTED`` uses
+    this same endpoint and auto-transitions back to ``PENDING_IMAGE_CHECK``;
+    there is no separate "resubmit" endpoint.
+    """
+    resource = service.submit_container_image(
+        principal,
+        model_id=model_id,
+        container=Container(
+            kind=payload.kind,
+            file=payload.file,
+            image_name=payload.image_name,
+            registry=payload.registry,
+        ),
+    )
+    return _model_response(resource)
+
+
+@router.post("/models/{model_id}/image-review", response_model=RegisterModelResponse)
+async def review_model_container_image(
+    model_id: str,
+    payload: ReviewContainerImageRequest,
+    service: RegistryServiceDep,
+    principal: AuthenticatedPrincipalDep,
+) -> RegisterModelResponse:
+    """An IMAGE_CHECK holder's approve/reject decision on a
+    PENDING_IMAGE_CHECK model's Dockerfile/image.
+
+    Gated on the platform-wide ``image_checker`` role, not ownership —
+    mirrors ``POST .../review``'s pattern (workflow steps i-k). Self-review
+    is allowed here: the caller may hold ``image_checker`` and also be the
+    model's uploader.
+    """
+    resource = await service.review_container_image(
+        principal,
+        model_id=model_id,
+        approve=payload.approve,
+        reason=payload.reason,
+    )
+    return _model_response(resource)
 
 
 @router.post(
@@ -415,7 +500,7 @@ async def execute_run(
     """Create a run and immediately trigger execution on the Execution API."""
 
     # 1. Register the run in the DAL (same as create_run)
-    run = service.create_run(
+    run = await service.create_run(
         principal,
         model_id=model_id,
         input_resource_ids=payload.input_resource_ids,
@@ -475,7 +560,7 @@ async def list_model_runs(
 
     Runs arrive newest-first from the registry; the order is not re-derived here.
     """
-    assert_model_visible(service.get_model(model_id), principal)
+    await service.assert_can_view_model(principal, resource=service.get_model(model_id))
 
     summary = service.get_model_run_details(
         model_id=model_id,

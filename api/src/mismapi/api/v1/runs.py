@@ -12,7 +12,6 @@ from fastapi import APIRouter, Query
 from mism_registry import RunStatus
 from pydantic import BaseModel
 
-from mismapi.api.v1._authz import assert_resource_owner, assert_run_owner
 from mismapi.api.v1._run_helpers import resource_summary, run_detail
 from mismapi.auth.base import AuthenticatedPrincipalDep
 from mismapi.core.deps import ExecutionClientDep, RegistryServiceDep, SettingsDep
@@ -125,13 +124,13 @@ async def get_run(
     times out the client gets a 504 (see ExecutionClient.get_status).
 
     Requires authentication, and only the user who triggered the run may read
-    it (404 otherwise — see ``_authz``).
+    it (404 otherwise).
     """
     # Check ownership *before* the refresh round-trip: calling the Execution
     # service for someone else's run would fire a side effect on it and leak
     # its existence through timing and error shape.
     run, input_resources, output_resources = service.get_run(run_id)
-    assert_run_owner(run, principal)
+    await service.assert_can_view_run(principal, run=run)
 
     execution_status: dict[str, Any] = {}
     if refresh:
@@ -173,8 +172,7 @@ async def post_run(
     `ui/app/routes/upload.tsx`), so the path is load-bearing; renaming it needs
     that call site changed in the same breath.
     """
-    resource = service.get_model(run_id)
-    assert_resource_owner(resource, principal)
+    await service._assert_model_owner(principal, model_id=run_id)
 
     logger.info("Annotation requested for %s by %s", run_id, principal.subject)
     execution_status = await execution_client.annotate(
@@ -210,7 +208,7 @@ async def cancel_run(
     """
     # 0. Authorize before the side effect: only the triggering user may cancel.
     existing, _, _ = service.get_run(run_id)
-    assert_run_owner(existing, principal)
+    await service.assert_can_cancel_run(principal, run=existing)
 
     # 1. Ask exec to actually cancel — it owns the running container/process.
     execution_status = await execution_client.cancel_run(run_id)

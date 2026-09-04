@@ -30,6 +30,7 @@ from mismapi.clients.biomodels_client import BioModelsClient
 from mismapi.clients.cairns_client import CairnsClient
 from mismapi.clients.execution_client import ExecutionClient
 from mismapi.clients.local_upload_client import LocalFileUploadClient
+from mismapi.clients.openfga_client import OpenFGAClient
 from mismapi.clients.upload_client import UploadServiceClient
 from mismapi.core.config_validation import ensure_startup_config
 from mismapi.core.settings import Settings
@@ -59,6 +60,7 @@ class AppContainer:
     execution_client: ExecutionClient
     cairns_client: CairnsClient
     biomodels_client: BioModelsClient
+    openfga_client: OpenFGAClient
     auth_validator: AuthValidator
     oidc_client: StarletteOAuth2App
     oidc_service: OIDCService
@@ -126,6 +128,13 @@ class AppContainer:
             max_concurrency=settings.biomodels_max_concurrency,
         )
 
+        openfga_client = OpenFGAClient(
+            base_url=settings.openfga_api_url,
+            store_id=settings.openfga_store_id,
+            authorization_model_id=settings.openfga_authorization_model_id,
+            timeout_seconds=settings.openfga_timeout_seconds,
+        )
+
         redis_client: Redis = Redis.from_url(  # pyright: ignore[reportUnknownMemberType]
             settings.redis_url,
             decode_responses=False,
@@ -162,6 +171,7 @@ class AppContainer:
             execution_client=execution_client,
             cairns_client=cairns_client,
             biomodels_client=biomodels_client,
+            openfga_client=openfga_client,
             auth_validator=auth_validator,
             oidc_client=oidc_client,
             oidc_service=oidc_service,
@@ -189,6 +199,7 @@ class AppContainer:
             ("execution_client", self.execution_client.close),
             ("cairns_client", self.cairns_client.close),
             ("biomodels_client", self.biomodels_client.close),
+            ("openfga_client", self.openfga_client.close),
             ("redis", self.redis.aclose),
         ):
             try:

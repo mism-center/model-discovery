@@ -655,7 +655,7 @@ export default function TusTest() {
     workflowStep === 'monitoring';
 
   return (
-    <main className="container mx-auto p-6 flex flex-col gap-6 max-w-4xl">
+    <main className="container mx-auto p-6 flex flex-col gap-6 max-w-4xl min-h-dvh">
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold">Model Upload</h1>
         <p className="text-sm text-foreground">
