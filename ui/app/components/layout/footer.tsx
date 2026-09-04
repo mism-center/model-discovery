@@ -1,6 +1,6 @@
 import { Link as RouterLink } from 'react-router';
 import cn from 'classnames';
-import { ArrowUpRightIcon, EnvelopeIcon } from '@heroicons/react/16/solid';
+import { ArrowUpRightIcon } from '@heroicons/react/16/solid';
 
 import { useUser } from '~/api/auth/user';
 import wordmark from './MISM-header-white.svg';
@@ -12,7 +12,7 @@ import wordmark from './MISM-header-white.svg';
 const CONTACT_EMAIL = 'contact@immunescale.org';
 
 const MISM_SITE = 'https://immunescale.org';
-const HELX_SITE = 'https://helx.renci.org';
+// const HELX_SITE = 'https://helx.renci.org';
 
 type FooterLink = {
   label: string;
@@ -161,7 +161,12 @@ export function Footer() {
               Multiscale Model Portal
             </p>
             <p className="max-w-sm text-sm leading-relaxed text-slate-300/85">
-              Research reported on this website is supported by the National Institute of Allergy and Infectious Diseases (NIAID) of the National Institutes of Health under award number U54AI191253. The content is solely the responsibility of the authors and does not necessarily represent the official views of the National Institutes of Health.
+              Research reported on this website is supported by the National
+              Institute of Allergy and Infectious Diseases (NIAID) of the
+              National Institutes of Health under award number U54AI191253. The
+              content is solely the responsibility of the authors and does not
+              necessarily represent the official views of the National
+              Institutes of Health.
             </p>
             {/* <a
               href={`mailto:${CONTACT_EMAIL}`}
