@@ -4,9 +4,9 @@ An imported model runs the same onboarding path as a user upload: files land on
 the iRODS PVC, an annotation run is fired, the agent writes a metadata-package,
 and a human reviews and approves it.
 
-The upstream record is written verbatim to
-``metadata-package/biomodels_metadata.json`` for the annotation agent to read.
-Nothing here mirrors those curated values into columns: approving a model
+The BioModels record is written to ``metadata-package/biomodels_metadata.json``
+for the annotation agent to read. Nothing here mirrors those curated values
+into columns: approving a model
 overwrites them from the package the agent produces, so a value set at import
 would be discarded. The exceptions are ``date_published``, ``digest_sha256`` and
 ``size_bytes``: approve does not touch those, so import is their only writer.
@@ -31,7 +31,7 @@ from pathlib import Path
 from mism_registry.resource import Resource
 
 from mismapi.auth.principal import AuthenticatedPrincipal
-from mismapi.clients.biomodels_client import BioModelsArchive, BioModelsClient
+from mismapi.clients.biomodels_client import BioModelsClient
 from mismapi.clients.execution_client import ExecutionClient
 from mismapi.core.archive import ExtractedArchive, extract_zip
 from mismapi.core.errors import APIError
@@ -111,20 +111,26 @@ async def import_biomodels_model(
         source_revision=archive.revision,
     )
 
-    mount = Path(settings.irods_mount_path)
+    working_tree = Path(settings.irods_mount_path) / upload_dir(resource.id, resource.version)
     try:
         extracted = await asyncio.to_thread(
             _populate_working_tree,
-            mount / upload_dir(resource.id, resource.version),
-            archive=archive,
+            working_tree,
+            content=archive.content,
             record=record,
             max_total_bytes=settings.biomodels_max_archive_bytes,
         )
         registry.mark_upload_complete(principal, resource_id=resource.id)
     except BaseException:
-        # The row is already committed, so unwinding it is the only way to keep
-        # a failed import from leaving a model whose files never arrived.
-        _discard(principal, registry, resource_id=resource.id, storage_root=mount / resource.id)
+        # The row is already committed, so unwinding it is the only way to keep a
+        # failed import from leaving a model whose files never arrived. Scoped to
+        # the version directory this import wrote — its parent holds every version
+        # of the resource, including siblings this import never owned.
+        shutil.rmtree(working_tree, ignore_errors=True)
+        try:
+            registry.delete_model(principal, resource.id)
+        except APIError:
+            logger.exception("biomodels_import_rollback_failed model_id=%s", resource.id)
         raise
 
     logger.info(
@@ -136,11 +142,13 @@ async def import_biomodels_model(
         extracted.total_bytes,
     )
 
+    annotation_started = await _start_annotation(execution, settings, resource_id=resource.id)
+
     return ImportedModel(
         resource=resource,
         files_extracted=extracted.file_count,
         size_bytes=extracted.total_bytes,
-        annotation_started=await _start_annotation(execution, settings, resource_id=resource.id),
+        annotation_started=annotation_started,
     )
 
 
@@ -173,49 +181,18 @@ def _reject_duplicate(registry: RegistryService, normalized: str) -> None:
 def _populate_working_tree(
     working_tree: Path,
     *,
-    archive: BioModelsArchive,
+    content: bytes,
     record: BioModelsRecordDTO,
     max_total_bytes: int,
 ) -> ExtractedArchive:
-    extracted = extract_zip(
-        io.BytesIO(archive.content), working_tree, max_total_bytes=max_total_bytes
-    )
+    extracted = extract_zip(io.BytesIO(content), working_tree, max_total_bytes=max_total_bytes)
 
-    manifest = {
-        "source_repository": SOURCE_REPOSITORY,
-        "source_identifier": record.identifier,
-        "source_url": record.url,
-        "source_revision": archive.revision,
-        "archive_url": archive.resolved_url,
-        "record": record.model_dump(mode="json"),
-    }
     package_dir = working_tree / PACKAGE_DIR
     package_dir.mkdir(parents=True, exist_ok=True)
     (package_dir / MANIFEST_FILE).write_text(
-        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+        json.dumps(record.model_dump(mode="json"), indent=2, sort_keys=True), encoding="utf-8"
     )
     return extracted
-
-
-def _discard(
-    principal: AuthenticatedPrincipal,
-    registry: RegistryService,
-    *,
-    resource_id: str,
-    storage_root: Path,
-) -> None:
-    """Unwind a committed import.
-
-    Removes the resource's whole storage directory, not just the version
-    subdirectory the archive unpacked into: the row was created moments ago, so
-    nothing else can own that tree, and pruning only the leaf would leave an
-    empty parent behind on the PVC for every failed import.
-    """
-    shutil.rmtree(storage_root, ignore_errors=True)
-    try:
-        registry.delete_model(principal, resource_id)
-    except APIError:
-        logger.exception("biomodels_import_rollback_failed model_id=%s", resource_id)
 
 
 async def _start_annotation(
@@ -238,9 +215,10 @@ async def _start_annotation(
         )
     except APIError as exc:
         logger.warning(
-            "biomodels_import_annotation_failed model_id=%s code=%s",
+            "biomodels_import_annotation_failed model_id=%s code=%s detail=%s",
             resource_id,
             exc.code,
+            exc.detail,
         )
         return False
     return True

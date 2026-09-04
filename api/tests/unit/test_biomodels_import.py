@@ -165,15 +165,21 @@ class TestManifest:
 
     async def test_written_under_the_metadata_package_directory(self, tmp_path: Path) -> None:
         imported = await _import(tmp_path)
-        assert self._manifest(tmp_path, imported)["source_identifier"] == _MODEL_ID
+        assert self._manifest(tmp_path, imported)["identifier"] == _MODEL_ID
 
-    async def test_carries_the_upstream_record_verbatim(self, tmp_path: Path) -> None:
-        imported = await _import(tmp_path)
-        manifest = self._manifest(tmp_path, imported)
+    async def test_is_the_record_itself_not_a_wrapper_around_it(self, tmp_path: Path) -> None:
+        """The file is the BioModels record; provenance lives in columns."""
+        biomodels = _biomodels_client()
+        record = await biomodels.get_model(_MODEL_ID)
+        imported = await _import(tmp_path, biomodels=biomodels)
 
-        assert manifest["record"]["name"] == "Kirschner1998 - Immunotherapy"
-        assert manifest["archive_url"] == _RESOLVED_URL
-        assert manifest["source_revision"] == "6"
+        assert self._manifest(tmp_path, imported) == record.model_dump(mode="json")
+
+    async def test_carries_the_fields_the_agent_maps_from(self, tmp_path: Path) -> None:
+        manifest = self._manifest(tmp_path, await _import(tmp_path))
+
+        assert manifest["name"] == "Kirschner1998 - Immunotherapy"
+        assert manifest["url"] == f"https://www.biomodels.org/{_MODEL_ID}"
 
     async def test_does_not_seed_a_metadata_yaml(self, tmp_path: Path) -> None:
         """Curated values are the agent's job; import only supplies the record."""
@@ -319,19 +325,48 @@ class TestFailureHandling:
         imported = await _import(tmp_path, registry=registry)
         assert imported.resource.source_identifier == _MODEL_ID
 
+    @staticmethod
+    def _failing_registry() -> RegistryService:
+        registry = _registry_service()
+        registry.mark_upload_complete = MagicMock(  # type: ignore[method-assign]
+            side_effect=APIError(status_code=400, code="boom", detail="boom")
+        )
+        return registry
+
     async def test_failure_after_extraction_removes_both_row_and_files(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path
     ) -> None:
         """The oversize path fails before anything is written; this one does not."""
-        registry = _registry_service()
-        monkeypatch.setattr(
-            registry,
-            "mark_upload_complete",
-            MagicMock(side_effect=APIError(status_code=400, code="boom", detail="boom")),
-        )
+        registry = self._failing_registry()
 
         with pytest.raises(APIError):
             await _import(tmp_path, registry=registry)
 
         assert registry.find_by_source(repository="biomodels") == []
-        assert list(tmp_path.iterdir()) == []
+        assert [p for p in tmp_path.rglob("*") if p.is_file()] == []
+
+    async def test_rollback_leaves_other_versions_of_the_resource_alone(
+        self, tmp_path: Path
+    ) -> None:
+        """Rollback owns the version directory it wrote, not the resource's tree."""
+        registry = self._failing_registry()
+        created: list[str] = []
+        real_create = registry.create_model
+
+        def capture(*args: Any, **kwargs: Any) -> Any:
+            resource = real_create(*args, **kwargs)
+            created.append(resource.id)
+            # A sibling version, as a re-import or a second upload would leave.
+            sibling = tmp_path / resource.id / "0.0.2"
+            sibling.mkdir(parents=True)
+            (sibling / "keep.txt").write_text("not this import's to delete")
+            return resource
+
+        registry.create_model = capture  # type: ignore[method-assign]
+
+        with pytest.raises(APIError):
+            await _import(tmp_path, registry=registry)
+
+        resource_dir = tmp_path / created[0]
+        assert not (resource_dir / "0.0.1").exists()
+        assert (resource_dir / "0.0.2" / "keep.txt").read_text() == ("not this import's to delete")

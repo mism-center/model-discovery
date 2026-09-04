@@ -1,5 +1,4 @@
 import asyncio
-import json
 from typing import Any
 
 import httpx
@@ -187,7 +186,7 @@ async def test_get_model_maps_upstream_record() -> None:
     assert [f.name for f in record.files.additional] == ["Kirschner_1998-biopax2.owl"]
 
 
-async def test_get_model_flattens_contributors_and_drops_emails() -> None:
+async def test_get_model_flattens_contributors_and_keeps_emails() -> None:
     record = await _biomodels_client().get_model("BIOMD0000000732")
 
     assert [(c.name, c.role) for c in record.contributors] == [
@@ -196,17 +195,14 @@ async def test_get_model_flattens_contributors_and_drops_emails() -> None:
     ]
     assert record.contributors[0].orcid == "0000-0001-7002-6386"
     assert record.contributors[0].affiliation == "University of Washington"
-    serialized = json.dumps(record.model_dump(mode="json"))
-    assert "lpsmith@uw.edu" not in serialized
-    assert "email" not in serialized
+    assert record.contributors[0].email == "lpsmith@uw.edu"
 
 
-async def test_get_model_omits_raw_sbml_notes_description() -> None:
+async def test_get_model_keeps_the_raw_sbml_notes_description() -> None:
+    """Upstream XHTML, passed through unaltered — consumers must not render it as HTML."""
     record = await _biomodels_client().get_model("BIOMD0000000732")
 
-    serialized = json.dumps(record.model_dump(mode="json"))
-    assert "<notes" not in serialized
-    assert not hasattr(record, "description")
+    assert record.description.startswith("<notes")
 
 
 async def test_get_model_handles_non_curated_record() -> None:

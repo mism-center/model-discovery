@@ -8,17 +8,12 @@ own id is a `modelId`, not an accession.
 BioModels serves camelCase JSON; these DTOs accept that and emit snake_case
 like every other schema in this package.
 
-Two upstream fields are deliberately dropped:
-
-* ``description`` — usually the raw SBML ``<notes>`` XHTML blob rather than
-  prose, carrying author-supplied ``<a href>`` markup. BioModels documents the
-  field only as "string", so whether any given model returns markup or plain
-  text cannot be relied on either way. ``publication.synopsis`` is documented
-  plain text and is used instead; it is the source paper's abstract, so it is
-  present only for models that cite one.
-* contributor e-mail addresses — ``AuthorDTO`` in `schemas.registry` models
-  authorship without them, and this endpoint is not a route for republishing
-  harvested addresses.
+``description`` is usually the raw SBML ``<notes>`` XHTML blob rather than
+prose, carrying author-supplied markup — ``<a href>``, ``<div>``, ``<strong>``.
+BioModels documents the field only as "string", so whether any given model
+returns markup or plain text cannot be relied on either way. It is upstream
+content this gateway does not control: consumers must not render it as HTML.
+``publication.synopsis`` is documented plain text where a citing paper exists.
 """
 
 import re
@@ -79,6 +74,7 @@ class BioModelsPublicationDTO(_BioModelsDTO):
 
 class BioModelsContributorDTO(_BioModelsDTO):
     name: str = ""
+    email: str = ""
     orcid: str = ""
     affiliation: str = ""
     # Upstream keys `contributors` by role ("Curator", "Modeller"); the
@@ -106,6 +102,8 @@ class BioModelsRecordDTO(_BioModelsDTO):
     url: str = ""
 
     name: str = ""
+    # Upstream XHTML, not prose — see the module docstring before rendering it.
+    description: str = ""
     submission_id: str = ""
     publication_id: str = ""
     curation_status: str = ""
