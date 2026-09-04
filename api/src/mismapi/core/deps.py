@@ -28,6 +28,8 @@ if TYPE_CHECKING:
     from mismapi.auth.session import SessionStore
     from mismapi.auth.session_refresh import SessionRefresher
     from mismapi.auth.validator import AuthValidator
+    from mismapi.clients.biomodels_client import BioModelsClient
+    from mismapi.clients.cairns_client import CairnsClient
     from mismapi.clients.execution_client import ExecutionClient
     from mismapi.clients.local_upload_client import LocalFileUploadClient
     from mismapi.clients.openfga_client import OpenFGAClient
@@ -77,6 +79,14 @@ def _get_execution_client(container: ContainerDep) -> ExecutionClient:
     return container.execution_client
 
 
+def _get_cairns_client(container: ContainerDep) -> CairnsClient:
+    return container.cairns_client
+
+
+def _get_biomodels_client(container: ContainerDep) -> BioModelsClient:
+    return container.biomodels_client
+
+
 def _get_openfga_client(container: ContainerDep) -> OpenFGAClient:
     return container.openfga_client
 
@@ -106,5 +116,7 @@ UploadClientDep = Annotated[
     "UploadServiceClient | LocalFileUploadClient", Depends(_get_upload_client)
 ]
 ExecutionClientDep = Annotated["ExecutionClient", Depends(_get_execution_client)]
+CairnsClientDep = Annotated["CairnsClient", Depends(_get_cairns_client)]
+BioModelsClientDep = Annotated["BioModelsClient", Depends(_get_biomodels_client)]
 OpenFGAClientDep = Annotated["OpenFGAClient", Depends(_get_openfga_client)]
 RegistryServiceDep = Annotated[RegistryService, Depends(_get_registry_service)]

@@ -82,3 +82,46 @@
   transform-origin: left center;
   animation: nav-progress-fill 5s cubic-bezier(0.1, 0.8, 0.25, 1) forwards;
 }
+
+@keyframes evidence-target-flash {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/**
+ * Marks the evidence row a citation just jumped to. Driven by `:target` so the
+ * jump and the highlight cannot disagree about which row was addressed.
+ *
+ * The tint is a separate layer rather than the row's own `background-color`:
+ * `:target` outlives the flash, and an animation — or the static reduced-motion
+ * fallback — on that property outranks the row's `:hover` background for as
+ * long as it applies, which leaves the row unable to paint a hover state.
+ */
+@utility animate-evidence-target {
+  position: relative;
+  /* Not `auto`: the tint is a negative-z child, so without a stacking context
+   * of its own here it would paint beneath the page's own white background. */
+  z-index: 0;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background-color: hsl(var(--heroui-secondary) / 0.18);
+    animation: evidence-target-flash 2s ease-out forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &::after {
+      animation: none;
+      background-color: hsl(var(--heroui-secondary) / 0.12);
+    }
+  }
+}
