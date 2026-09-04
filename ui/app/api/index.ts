@@ -42,6 +42,9 @@ export {
 
 export {
   getModel,
+  reviewModelMetadata,
+  submitModelContainerImage,
+  reviewModelContainerImage,
   type ArgumentDTO,
   type ComputeDTO,
   type ContactDTO,
@@ -53,4 +56,7 @@ export {
   type RegisterModelResponse,
   type RelatedResourceDTO,
   type TestSpecDTO,
+  type ReviewMetadataPackageRequest,
+  type SubmitContainerImageRequest,
+  type ReviewContainerImageRequest,
 } from './endpoints/models';

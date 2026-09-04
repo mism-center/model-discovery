@@ -1,6 +1,8 @@
 import { Fragment } from 'react';
+import cn from 'classnames';
 
 import type { ModelDetailResponse } from '~/api/endpoints/models';
+import { formatMonthYear } from '~/utils/format';
 import {
   Field,
   SectionAbsence,
@@ -10,6 +12,7 @@ import {
   hasItems,
   hasValue,
 } from './primitives';
+import { SubmitContainerImageAction } from './submit-container-image-action';
 
 type Compute = NonNullable<ModelDetailResponse['compute']>;
 
@@ -86,6 +89,7 @@ export function ExecutionSection({ model }: { model: ModelDetailResponse }) {
           No execution environment has been recorded, so this model cannot be
           run from the portal.
         </SectionAbsence>
+        <SubmitContainerImageAction model={model} />
       </SectionCard>
     );
   }
@@ -157,20 +161,27 @@ const EXECUTION_BLOCKS: Array<
     label: 'Containers',
     present: (model) => hasItems(model.containers),
     render: (model) => (
-      <ul className="flex flex-col gap-2">
-        {(model.containers ?? []).map((c, i) => (
-          <li
-            key={`${c.kind}-${c.image_name || c.file || i}`}
-            className="text-sm text-default-900"
-          >
-            <span className="font-semibold capitalize">{c.kind}</span>
-            {c.image_name && (
-              <span className="font-mono"> · {c.image_name}</span>
-            )}
-            {c.file && <span className="text-default-800"> ({c.file})</span>}
-          </li>
-        ))}
-      </ul>
+      <>
+        <ul className="flex flex-col gap-2">
+          {(model.containers ?? []).map((c, i) => (
+            <li
+              key={`${c.kind}-${c.image_name || c.file || i}`}
+              className="text-sm text-default-900"
+            >
+              <span className="font-semibold capitalize">{c.kind}</span>
+              {c.image_name && (
+                <span className="font-mono"> · {c.image_name}</span>
+              )}
+              {c.registry && (
+                <span className="text-default-800"> · {c.registry}</span>
+              )}
+              {c.file && <span className="text-default-800"> ({c.file})</span>}
+            </li>
+          ))}
+        </ul>
+        <ImageReviewStatus model={model} />
+        <SubmitContainerImageAction model={model} />
+      </>
     ),
   },
   {
@@ -202,6 +213,58 @@ const EXECUTION_BLOCKS: Array<
 export function executionSubsections(model: ModelDetailResponse): Subsection[] {
   return EXECUTION_BLOCKS.filter((block) => block.present(model)).map(
     ({ id, label }) => ({ id, label })
+  );
+}
+
+/** Label for each `image_review_status` this section knows how to show. */
+const IMAGE_REVIEW_LABEL: Record<string, string> = {
+  pending_image_check: 'Pending image review',
+  image_approved: 'Image approved',
+  image_rejected: 'Image rejected',
+};
+
+/**
+ * IMAGE_CHECK's current decision on this model's Dockerfile/image (MISM-291).
+ *
+ * Keyed off `image_review_status` alone, not off whether a reviewer happens
+ * to be recorded: after a rejected image is resubmitted, the status bounces
+ * back to `pending_image_check` while `image_reviewed_by`/`_at` are left as
+ * history of the *previous* decision (see the backend's review-endpoint
+ * convention) — showing them here while pending would misrepresent an old
+ * verdict as the current one. Reviewer/reason only render for the two
+ * terminal states, where they describe the decision in effect right now.
+ *
+ * Renders nothing for `not_applicable` (no container shipped) or an
+ * unrecognized value, which covers every pre-MISM-291 resource.
+ */
+function ImageReviewStatus({ model }: { model: ModelDetailResponse }) {
+  const status = model.image_review_status;
+  const label = status ? IMAGE_REVIEW_LABEL[status] : undefined;
+  if (!label) return null;
+
+  const rejected = status === 'image_rejected';
+  const showReviewer =
+    status !== 'pending_image_check' && hasValue(model.image_reviewed_by);
+
+  return (
+    <p className="mt-3 text-sm text-default-900">
+      <span className={cn('font-semibold', rejected && 'text-danger-600')}>
+        {label}
+      </span>
+      {showReviewer && (
+        <span className="text-default-800">
+          {' '}
+          · {model.image_reviewed_by}
+          {model.image_reviewed_at &&
+            ` · ${formatMonthYear(model.image_reviewed_at)}`}
+        </span>
+      )}
+      {rejected && hasValue(model.image_rejection_reason) && (
+        <div className="mt-1 text-default-800">
+          {model.image_rejection_reason}
+        </div>
+      )}
+    </p>
   );
 }
 

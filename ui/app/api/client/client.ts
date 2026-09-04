@@ -20,6 +20,7 @@ export const errorMiddleware: Middleware = {
 
     throw new ApiError({
       message: extractErrorMessage(body) ?? `HTTP ${response.status}`,
+      code: extractErrorCode(body),
       status: response.status,
       body,
       url: request.url,
@@ -44,9 +45,20 @@ function safeJsonParse(text: string): unknown {
   }
 }
 
+/**
+ * Every error this app's own backends raise uses `{"error": {"code",
+ * "detail"}}` (model-discovery's and execution-platform's shared
+ * `APIError`/`PlatformError` exception-handler shape) — check that nested
+ * shape first. `record.message`/`record.detail` remain as a fallback for
+ * responses that don't go through either app's own handler, including
+ * FastAPI's own request-validation errors (a top-level `detail`, either a
+ * string or an array of `{msg, loc, type}` objects).
+ */
 function extractErrorMessage(body: unknown): string | undefined {
   if (!body || typeof body !== 'object') return;
   const record = body as Record<string, unknown>;
+  const nestedDetail = nestedErrorField(record, 'detail');
+  if (typeof nestedDetail === 'string' && nestedDetail) return nestedDetail;
   if (typeof record.message === 'string') return record.message;
   if (typeof record.detail === 'string') return record.detail;
   if (Array.isArray(record.detail) && record.detail.length > 0) {
@@ -54,4 +66,20 @@ function extractErrorMessage(body: unknown): string | undefined {
     if (typeof first?.msg === 'string') return first.msg;
   }
   return;
+}
+
+/** Same nested `{"error": {"code", ...}}` shape as `extractErrorMessage`, for `ApiError.code`. */
+function extractErrorCode(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object') return;
+  const code = nestedErrorField(body as Record<string, unknown>, 'code');
+  return typeof code === 'string' && code ? code : undefined;
+}
+
+function nestedErrorField(
+  record: Record<string, unknown>,
+  field: string
+): unknown {
+  const nested = record.error;
+  if (!nested || typeof nested !== 'object') return undefined;
+  return (nested as Record<string, unknown>)[field];
 }

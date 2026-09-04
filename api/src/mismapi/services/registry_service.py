@@ -118,40 +118,14 @@ class RegistryService:
                 detail="Principal does not hold the platform uploader role.",
             )
 
-    async def _assert_upload_reviewer(self, principal: AuthenticatedPrincipal) -> None:
-        """Gate metadata-review actions on the platform-wide `upload_reviewer` role
-        (MISM-291).
-
-        Global, not per-submission (see
-        ``Docs/OpenFGA/MISM-OpenFGA-Auth-Model.md``'s open question #11): any
-        holder of this role may review any ``PENDING_REVIEW`` model, including
-        one they uploaded themselves — self-review is explicitly allowed, so
-        this does not compare ``principal.subject`` against ``resource.owner``.
-        """
-        client = self._openfga_client_for(principal)
-        if client is None:
-            return
-        allowed = await client.check(
-            user=f"user:{principal.subject}",
-            relation="upload_reviewer",
-            object_=_PLATFORM_OBJECT,
-        )
-        if not allowed:
-            raise APIError(
-                status_code=403,
-                code="not_authorized",
-                detail="Principal does not hold the platform upload_reviewer role.",
-            )
-
     async def _assert_image_checker(self, principal: AuthenticatedPrincipal) -> None:
         """Gate Dockerfile/image-review actions on the platform-wide `image_checker`
         role (MISM-291, workflow steps i-k).
 
-        Global, not per-submission, mirroring `_assert_upload_reviewer` exactly.
-        Self-review is explicitly allowed (decided for this role, not carried over
-        by assumption from `upload_reviewer`'s precedent): any holder of this role
-        may vet any model's image, including one they themselves uploaded, so this
-        does not compare `principal.subject` against `resource.owner`.
+        Global, not per-submission, mirroring `_assert_uploader` exactly.
+        Self-review is explicitly allowed: any holder of this role may vet any
+        model's image, including one they themselves uploaded, so this does not
+        compare `principal.subject` against `resource.owner`.
         """
         client = self._openfga_client_for(principal)
         if client is None:
@@ -254,7 +228,7 @@ class RegistryService:
         role membership up front instead of guessing from `/auth/me` or
         403-probing individual endpoints. Checks each of `_PLATFORM_ROLES`
         against the same singleton `platform:main` object the
-        `_assert_uploader`/`_assert_upload_reviewer`/`_assert_image_checker`
+        `_assert_uploader`/`_assert_image_checker`
         gates check (`executor` here mirrors `_assert_can_execute`'s
         `platform:main#executor` half only — see `_PLATFORM_ROLES`'s docstring
         for why `can_execute` itself isn't one of the four).
@@ -1065,21 +1039,22 @@ class RegistryService:
         approve: bool,
         reason: str = "",
     ) -> Resource:
-        """An UPLOAD_REVIEWER's approve/reject decision on a model's metadata
-        review (MISM-291, workflow steps e/f).
+        """The model owner's approve/reject decision on their own model's
+        metadata review (MISM-291, workflow steps e/f).
 
-        Gated on the platform-wide ``upload_reviewer`` role — global, not
-        per-submission, and self-review is explicitly allowed (a reviewer may
-        act on a model they themselves uploaded). Delegates the actual
-        ``PENDING_REVIEW -> APPROVED/REJECTED`` transition to
-        ``mism_registry.set_registration_status``, which enforces the
+        Gated on the OpenFGA ``owner`` relation for ``model:{model_id}`` via
+        ``_assert_model_owner`` — only the principal whose ownership tuple was
+        written at registration time may approve or reject. Falls back to a
+        Postgres string-equality check in local/dev mode (no OpenFGA client).
+        Delegates the actual ``PENDING_REVIEW -> APPROVED/REJECTED`` transition
+        to ``mism_registry.set_registration_status``, which enforces the
         registration state machine and stamps ``metadata_reviewed_by``/
         ``metadata_reviewed_at``/``metadata_rejection_reason``.
 
-        Raises 403 (not a reviewer), 404 (model missing), 400 (illegal
-        transition, e.g. reviewing a model that isn't PENDING_REVIEW).
+        Raises 403 (not owner or model not found), 400 (illegal transition,
+        e.g. reviewing a model that isn't PENDING_REVIEW).
         """
-        await self._assert_upload_reviewer(principal)
+        await self._assert_model_owner(principal, model_id=model_id)
 
         target = (
             ResourceRegistrationStatus.APPROVED if approve else ResourceRegistrationStatus.REJECTED

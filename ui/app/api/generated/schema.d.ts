@@ -58,6 +58,33 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/auth/capabilities': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Capabilities
+     * @description The caller's platform-wide OpenFGA role grants, as booleans.
+     *
+     *     A dedicated endpoint rather than extra fields on `GET /auth/me`: keeps
+     *     identity (`CurrentUser`) separate from authorization state, avoids
+     *     adding OpenFGA round-trips to every `/auth/me` call (including ones that
+     *     don't need them, e.g. a header avatar fetch), and gives the UI a single
+     *     place to refetch permissions after an admin grants/revokes a role
+     *     mid-session.
+     */
+    get: operations['capabilities_api_auth_capabilities_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/auth/logout': {
     parameters: {
       query?: never;
@@ -203,10 +230,92 @@ export interface paths {
      *     etc.) are tolerated and reported in ``warnings``, not raised — see
      *     ``RegistryService.write_metadata_package_raw``. If the package fails to
      *     parse at all (the top-level ``model``/``execution`` structure itself is
-     *     broken), this raises a 400 and does not approve the model.
+     *     broken), this raises a 400 and the DB is left untouched. Approval/
+     *     rejection is not decided here — see ``POST .../review`` — except that
+     *     resubmitting a fixed ``REJECTED`` package moves it back to
+     *     ``PENDING_REVIEW`` automatically.
      */
     put: operations['update_model_metadata_package_raw_api_v1_models__model_id__metadata_package_raw_put'];
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/models/{model_id}/review': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Review Model Metadata Package
+     * @description An UPLOAD_REVIEWER's approve/reject decision on a PENDING_REVIEW model.
+     *
+     *     Gated on the platform-wide ``upload_reviewer`` role, not ownership — the
+     *     human-review step (workflow steps e/f) that replaces
+     *     ``write_metadata_package_raw``'s old self-approve behavior. Self-review
+     *     is allowed here: the caller may hold ``upload_reviewer`` and also be the
+     *     model's uploader.
+     */
+    post: operations['review_model_metadata_package_api_v1_models__model_id__review_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/models/{model_id}/image': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Submit Model Container Image
+     * @description Submit (or resubmit) a built Dockerfile/image for IMAGE_CHECK review.
+     *
+     *     Ownership-gated (workflow steps h/l) — the design doc names no gating
+     *     role for submission itself, only for the review action
+     *     (``POST .../image-review``). Requires the model's metadata registration
+     *     to already be ``APPROVED``. Resubmitting after ``IMAGE_REJECTED`` uses
+     *     this same endpoint and auto-transitions back to ``PENDING_IMAGE_CHECK``;
+     *     there is no separate "resubmit" endpoint.
+     */
+    post: operations['submit_model_container_image_api_v1_models__model_id__image_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/models/{model_id}/image-review': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Review Model Container Image
+     * @description An IMAGE_CHECK holder's approve/reject decision on a
+     *     PENDING_IMAGE_CHECK model's Dockerfile/image.
+     *
+     *     Gated on the platform-wide ``image_checker`` role, not ownership —
+     *     mirrors ``POST .../review``'s pattern (workflow steps i-k). Self-review
+     *     is allowed here: the caller may hold ``image_checker`` and also be the
+     *     model's uploader.
+     */
+    post: operations['review_model_container_image_api_v1_models__model_id__image_review_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -422,6 +531,10 @@ export interface paths {
      *
      *     A resource with no directory on the mount yet returns an empty list, not a
      *     404 — see ``RegistryService.find_resource_directory``.
+     *
+     *     Visibility-gated the same way as ``GET /models/{model_id}``: not-yet-public
+     *     resources are only listable by their owner (404, not 403 — avoids an id
+     *     oracle for resources the caller may not know exist).
      */
     get: operations['list_resource_files_api_v1_resources__resource_id__files_get'];
     put?: never;
@@ -433,6 +546,11 @@ export interface paths {
      *     registry resource type. The configured upload backend (`UPLOAD_BACKEND=local`
      *     writes to the iRODS PVC; `UPLOAD_BACKEND=http` forwards to the upload
      *     service) is selected at app startup; the route is backend-agnostic.
+     *
+     *     Ownership-gated (goal 1 stopgap — matches ``import_from_github``'s pattern):
+     *     without this, any authenticated principal could overwrite any resource's
+     *     files, regardless of who owns it (``TODO.md``'s "Auth / authz" section
+     *     already tracked this exact gap).
      */
     post: operations['upload_resource_file_api_v1_resources__resource_id__files_post'];
     delete?: never;
@@ -451,6 +569,9 @@ export interface paths {
     /**
      * Download Resource
      * @description Download artifacts for a resource — single file or whole directory zip.
+     *
+     *     Visibility-gated the same way as ``GET /models/{model_id}``: not-yet-public
+     *     resources are only downloadable by their owner (404, not 403).
      */
     get: operations['download_resource_api_v1_resources__resource_id__download_get'];
     put?: never;
@@ -555,6 +676,27 @@ export interface components {
       /** User Can Override */
       user_can_override?: boolean | null;
     };
+    /**
+     * AuthCapabilities
+     * @description The calling principal's platform-wide OpenFGA role grants (MISM-291).
+     *
+     *     Returned by ``GET /api/auth/capabilities`` so the UI can gate
+     *     buttons/pages up front instead of guessing from ``/auth/me`` or
+     *     403-probing individual endpoints. Kept separate from ``CurrentUser``
+     *     (identity) since computing this requires OpenFGA round-trips that most
+     *     ``/auth/me`` callers don't need, and it gives the UI a single place to
+     *     refetch permissions after an admin grants/revokes a role mid-session.
+     */
+    AuthCapabilities: {
+      /** Uploader */
+      uploader: boolean;
+      /** Upload Reviewer */
+      upload_reviewer: boolean;
+      /** Image Checker */
+      image_checker: boolean;
+      /** Executor */
+      executor: boolean;
+    };
     /** AuthorDTO */
     AuthorDTO: {
       /** Name */
@@ -638,6 +780,11 @@ export interface components {
        * @default
        */
       image_name: string;
+      /**
+       * Registry
+       * @default
+       */
+      registry: string;
     };
     /**
      * CurrentUser
@@ -938,7 +1085,7 @@ export interface components {
       files?: components['schemas']['MetadataPackageFile'][];
       /**
        * Warnings
-       * @description Non-blocking issues found while parsing the metadata-package (missing/empty required fields); approval still succeeded.
+       * @description Non-blocking issues found while parsing the metadata-package (missing/empty required fields); the save still succeeded.
        */
       warnings?: string[];
     };
@@ -1054,6 +1201,35 @@ export interface components {
        * Format: date-time
        */
       updated_at: string;
+      /**
+       * Metadata Reviewed By
+       * @default
+       */
+      metadata_reviewed_by: string;
+      /** Metadata Reviewed At */
+      metadata_reviewed_at?: string | null;
+      /**
+       * Metadata Rejection Reason
+       * @default
+       */
+      metadata_rejection_reason: string;
+      /**
+       * Image Review Status
+       * @default not_applicable
+       */
+      image_review_status: string;
+      /**
+       * Image Reviewed By
+       * @default
+       */
+      image_reviewed_by: string;
+      /** Image Reviewed At */
+      image_reviewed_at?: string | null;
+      /**
+       * Image Rejection Reason
+       * @default
+       */
+      image_rejection_reason: string;
       /**
        * Short Description
        * @default
@@ -1206,6 +1382,11 @@ export interface components {
        * @default
        */
       registration_status: string;
+      /**
+       * Image Review Status
+       * @default not_applicable
+       */
+      image_review_status: string;
       /** Metadata */
       metadata?: {
         [key: string]: unknown;
@@ -1648,6 +1829,35 @@ export interface components {
        * Format: date-time
        */
       updated_at: string;
+      /**
+       * Metadata Reviewed By
+       * @default
+       */
+      metadata_reviewed_by: string;
+      /** Metadata Reviewed At */
+      metadata_reviewed_at?: string | null;
+      /**
+       * Metadata Rejection Reason
+       * @default
+       */
+      metadata_rejection_reason: string;
+      /**
+       * Image Review Status
+       * @default not_applicable
+       */
+      image_review_status: string;
+      /**
+       * Image Reviewed By
+       * @default
+       */
+      image_reviewed_by: string;
+      /** Image Reviewed At */
+      image_reviewed_at?: string | null;
+      /**
+       * Image Rejection Reason
+       * @default
+       */
+      image_rejection_reason: string;
     };
     /**
      * RelatedResourceDTO
@@ -1807,6 +2017,34 @@ export interface components {
        * Format: date-time
        */
       updated_at: string;
+    };
+    /**
+     * ReviewContainerImageRequest
+     * @description An IMAGE_CHECK holder's approve/reject decision on a
+     *     PENDING_IMAGE_CHECK model's Dockerfile/image (MISM-291).
+     */
+    ReviewContainerImageRequest: {
+      /** Approve */
+      approve: boolean;
+      /**
+       * Reason
+       * @default
+       */
+      reason: string;
+    };
+    /**
+     * ReviewMetadataPackageRequest
+     * @description An UPLOAD_REVIEWER's approve/reject decision on a PENDING_REVIEW model
+     *     (MISM-291).
+     */
+    ReviewMetadataPackageRequest: {
+      /** Approve */
+      approve: boolean;
+      /**
+       * Reason
+       * @default
+       */
+      reason: string;
     };
     /**
      * RunDetailItem
@@ -2052,6 +2290,31 @@ export interface components {
        * @enum {string}
        */
       order: 'asc' | 'desc';
+    };
+    /**
+     * SubmitContainerImageRequest
+     * @description Submit (or resubmit) a built Dockerfile/image for IMAGE_CHECK review
+     *     (MISM-291, workflow steps h/l). Resubmitting after an ``IMAGE_REJECTED``
+     *     decision uses this same request — there is no separate "resubmit" shape.
+     */
+    SubmitContainerImageRequest: {
+      /** Kind */
+      kind: string;
+      /**
+       * File
+       * @default
+       */
+      file: string;
+      /**
+       * Image Name
+       * @default
+       */
+      image_name: string;
+      /**
+       * Registry
+       * @default
+       */
+      registry: string;
     };
     /** TestSpecDTO */
     TestSpecDTO: {
@@ -2330,6 +2593,35 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['CurrentUser'];
+        };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
+    };
+  };
+  capabilities_api_auth_capabilities_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AuthCapabilities'];
         };
       };
       /** @description Authentication is required and was missing or invalid. */
@@ -2686,6 +2978,138 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['MetadataPackageRawResponse'];
+        };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  review_model_metadata_package_api_v1_models__model_id__review_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        model_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReviewMetadataPackageRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RegisterModelResponse'];
+        };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  submit_model_container_image_api_v1_models__model_id__image_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        model_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SubmitContainerImageRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RegisterModelResponse'];
+        };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  review_model_container_image_api_v1_models__model_id__image_review_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        model_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ReviewContainerImageRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RegisterModelResponse'];
         };
       };
       /** @description Authentication is required and was missing or invalid. */

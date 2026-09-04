@@ -2,10 +2,12 @@ import cn from 'classnames';
 import { useNavigate } from 'react-router';
 import { Button, useDisclosure } from '@heroui/react';
 import { TrashIcon } from '@heroicons/react/24/outline';
-import { WrenchIcon } from '@heroicons/react/24/solid';
+import { EyeIcon } from '@heroicons/react/24/solid';
 import { CalendarIcon, UserIcon } from '@heroicons/react/16/solid';
+import { useQueryClient } from '@tanstack/react-query';
 
 import type { ModelListItem } from '~/api/endpoints/models';
+import { modelKeys } from '~/api/query/models';
 import { AuthorListTooltip } from './author-list-tooltip';
 import { DeletePendingReviewModal } from './delete-pending-review-modal';
 
@@ -21,15 +23,21 @@ function formatDate(iso: string) {
   }).format(date);
 }
 
-interface PendingReviewCardProps {
+interface PendingImageReviewCardProps {
   model: ModelListItem;
+  userId: string;
 }
 
-export function PendingReviewCard({ model }: PendingReviewCardProps) {
+export function PendingImageReviewCard({
+  model,
+  userId,
+}: PendingImageReviewCardProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const deleteModal = useDisclosure();
   const authors = model.authors ?? [];
   const displayDate = model.date_published ?? model.created_at;
+  const container = model.containers?.[0];
 
   return (
     <div
@@ -53,7 +61,7 @@ export function PendingReviewCard({ model }: PendingReviewCardProps) {
                 'text-white text-[10px] font-bold uppercase tracking-wide'
               )}
             >
-              Annotation Pending Review
+              Image Pending Review
             </span>
           </div>
         </div>
@@ -72,11 +80,27 @@ export function PendingReviewCard({ model }: PendingReviewCardProps) {
           {model.name}
         </h3>
 
-        {/* Description */}
-        {model.description && (
-          <p className="text-sm text-default-800 line-clamp-2 mt-2 leading-relaxed">
-            {model.description}
+        {/* Container snippet — most actionable info for this workflow state.
+            Falls back to description if no container is present. */}
+        {container ? (
+          <p className="text-sm text-default-900 mt-2">
+            <span className="font-semibold capitalize">{container.kind}</span>
+            {container.image_name && (
+              <span className="font-mono"> · {container.image_name}</span>
+            )}
+            {container.registry && (
+              <span className="text-default-800"> · {container.registry}</span>
+            )}
+            {container.file && (
+              <span className="text-default-800"> ({container.file})</span>
+            )}
           </p>
+        ) : (
+          model.description && (
+            <p className="text-sm text-default-800 line-clamp-2 mt-2 leading-relaxed">
+              {model.description}
+            </p>
+          )
         )}
 
         {/* Metadata row */}
@@ -109,6 +133,11 @@ export function PendingReviewCard({ model }: PendingReviewCardProps) {
         model={model}
         isOpen={deleteModal.isOpen}
         onClose={deleteModal.onClose}
+        onDeleted={() =>
+          queryClient.invalidateQueries({
+            queryKey: modelKeys.pendingImageReview(userId),
+          })
+        }
       />
 
       {/* Right side actions */}
@@ -129,10 +158,8 @@ export function PendingReviewCard({ model }: PendingReviewCardProps) {
           size="sm"
           color="warning"
           className="!h-8 min-w-32 px-5 rounded-lg text-sm font-bold text-white"
-          startContent={<WrenchIcon className="size-4" />}
-          onPress={() =>
-            navigate(`/annotation-review?id=${encodeURIComponent(model.id)}`)
-          }
+          startContent={<EyeIcon className="size-4" />}
+          onPress={() => navigate(`/models/${encodeURIComponent(model.id)}`)}
         >
           Review
         </Button>

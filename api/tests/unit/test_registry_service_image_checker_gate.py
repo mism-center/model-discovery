@@ -4,7 +4,7 @@ Covers Checkpoint 4-A: `_assert_image_checker` checks `platform:main#image_check
 before allowing a Dockerfile/image-review action. Exercised directly (not through a
 public service method) because no public caller wires it in yet — Checkpoint 4-D adds
 the image-review endpoint that calls it for real. Mirrors
-`test_registry_service_reviewer_gate.py`'s pattern for `_assert_upload_reviewer`.
+`test_registry_service_uploader_gate.py`'s pattern for `_assert_uploader`.
 """
 
 from __future__ import annotations

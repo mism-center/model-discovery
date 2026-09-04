@@ -1,9 +1,10 @@
-"""Unit tests for RegistryService.review_metadata_package (MISM-291, Checkpoint 3-B).
+"""Unit tests for RegistryService.review_metadata_package (MISM-291).
 
-Covers the UPLOAD_REVIEWER approve/reject action: role gate via
-`_assert_upload_reviewer`, delegation to `mism_registry.set_registration_status`
-(state machine + reviewer-identity stamping), and error mapping
-(ResourceNotFoundError -> 404, InvalidStateTransitionError -> 400).
+Covers the model-owner approve/reject action: ownership gate via
+`_assert_model_owner` (OpenFGA ``owner`` relation on ``model:{id}``),
+delegation to `mism_registry.set_registration_status` (state machine +
+reviewer-identity stamping), and error mapping
+(InvalidStateTransitionError -> 400).
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from mismapi.core.errors import APIError
 from mismapi.services.registry_service import RegistryService
 
 
-def _principal(subject: str = "erin") -> AuthenticatedPrincipal:
+def _principal(subject: str = "dana") -> AuthenticatedPrincipal:
     return AuthenticatedPrincipal(subject=subject, issuer="test", audience="mism-api", scopes=set())
 
 
@@ -64,12 +65,34 @@ def _make_service(
     return RegistryService(registry=registry, session=session, openfga_client=openfga_client)
 
 
-# ── Role gate ────────────────────────────────────────────────────────────
+# ── Ownership gate (OpenFGA path) ─────────────────────────────────────────
 
 
-async def test_review_denied_when_not_a_reviewer() -> None:
-    client = _client(allowed=False)
+async def test_review_denied_when_openfga_check_fails() -> None:
+    service = _make_service(_client(allowed=False))
+
+    with pytest.raises(APIError) as excinfo:
+        await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
+
+    assert excinfo.value.status_code == 403
+    assert excinfo.value.code == "not_authorized"
+
+
+async def test_review_openfga_check_uses_owner_relation_on_model_object() -> None:
+    client = _client(allowed=True)
     service = _make_service(client)
+
+    await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
+
+    client.check.assert_awaited_once_with(user="user:dana", relation="owner", object_="model:m-1")
+
+
+# ── Ownership gate (Postgres fallback — no OpenFGA client) ────────────────
+
+
+async def test_review_denied_when_no_client_and_not_owner() -> None:
+    # No OpenFGA client → falls back to Postgres string equality.
+    service = _make_service(None, owner="dana")
 
     with pytest.raises(APIError) as excinfo:
         await service.review_metadata_package(_principal("erin"), model_id="m-1", approve=True)
@@ -78,15 +101,33 @@ async def test_review_denied_when_not_a_reviewer() -> None:
     assert excinfo.value.code == "not_authorized"
 
 
-async def test_review_allows_self_review() -> None:
-    """The reviewer and the model's owner may be the same person (decided 2026-08-21)."""
-    client = _client(allowed=True)
-    service = _make_service(client, owner="erin")
+async def test_review_denied_when_no_client_and_model_not_found() -> None:
+    # No client + nonexistent model → get_resource_and_assert_ownership collapses to 403.
+    service = _make_service(None)
 
-    resource = await service.review_metadata_package(
-        _principal("erin"), model_id="m-1", approve=True
+    with pytest.raises(APIError) as excinfo:
+        await service.review_metadata_package(
+            _principal("dana"), model_id="does-not-exist", approve=True
+        )
+
+    assert excinfo.value.status_code == 403
+    assert excinfo.value.code == "not_authorized"
+
+
+async def test_review_local_issuer_bypasses_all_auth_checks() -> None:
+    # issuer=="local" → OpenFGA skipped; get_resource_and_assert_ownership also
+    # skips its ownership check for local principals (dev/disable_auth mode).
+    # Both auth layers are fully bypassed — the action succeeds regardless of
+    # whether the principal owns the model.
+    client = _client(allowed=False)  # would deny if consulted, but it won't be
+    service = _make_service(client, owner="dana")
+    local_principal = AuthenticatedPrincipal(
+        subject="erin", issuer="local", audience="local", scopes=set()
     )
 
+    resource = await service.review_metadata_package(local_principal, model_id="m-1", approve=True)
+
+    client.check.assert_not_awaited()
     assert resource.registration_status == ResourceRegistrationStatus.APPROVED
 
 
@@ -94,15 +135,14 @@ async def test_review_allows_self_review() -> None:
 
 
 async def test_approve_transitions_to_approved_and_stamps_reviewer() -> None:
-    client = _client(allowed=True)
-    service = _make_service(client)
+    service = _make_service(_client(allowed=True))
 
     resource = await service.review_metadata_package(
-        _principal("erin"), model_id="m-1", approve=True
+        _principal("dana"), model_id="m-1", approve=True
     )
 
     assert resource.registration_status == ResourceRegistrationStatus.APPROVED
-    assert resource.metadata_reviewed_by == "erin"
+    assert resource.metadata_reviewed_by == "dana"
     assert resource.metadata_reviewed_at is not None
     assert resource.metadata_rejection_reason == ""
 
@@ -111,53 +151,41 @@ async def test_approve_transitions_to_approved_and_stamps_reviewer() -> None:
 
 
 async def test_reject_transitions_to_rejected_and_records_reason() -> None:
-    client = _client(allowed=True)
-    service = _make_service(client)
+    service = _make_service(_client(allowed=True))
 
     resource = await service.review_metadata_package(
-        _principal("erin"), model_id="m-1", approve=False, reason="Missing license info."
+        _principal("dana"), model_id="m-1", approve=False, reason="Missing license info."
     )
 
     assert resource.registration_status == ResourceRegistrationStatus.REJECTED
-    assert resource.metadata_reviewed_by == "erin"
+    assert resource.metadata_reviewed_by == "dana"
     assert resource.metadata_rejection_reason == "Missing license info."
 
 
 # ── Error mapping ────────────────────────────────────────────────────────
 
 
-async def test_review_missing_model_raises_404() -> None:
-    client = _client(allowed=True)
-    service = _make_service(client)
-
-    with pytest.raises(APIError) as excinfo:
-        await service.review_metadata_package(
-            _principal("erin"), model_id="does-not-exist", approve=True
-        )
-
-    assert excinfo.value.status_code == 404
-    assert excinfo.value.code == "not_found"
-
-
 async def test_review_illegal_transition_raises_400() -> None:
-    client = _client(allowed=True)
     # APPROVED is a terminal state — no transition out of it is legal.
-    service = _make_service(client, registration_status=ResourceRegistrationStatus.APPROVED)
+    service = _make_service(
+        _client(allowed=True), registration_status=ResourceRegistrationStatus.APPROVED
+    )
 
     with pytest.raises(APIError) as excinfo:
-        await service.review_metadata_package(_principal("erin"), model_id="m-1", approve=True)
+        await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
 
     assert excinfo.value.status_code == 400
     assert excinfo.value.code == "invalid_state_transition"
 
 
 async def test_review_illegal_transition_does_not_commit() -> None:
-    client = _client(allowed=True)
-    service = _make_service(client, registration_status=ResourceRegistrationStatus.APPROVED)
+    service = _make_service(
+        _client(allowed=True), registration_status=ResourceRegistrationStatus.APPROVED
+    )
     session = cast(MagicMock, service._session)
 
     with pytest.raises(APIError):
-        await service.review_metadata_package(_principal("erin"), model_id="m-1", approve=True)
+        await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
 
     session.commit.assert_not_called()
     session.rollback.assert_called_once()
