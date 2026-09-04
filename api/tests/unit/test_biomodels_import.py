@@ -69,6 +69,12 @@ def _registry_service() -> RegistryService:
     return RegistryService(registry=InMemoryRegistry(), session=MagicMock())
 
 
+def _approve(registry: RegistryService, resource_id: str) -> None:
+    resource = registry.get_model(resource_id)
+    resource.registration_status = ResourceRegistrationStatus.APPROVED
+    registry._registry.update_resource(resource)
+
+
 def _biomodels_client(
     *,
     record: BioModelsRecordDTO | None = None,
@@ -270,6 +276,34 @@ class TestRejections:
             await _import(tmp_path, registry=registry, biomodels=biomodels)
 
         biomodels.download_archive.assert_not_awaited()
+
+    async def test_another_users_unapproved_import_is_not_a_duplicate(self, tmp_path: Path) -> None:
+        """An in-flight import is private working state, not a claim on the model.
+
+        Blocking here would let one user hold an upstream model hostage by
+        importing it and never approving it — and the 409 would name a draft the
+        second caller is not allowed to see.
+        """
+        registry = _registry_service()
+        first = await _import(tmp_path, registry=registry, principal=_principal("user-1"))
+
+        second = await _import(tmp_path, registry=registry, principal=_principal("user-2"))
+
+        assert second.resource.id != first.resource.id
+        assert second.resource.source_identifier == _MODEL_ID
+
+    async def test_another_users_approved_import_is_a_duplicate(self, tmp_path: Path) -> None:
+        registry = _registry_service()
+        first = await _import(tmp_path, registry=registry, principal=_principal("user-1"))
+        _approve(registry, first.resource.id)
+
+        with pytest.raises(APIError) as excinfo:
+            await _import(tmp_path, registry=registry, principal=_principal("user-2"))
+
+        assert excinfo.value.status_code == 409
+        assert excinfo.value.code == "biomodels_already_imported"
+        assert excinfo.value.meta is not None
+        assert excinfo.value.meta["model_id"] == first.resource.id
 
     async def test_a_different_model_is_not_a_duplicate(self, tmp_path: Path) -> None:
         registry = _registry_service()

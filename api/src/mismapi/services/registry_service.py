@@ -134,9 +134,10 @@ class RegistryService:
             raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
         except IntegrityError as exc:
             # Rolling back is not optional: an aborted transaction poisons the
-            # session for the rest of the request. Reachable when two imports of
-            # the same upstream model race past their duplicate checks and
-            # collide on uq_resources_source.
+            # session for the rest of the request. Not reachable via
+            # uq_resources_source — that index spans approved rows and every
+            # resource is created DRAFT — so this is a backstop that turns any
+            # remaining constraint violation into a 409 rather than a 500.
             self._session.rollback()
             raise APIError(
                 status_code=409,
@@ -664,6 +665,30 @@ class RegistryService:
         except RegistryValidationError as exc:
             self._session.rollback()
             raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+        except IntegrityError as exc:
+            self._session.rollback()
+            if not resource.source_identifier:
+                raise APIError(
+                    status_code=409,
+                    code="resource_conflict",
+                    detail="A conflicting resource already exists.",
+                ) from exc
+            # uq_resources_source covers approved rows only, so two imports of one
+            # upstream model collide here rather than at create. source_identifier
+            # is a searchable field and search is gated to approved, so it is
+            # enough for this owner to find the copy that superseded theirs.
+            raise APIError(
+                status_code=409,
+                code="source_already_approved",
+                detail=(
+                    f"Another copy of {resource.source_identifier} was approved first, "
+                    "so this one cannot also be approved."
+                ),
+                meta={
+                    "source_repository": resource.source_repository,
+                    "source_identifier": resource.source_identifier,
+                },
+            ) from exc
 
         logger.info("Synced metadata-package to database for model %s", model_id)
 

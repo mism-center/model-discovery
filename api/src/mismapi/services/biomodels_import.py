@@ -30,6 +30,7 @@ from pathlib import Path
 
 from mism_registry.resource import Resource
 
+from mismapi.api.v1._authz import model_visible_to
 from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.clients.biomodels_client import BioModelsClient
 from mismapi.clients.execution_client import ExecutionClient
@@ -76,10 +77,10 @@ async def import_biomodels_model(
     """Register ``model_id`` from BioModels and start its annotation run.
 
     The duplicate check runs before the download so a re-import costs one cheap
-    query rather than a full archive fetch. It is a read-then-write, so two
-    concurrent imports of the same model can both pass it; the
-    ``uq_resources_source`` unique index is what actually holds the line, and
-    ``create_model`` turns that collision into the same 409.
+    query rather than a full archive fetch. It is a read-then-write with no
+    unique index behind it — ``uq_resources_source`` covers approved rows and
+    this registers a DRAFT — so a caller racing themselves lands two drafts of
+    one model. They collide at approve, which is where that index applies.
     """
     normalized = normalize_model_id(model_id)
     if normalized is None:
@@ -89,7 +90,7 @@ async def import_biomodels_model(
             detail=f"'{model_id}' is not a BioModels model id.",
         )
 
-    _reject_duplicate(registry, normalized)
+    _reject_duplicate(registry, principal, normalized)
 
     record = await biomodels.get_model(normalized)
     archive = await biomodels.download_archive(normalized)
@@ -152,16 +153,27 @@ async def import_biomodels_model(
     )
 
 
-def _reject_duplicate(registry: RegistryService, normalized: str) -> None:
-    """Refuse an import of a model the registry already holds.
+def _reject_duplicate(
+    registry: RegistryService,
+    principal: AuthenticatedPrincipal,
+    normalized: str,
+) -> None:
+    """Refuse an import of a model already visible to this caller.
 
-    Spans every owner and registration status, so the conflict may name a model
-    the caller cannot see — an in-flight draft is exactly what this must catch.
+    Scoped to visibility: an approved model, or one of the caller's own imports
+    still in flight. Another user's unapproved import is deliberately not a
+    conflict — it is private working state that may never be approved, and
+    blocking on it would hand one caller an indefinite lock on an upstream model
+    nobody else can even see.
     """
-    existing = registry.find_by_source(
-        repository=SOURCE_REPOSITORY,
-        identifiers=[normalized],
-    )
+    existing = [
+        r
+        for r in registry.find_by_source(
+            repository=SOURCE_REPOSITORY,
+            identifiers=[normalized],
+        )
+        if model_visible_to(r, principal)
+    ]
     if not existing:
         return
 

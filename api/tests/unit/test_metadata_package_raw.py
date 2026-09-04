@@ -21,6 +21,7 @@ from mism_registry.enums import (
 )
 from mism_registry.in_memory import InMemoryRegistry
 from mism_registry.resource import Resource
+from sqlalchemy.exc import IntegrityError
 
 import mismapi.services.registry_service as reg_svc
 from mismapi.auth.principal import AuthenticatedPrincipal
@@ -296,3 +297,52 @@ def test_write_skips_publication_with_null_title_and_warns(
     assert warnings == [
         "metadata.yaml: 'model.publications[0].title' is missing or empty; entry skipped"
     ]
+
+
+def test_approving_a_second_import_of_one_upstream_model_409s(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """uq_resources_source covers approved rows only, so the collision lands here."""
+    service = _make_service(tmp_path, monkeypatch)
+    _make_package(tmp_path)
+
+    loser = service._registry.get_resource("m-1")
+    loser.source_repository = "biomodels"
+    loser.source_identifier = "BIOMD0000000732"
+    service._registry.update_resource(loser)
+
+    def _collide(_resource: Resource) -> Resource:
+        raise IntegrityError("uq_resources_source", None, Exception())
+
+    monkeypatch.setattr(service._registry, "update_resource", _collide)
+
+    with pytest.raises(APIError) as excinfo:
+        service.write_metadata_package_raw(
+            _principal(), model_id="m-1", files=[("metadata.yaml", _META_NEW)]
+        )
+
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.code == "source_already_approved"
+    assert excinfo.value.meta is not None
+    assert excinfo.value.meta["source_identifier"] == "BIOMD0000000732"
+
+
+def test_a_non_source_integrity_error_stays_a_generic_conflict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An upload carries no provenance, so there is no winner to name."""
+    service = _make_service(tmp_path, monkeypatch)
+    _make_package(tmp_path)
+
+    def _collide(_resource: Resource) -> Resource:
+        raise IntegrityError("some other constraint", None, Exception())
+
+    monkeypatch.setattr(service._registry, "update_resource", _collide)
+
+    with pytest.raises(APIError) as excinfo:
+        service.write_metadata_package_raw(
+            _principal(), model_id="m-1", files=[("metadata.yaml", _META_NEW)]
+        )
+
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.code == "resource_conflict"
