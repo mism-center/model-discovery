@@ -1,18 +1,24 @@
 import asyncio
 from typing import Any
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from mism_registry.enums import ResourceRegistrationStatus, ResourceType
+from mism_registry.in_memory import InMemoryRegistry
+from mism_registry.resource import Resource
 
+from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.clients.biomodels_client import BioModelsClient
 from mismapi.clients.cairns_client import CairnsClient
-from mismapi.core.deps import _get_biomodels_client, _get_cairns_client
+from mismapi.core.deps import _get_biomodels_client, _get_cairns_client, _get_registry_service
 from mismapi.core.errors import APIError
 from mismapi.main import create_app
 from mismapi.schemas.biomodels import normalize_model_id
 from mismapi.schemas.cairns import CairnsEvidenceCardDTO
-from tests.conftest import minimal_oidc_settings
+from mismapi.services.registry_service import RegistryService
+from tests.conftest import minimal_oidc_settings, override_anonymous, override_principal
 
 # Trimmed from a live https://www.biomodels.org/BIOMD0000000732?format=json.
 _CURATED_RECORD: dict[str, Any] = {
@@ -410,19 +416,61 @@ def _cairns_client_returning(payload: dict[str, Any]) -> CairnsClient:
     return client
 
 
+def _principal(subject: str) -> AuthenticatedPrincipal:
+    return AuthenticatedPrincipal(subject=subject, issuer="test", audience="mism-api", scopes=set())
+
+
+def _imported_resource(
+    model_id: str, *, mism_id: str, owner: str, approved: bool = False
+) -> Resource:
+    return Resource(
+        id=mism_id,
+        name=f"Import of {model_id}",
+        resource_type=ResourceType.MODEL,
+        location_uri=f"irods:///{mism_id}/0.0.1",
+        registration_status=(
+            ResourceRegistrationStatus.APPROVED if approved else ResourceRegistrationStatus.DRAFT
+        ),
+        owner=owner,
+        source_repository="biomodels",
+        source_identifier=model_id,
+    )
+
+
+def _registry_holding(*resources: Resource) -> RegistryService:
+    registry = InMemoryRegistry()
+    for resource in resources:
+        registry.register_resource(resource)
+    return RegistryService(registry=registry, session=MagicMock())
+
+
 def _recommend(
     evidence: list[dict[str, Any]],
     biomodels: BioModelsClient | None = None,
     *,
     answer: str = "Here are your options.",
+    registry: Any = None,
+    principal: AuthenticatedPrincipal | None = None,
 ) -> dict[str, Any]:
-    """POST /cairns/recommend behind a stubbed CAIRNS, and return the body."""
+    """POST /cairns/recommend behind a stubbed CAIRNS, and return the body.
+
+    Defaults to an anonymous caller. The auth overrides are not optional: the
+    endpoint takes ``OptionalPrincipalDep``, and this client never runs lifespan,
+    so the real dependency would fail on the missing container.
+    """
     payload = {"answer": answer, "evidence": evidence, "elapsed_seconds": 12.47}
     resolved = biomodels if biomodels is not None else _biomodels_client()
 
     app = create_app(settings=minimal_oidc_settings())
     app.dependency_overrides[_get_cairns_client] = lambda: _cairns_client_returning(payload)
     app.dependency_overrides[_get_biomodels_client] = lambda: resolved
+    app.dependency_overrides[_get_registry_service] = lambda: (
+        registry if registry is not None else _registry_holding()
+    )
+    if principal is None:
+        override_anonymous(app)
+    else:
+        override_principal(app, principal)
 
     response = TestClient(app).post("/api/v1/cairns/recommend", json={"question": "q"})
     assert response.status_code == 200
@@ -533,3 +581,92 @@ def test_endpoint_still_answers_when_biomodels_is_unconfigured() -> None:
     )
 
     assert body["evidence"][0]["biomodels"] is None
+
+
+# ── Registry cross-reference ───────────────────────────────────
+
+
+_BIOMODELS_CARD = {
+    "tool_id": "biomodels_biomd0000000732",
+    "name": "Kirschner1998",
+    "source": "biomodels",
+}
+
+
+def test_approved_import_is_cross_referenced_for_anonymous_callers() -> None:
+    registry = _registry_holding(
+        _imported_resource("BIOMD0000000732", mism_id="m-1", owner="user-1", approved=True)
+    )
+
+    body = _recommend([_BIOMODELS_CARD], registry=registry)
+
+    assert body["evidence"][0]["mism_model_id"] == "m-1"
+
+
+def test_another_users_unapproved_import_is_not_cross_referenced() -> None:
+    """It would leak the existence and id of a draft the caller cannot open."""
+    registry = _registry_holding(
+        _imported_resource("BIOMD0000000732", mism_id="m-1", owner="user-2")
+    )
+
+    body = _recommend([_BIOMODELS_CARD], registry=registry, principal=_principal("user-1"))
+
+    assert body["evidence"][0]["mism_model_id"] is None
+
+
+def test_own_unapproved_import_is_cross_referenced() -> None:
+    registry = _registry_holding(
+        _imported_resource("BIOMD0000000732", mism_id="m-1", owner="user-1")
+    )
+
+    body = _recommend([_BIOMODELS_CARD], registry=registry, principal=_principal("user-1"))
+
+    assert body["evidence"][0]["mism_model_id"] == "m-1"
+
+
+def test_approved_copy_wins_over_the_callers_own_draft() -> None:
+    # Approved registered first, so insertion order alone would pick the draft.
+    registry = _registry_holding(
+        _imported_resource("BIOMD0000000732", mism_id="approved", owner="user-2", approved=True),
+        _imported_resource("BIOMD0000000732", mism_id="mine", owner="user-1"),
+    )
+
+    body = _recommend([_BIOMODELS_CARD], registry=registry, principal=_principal("user-1"))
+
+    assert body["evidence"][0]["mism_model_id"] == "approved"
+
+
+def test_uncatalogued_model_leaves_the_cross_reference_null() -> None:
+    body = _recommend([_BIOMODELS_CARD])
+
+    assert body["evidence"][0]["mism_model_id"] is None
+    # The BioModels block still resolved — the two lookups are independent.
+    assert body["evidence"][0]["biomodels"]["identifier"] == "BIOMD0000000732"
+
+
+def test_biomodels_outage_does_not_blank_the_cross_reference() -> None:
+    """The registry lookup keys off tool_id, so it owes BioModels nothing."""
+
+    def down(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("down", request=request)
+
+    registry = _registry_holding(
+        _imported_resource("BIOMD0000000732", mism_id="m-1", owner="user-1", approved=True)
+    )
+
+    body = _recommend(
+        [_BIOMODELS_CARD], _biomodels_client(httpx.MockTransport(down)), registry=registry
+    )
+
+    assert body["evidence"][0]["biomodels"] is None
+    assert body["evidence"][0]["mism_model_id"] == "m-1"
+
+
+def test_registry_outage_does_not_blank_the_biomodels_block() -> None:
+    registry = MagicMock(spec=RegistryService)
+    registry.find_by_source.side_effect = RuntimeError("registry down")
+
+    body = _recommend([_BIOMODELS_CARD], registry=registry)
+
+    assert body["evidence"][0]["mism_model_id"] is None
+    assert body["evidence"][0]["biomodels"]["identifier"] == "BIOMD0000000732"

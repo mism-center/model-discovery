@@ -1,14 +1,17 @@
+from unittest.mock import MagicMock
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from mismapi.clients.biomodels_client import BioModelsClient
 from mismapi.clients.cairns_client import CairnsClient
-from mismapi.core.deps import _get_biomodels_client, _get_cairns_client
+from mismapi.core.deps import _get_biomodels_client, _get_cairns_client, _get_registry_service
 from mismapi.core.errors import APIError
 from mismapi.main import create_app
 from mismapi.schemas.cairns import CairnsRecommendRequest
-from tests.conftest import minimal_oidc_settings
+from mismapi.services.registry_service import RegistryService
+from tests.conftest import minimal_oidc_settings, override_anonymous
 
 _UPSTREAM_PAYLOAD = {
     "answer": "Here are 2 evidence-backed options.",
@@ -38,12 +41,18 @@ def _make_app(
     cairns_client: CairnsClient,
     biomodels_client: BioModelsClient | None = None,
 ) -> TestClient:
-    # Default to an unconfigured BioModels client so enrichment is a no-op and
-    # these tests assert the proxy alone. See test_cairns_enrichment.py.
+    # Default to an unconfigured BioModels client and an empty registry so both
+    # enrichment steps are no-ops and these tests assert the proxy alone.
+    # See test_cairns_enrichment.py.
     biomodels = biomodels_client or BioModelsClient(base_url="")
+    registry = MagicMock(spec=RegistryService)
+    registry.find_by_source.return_value = []
+
     app = create_app(settings=minimal_oidc_settings())
     app.dependency_overrides[_get_cairns_client] = lambda: cairns_client
     app.dependency_overrides[_get_biomodels_client] = lambda: biomodels
+    app.dependency_overrides[_get_registry_service] = lambda: registry
+    override_anonymous(app)
     return TestClient(app)
 
 

@@ -32,6 +32,13 @@ class CairnsEvidenceCardDTO(BaseModel):
         default=None,
         description="Metadata resolved from the BioModels repository.",
     )
+    mism_model_id: str | None = Field(
+        default=None,
+        description=(
+            "This registry's model imported from the same source, or null if there "
+            "is none the caller may see."
+        ),
+    )
 
     @property
     def biomodels_model_id(self) -> str | None:
