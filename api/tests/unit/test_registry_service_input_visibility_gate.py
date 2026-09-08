@@ -83,8 +83,8 @@ def _make_service(*resources: Resource) -> tuple[RegistryService, MagicMock]:
     for resource in resources:
         registry.register_resource(resource)
     session = MagicMock()
-    # No OpenFGA client: _assert_can_execute is a no-op, isolating this gate.
-    service = RegistryService(registry=registry, session=session, openfga_client=None)
+    # No OpenFGA client: assert_can_execute is a no-op, isolating this gate.
+    service = RegistryService(registry=registry, session=session)
     return service, session
 
 

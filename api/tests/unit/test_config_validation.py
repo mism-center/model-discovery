@@ -127,8 +127,8 @@ def test_openfga_store_id_present_passes() -> None:
 
 
 def test_disable_auth_skips_openfga_validation() -> None:
-    """`DISABLE_AUTH` skips OpenFGA validation too — RegistryService's
-    `_openfga_client_for` bypasses OpenFGA entirely for that mode's
-    "local"-issuer principal, so requiring a store id here would demand
-    configuration nothing would ever use."""
+    """`DISABLE_AUTH` skips OpenFGA validation too — AuthorizationService's
+    `_client_for` bypasses OpenFGA entirely for that mode's "local"-issuer
+    principal, so requiring a store id here would demand configuration nothing
+    would ever use."""
     ensure_startup_config(_settings(DISABLE_AUTH="true", OPENFGA_STORE_ID=""))

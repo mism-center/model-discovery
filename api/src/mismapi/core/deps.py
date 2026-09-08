@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from mismapi.clients.local_upload_client import LocalFileUploadClient
     from mismapi.clients.openfga_client import OpenFGAClient
     from mismapi.clients.upload_client import UploadServiceClient
+    from mismapi.services.authorization_service import AuthorizationService
     from mismapi.services.upload_session_store_service import UploadSessionStoreService
 
 
@@ -81,6 +82,10 @@ def _get_openfga_client(container: ContainerDep) -> OpenFGAClient:
     return container.openfga_client
 
 
+def _get_authz(container: ContainerDep) -> AuthorizationService:
+    return container.authz
+
+
 def _get_registry_service(
     container: ContainerDep,
 ) -> Generator[RegistryService, None, None]:
@@ -91,7 +96,7 @@ def _get_registry_service(
     responsibility.
     """
     with container.open_session() as session:
-        yield RegistryService(PostgresRegistry(session), session, container.openfga_client)
+        yield RegistryService(PostgresRegistry(session), session, container.authz)
 
 
 SettingsDep = Annotated[Settings, Depends(_get_settings)]
@@ -107,4 +112,5 @@ UploadClientDep = Annotated[
 ]
 ExecutionClientDep = Annotated["ExecutionClient", Depends(_get_execution_client)]
 OpenFGAClientDep = Annotated["OpenFGAClient", Depends(_get_openfga_client)]
+AuthzDep = Annotated["AuthorizationService", Depends(_get_authz)]
 RegistryServiceDep = Annotated[RegistryService, Depends(_get_registry_service)]

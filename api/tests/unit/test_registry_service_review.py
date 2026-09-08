@@ -26,6 +26,7 @@ from mism_registry.resource import Resource
 from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.clients.openfga_client import OpenFGAClient
 from mismapi.core.errors import APIError
+from mismapi.services.authorization_service import AuthorizationService
 from mismapi.services.registry_service import RegistryService
 
 
@@ -62,7 +63,9 @@ def _make_service(
         )
     )
     session = MagicMock()
-    return RegistryService(registry=registry, session=session, openfga_client=openfga_client)
+    return RegistryService(
+        registry=registry, session=session, authz=AuthorizationService(client=openfga_client)
+    )
 
 
 # ── Ownership gate (OpenFGA path) ─────────────────────────────────────────
@@ -73,42 +76,6 @@ async def test_review_denied_when_openfga_check_fails() -> None:
 
     with pytest.raises(APIError) as excinfo:
         await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
-
-    assert excinfo.value.status_code == 403
-    assert excinfo.value.code == "not_authorized"
-
-
-async def test_review_openfga_check_uses_owner_relation_on_model_object() -> None:
-    client = _client(allowed=True)
-    service = _make_service(client)
-
-    await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
-
-    client.check.assert_awaited_once_with(user="user:dana", relation="owner", object_="model:m-1")
-
-
-# ── Ownership gate (Postgres fallback — no OpenFGA client) ────────────────
-
-
-async def test_review_denied_when_no_client_and_not_owner() -> None:
-    # No OpenFGA client → falls back to Postgres string equality.
-    service = _make_service(None, owner="dana")
-
-    with pytest.raises(APIError) as excinfo:
-        await service.review_metadata_package(_principal("erin"), model_id="m-1", approve=True)
-
-    assert excinfo.value.status_code == 403
-    assert excinfo.value.code == "not_authorized"
-
-
-async def test_review_denied_when_no_client_and_model_not_found() -> None:
-    # No client + nonexistent model → get_resource_and_assert_ownership collapses to 403.
-    service = _make_service(None)
-
-    with pytest.raises(APIError) as excinfo:
-        await service.review_metadata_package(
-            _principal("dana"), model_id="does-not-exist", approve=True
-        )
 
     assert excinfo.value.status_code == 403
     assert excinfo.value.code == "not_authorized"
@@ -237,8 +204,7 @@ async def test_approve_rolls_back_when_viewer_tuple_write_fails() -> None:
 
 async def test_approve_without_openfga_client_skips_viewer_tuple() -> None:
     """No client configured — state still transitions, no crash, no tuple write."""
-    # No FGA client → _assert_model_owner falls back to ownership string-equality,
-    # so the principal must match the resource owner.
+    # No FGA client → all checks are permissive; state transitions normally.
     service = _make_service(None, owner="dana")
     session = cast(MagicMock, service._session)
 

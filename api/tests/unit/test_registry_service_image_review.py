@@ -27,6 +27,7 @@ from mism_registry.resource import Resource
 from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.clients.openfga_client import OpenFGAClient
 from mismapi.core.errors import APIError
+from mismapi.services.authorization_service import AuthorizationService
 from mismapi.services.registry_service import RegistryService
 
 
@@ -63,7 +64,9 @@ def _make_service(
         )
     )
     session = MagicMock()
-    return RegistryService(registry=registry, session=session, openfga_client=openfga_client)
+    return RegistryService(
+        registry=registry, session=session, authz=AuthorizationService(client=openfga_client)
+    )
 
 
 # ── Role gate ────────────────────────────────────────────────────────────

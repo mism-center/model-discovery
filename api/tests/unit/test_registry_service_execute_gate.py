@@ -1,12 +1,12 @@
-"""Unit tests for RegistryService's model#can_execute gate (MISM-291, Phase 5).
+"""Unit tests for RegistryService.create_run's can_execute gate (MISM-291).
 
-Covers Checkpoint 5-A: `_assert_can_execute` checks the per-model
-`model:{model_id}#can_execute` relation (owner OR platform-wide executor, via
-the `model#platform` tupleToUserset Phase 2 wires at create_model time) before
-`create_run` proceeds. Mirrors `test_registry_service_image_checker_gate.py`'s
-direct-check style plus `test_registry_service_uploader_gate.py`'s end-to-end
-wiring style, since — unlike the platform-role gates — this one is checked
-against a per-resource object rather than the fixed `platform:main` singleton.
+Covers the end-to-end wiring: ``create_run`` calls
+``AuthorizationService.assert_can_execute`` on the per-model
+``model:{model_id}#can_execute`` relation before creating a run, and writes
+the run-owner tuple via ``grant_run_owner`` after.
+
+Direct tests for ``AuthorizationService.assert_can_execute`` in isolation live
+in ``test_authorization_service.py``.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ from mism_registry.resource import Resource
 from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.clients.openfga_client import OpenFGAClient
 from mismapi.core.errors import APIError
+from mismapi.services.authorization_service import AuthorizationService
 from mismapi.services.registry_service import RegistryService
 
 
@@ -67,7 +68,9 @@ def _make_service(
     if model is not None:
         registry.register_resource(model)
     session = MagicMock()
-    service = RegistryService(registry=registry, session=session, openfga_client=openfga_client)
+    service = RegistryService(
+        registry=registry, session=session, authz=AuthorizationService(client=openfga_client)
+    )
     return service, session
 
 
@@ -76,50 +79,6 @@ def _client(allowed: bool) -> MagicMock:
     client.check = AsyncMock(return_value=allowed)
     client.write_tuple = AsyncMock()
     return client
-
-
-# ── _assert_can_execute, checked directly ───────────────────────────
-
-
-async def test_assert_can_execute_allowed_when_check_passes() -> None:
-    client = _client(allowed=True)
-    service, _ = _make_service(client)
-
-    await service._assert_can_execute(_principal("alice"), "m-1")
-
-    client.check.assert_awaited_once_with(
-        user="user:alice", relation="can_execute", object_="model:m-1"
-    )
-
-
-async def test_assert_can_execute_denied_when_check_fails() -> None:
-    client = _client(allowed=False)
-    service, _ = _make_service(client)
-
-    with pytest.raises(APIError) as excinfo:
-        await service._assert_can_execute(_principal("bob"), "m-1")
-
-    assert excinfo.value.status_code == 403
-    assert excinfo.value.code == "not_authorized"
-
-
-async def test_assert_can_execute_allowed_without_openfga_client() -> None:
-    service, _ = _make_service(None)
-
-    # No client configured — skipped entirely, matching the other `_assert_*` gates.
-    await service._assert_can_execute(_principal("alice"), "m-1")
-
-
-async def test_assert_can_execute_local_issuer_bypasses_check() -> None:
-    client = _client(allowed=False)
-    service, _ = _make_service(client)
-    local_principal = AuthenticatedPrincipal(
-        subject="anonymous", issuer="local", audience="local", scopes=set()
-    )
-
-    await service._assert_can_execute(local_principal, "m-1")
-
-    client.check.assert_not_awaited()
 
 
 # ── create_run wiring ────────────────────────────────────────────────

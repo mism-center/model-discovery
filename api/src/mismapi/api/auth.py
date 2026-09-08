@@ -9,8 +9,8 @@ from fastapi.responses import RedirectResponse
 from mismapi.auth.base import AuthenticatedPrincipalDep
 from mismapi.auth.return_to import DEFAULT_LANDING_PATH, resolve_return_to
 from mismapi.core.deps import (
+    AuthzDep,
     OIDCServiceDep,
-    RegistryServiceDep,
     SessionStoreDep,
     SettingsDep,
 )
@@ -162,7 +162,7 @@ async def me(
 @router.get("/capabilities")
 async def capabilities(
     principal: AuthenticatedPrincipalDep,
-    service: RegistryServiceDep,
+    authz: AuthzDep,
 ) -> AuthCapabilities:
     """The caller's platform-wide OpenFGA role grants, as booleans.
 
@@ -173,7 +173,7 @@ async def capabilities(
     place to refetch permissions after an admin grants/revokes a role
     mid-session.
     """
-    grants = await service.get_platform_capabilities(principal)
+    grants = await authz.get_platform_capabilities(principal)
     return AuthCapabilities(**grants)
 
 
