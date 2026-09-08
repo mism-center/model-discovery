@@ -34,10 +34,10 @@ from mismapi.api.v1._authz import model_visible_to
 from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.clients.biomodels_client import BioModelsClient
 from mismapi.clients.execution_client import ExecutionClient
-from mismapi.core.archive import ExtractedArchive, extract_zip
+from mismapi.core.archive import ExtractedArchive, _safe_dest, extract_zip
 from mismapi.core.errors import APIError
 from mismapi.core.settings import Settings
-from mismapi.schemas.biomodels import BioModelsRecordDTO, normalize_model_id
+from mismapi.schemas.biomodels import BioModelsFileDTO, BioModelsRecordDTO, normalize_model_id
 from mismapi.services.registry_service import RegistryService
 from mismapi.utils import upload_dir
 
@@ -120,6 +120,13 @@ async def import_biomodels_model(
             content=archive.content,
             record=record,
             max_total_bytes=settings.biomodels_max_archive_bytes,
+        )
+        await _refetch_faulty(
+            biomodels,
+            working_tree,
+            model_id=normalized,
+            record=record,
+            max_concurrency=settings.biomodels_max_concurrency,
         )
         registry.mark_upload_complete(principal, resource_id=resource.id)
     except BaseException:
@@ -205,6 +212,59 @@ def _populate_working_tree(
         json.dumps(record.model_dump(mode="json"), indent=2, sort_keys=True), encoding="utf-8"
     )
     return extracted
+
+
+async def _refetch_faulty(
+    biomodels: BioModelsClient,
+    working_tree: Path,
+    *,
+    model_id: str,
+    record: BioModelsRecordDTO,
+    max_concurrency: int,
+) -> None:
+    """Refetch declared files the archive delivered empty or not at all.
+
+    The archive is a pre-built artifact upstream and can carry members whose
+    names are correct but whose contents are zero-length. The record's file
+    list is built from the stored files, so it still says what should be there.
+    A file the record itself declares empty is not faulty.
+
+    Raising here lands in the caller's rollback, so a refetch that fails takes
+    the whole import with it rather than leaving a model half on disk.
+    """
+    declared = record.files.main + record.files.additional if record.files else []
+    faulty = []
+    for declared_file in declared:
+        dest = _safe_dest(working_tree, declared_file.name, "")
+        if dest is None or not declared_file.file_size:
+            continue
+        if not dest.is_file() or dest.stat().st_size == 0:
+            faulty.append((declared_file, dest))
+
+    if not faulty:
+        return
+
+    logger.warning("biomodels_import_refetch model_id=%s files=%d", model_id, len(faulty))
+    limit = asyncio.Semaphore(max_concurrency)
+
+    async def refetch(declared_file: BioModelsFileDTO, dest: Path) -> None:
+        async with limit:
+            data = await biomodels.download_file(model_id, declared_file.name)
+        # An unrecognized path answers 200 with a login page, so the status
+        # alone does not say the bytes are the file.
+        if len(data) != declared_file.file_size:
+            raise APIError(
+                status_code=502,
+                code="biomodels_file_incomplete",
+                detail=(
+                    f"BioModels served {len(data)} bytes of {declared_file.name} for "
+                    f"{model_id}, which declares {declared_file.file_size}."
+                ),
+            )
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(dest.write_bytes, data)
+
+    await asyncio.gather(*(refetch(f, dest) for f, dest in faulty))
 
 
 async def _start_annotation(

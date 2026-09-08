@@ -231,6 +231,42 @@ class BioModelsClient:
             resolved_url=resolved_url,
         )
 
+    async def download_file(self, model_id: str, filename: str) -> bytes:
+        """Fetch one stored file: ``GET /model/download/{modelId}?filename=``.
+
+        The archive is a pre-built artifact upstream and can carry members with
+        correct names and zero-length contents; this serves the stored bytes.
+        """
+        normalized = normalize_model_id(model_id)
+        if normalized is None:
+            raise APIError(
+                status_code=400,
+                code="biomodels_invalid_model_id",
+                detail=f"'{model_id}' is not a BioModels model id.",
+            )
+
+        try:
+            response = await self._client.get(
+                f"/model/download/{normalized}",
+                params={"filename": filename},
+                timeout=httpx.Timeout(connect=10.0, read=120.0, write=None, pool=5.0),
+            )
+            response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise APIError(
+                status_code=504,
+                code="biomodels_download_timeout",
+                detail=f"BioModels timed out downloading {filename} for {normalized}.",
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise APIError(
+                status_code=502,
+                code="biomodels_download_failed",
+                detail=f"Failed to download {filename} for {normalized} from BioModels.",
+            ) from exc
+
+        return response.content
+
     # ── Bulk best-effort ────────────────────────────────────────────
 
     async def get_models(self, model_ids: list[str]) -> dict[str, BioModelsRecordDTO]:
