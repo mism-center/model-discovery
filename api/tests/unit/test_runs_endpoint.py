@@ -529,12 +529,12 @@ def test_post_run_authenticated_triggers_annotation() -> None:
 def test_post_run_someone_elses_resource_returns_403_and_never_annotates() -> None:
     """Annotation spends the deployment's LLM budget — ownership is required.
 
-    _assert_model_owner raises 403 (not 404): the mutation gate uses the
+    assert_model_owner raises 403 (not 404): the mutation gate uses the
     same convention as get_resource_and_assert_ownership, not the 404
     id-oracle-avoidance convention used by visibility checks.
     """
     service = MagicMock(spec=RegistryService)
-    service._assert_model_owner = AsyncMock(
+    service.assert_model_owner = AsyncMock(
         side_effect=APIError(status_code=403, code="not_authorized", detail="Not owner.")
     )
     exec_client = AsyncMock(spec=ExecutionClient)
@@ -554,7 +554,7 @@ def test_post_run_someone_elses_resource_returns_403_and_never_annotates() -> No
 def test_post_run_unowned_resource_is_owned_by_nobody() -> None:
     """An empty `owner` must not be treated as "owned by whoever asks"."""
     service = MagicMock(spec=RegistryService)
-    service._assert_model_owner = AsyncMock(
+    service.assert_model_owner = AsyncMock(
         side_effect=APIError(status_code=403, code="not_authorized", detail="Not owner.")
     )
     exec_client = AsyncMock(spec=ExecutionClient)

@@ -16,6 +16,7 @@ from mism_registry.in_memory import InMemoryRegistry
 from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.clients.openfga_client import OpenFGAClient
 from mismapi.core.errors import APIError
+from mismapi.services.authorization_service import AuthorizationService
 from mismapi.services.registry_service import RegistryService
 
 
@@ -31,7 +32,9 @@ def _principal(subject: str = "alice") -> AuthenticatedPrincipal:
 def _make_service(openfga_client: OpenFGAClient | None) -> tuple[RegistryService, MagicMock]:
     registry = InMemoryRegistry()
     session = MagicMock()
-    service = RegistryService(registry=registry, session=session, openfga_client=openfga_client)
+    service = RegistryService(
+        registry=registry, session=session, authz=AuthorizationService(client=openfga_client)
+    )
     return service, session
 
 

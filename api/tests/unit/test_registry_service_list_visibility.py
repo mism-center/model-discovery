@@ -70,7 +70,6 @@ def _make_service() -> RegistryService:
     return RegistryService(
         registry=MagicMock(),
         session=MagicMock(),
-        openfga_client=None,
     )
 
 

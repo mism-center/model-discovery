@@ -32,6 +32,7 @@ from mismapi.clients.openfga_client import OpenFGAClient
 from mismapi.clients.upload_client import UploadServiceClient
 from mismapi.core.config_validation import ensure_startup_config
 from mismapi.core.settings import Settings
+from mismapi.services.authorization_service import AuthorizationService
 from mismapi.services.upload_session_store_service import UploadSessionStoreService
 
 if TYPE_CHECKING:
@@ -57,6 +58,7 @@ class AppContainer:
     upload_client: UploadServiceClient | LocalFileUploadClient
     execution_client: ExecutionClient
     openfga_client: OpenFGAClient
+    authz: AuthorizationService
     auth_validator: AuthValidator
     oidc_client: StarletteOAuth2App
     oidc_service: OIDCService
@@ -119,6 +121,7 @@ class AppContainer:
             authorization_model_id=settings.openfga_authorization_model_id,
             timeout_seconds=settings.openfga_timeout_seconds,
         )
+        authz = AuthorizationService(client=openfga_client)
 
         redis_client: Redis = Redis.from_url(  # pyright: ignore[reportUnknownMemberType]
             settings.redis_url,
@@ -155,6 +158,7 @@ class AppContainer:
             upload_client=upload_client,
             execution_client=execution_client,
             openfga_client=openfga_client,
+            authz=authz,
             auth_validator=auth_validator,
             oidc_client=oidc_client,
             oidc_service=oidc_service,

@@ -25,6 +25,7 @@ from mism_registry.resource import Resource
 from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.clients.openfga_client import OpenFGAClient
 from mismapi.core.errors import APIError
+from mismapi.services.authorization_service import AuthorizationService
 from mismapi.services.registry_service import RegistryService
 
 
@@ -61,7 +62,9 @@ def _make_service(
         )
     )
     session = MagicMock()
-    return RegistryService(registry=registry, session=session, openfga_client=openfga_client)
+    return RegistryService(
+        registry=registry, session=session, authz=AuthorizationService(client=openfga_client)
+    )
 
 
 # ── Role gate ────────────────────────────────────────────────────────────
@@ -209,8 +212,7 @@ async def test_approve_rolls_back_when_viewer_tuple_write_fails() -> None:
 
 async def test_approve_without_openfga_client_skips_viewer_tuple() -> None:
     """No client configured — state still transitions, no crash, no tuple write."""
-    # No FGA client → _assert_model_owner falls back to ownership string-equality,
-    # so the principal must match the resource owner.
+    # No FGA client → all checks are permissive; state transitions normally.
     service = _make_service(None, owner="dana")
     session = cast(MagicMock, service._session)
 
