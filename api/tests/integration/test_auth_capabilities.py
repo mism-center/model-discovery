@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
-from mismapi.core.deps import _get_registry_service
-from mismapi.services.registry_service import RegistryService
+from mismapi.core.deps import _get_authz
+from mismapi.services.authorization_service import AuthorizationService
 from tests.conftest import (
     build_test_app,
     minimal_oidc_settings,
@@ -16,17 +16,17 @@ from tests.conftest import (
 )
 
 
-def _service_returning(capabilities: dict[str, bool]) -> MagicMock:
-    service = MagicMock(spec=RegistryService)
-    service.get_platform_capabilities.return_value = capabilities
-    return service
+def _authz_returning(capabilities: dict[str, bool]) -> MagicMock:
+    authz = MagicMock(spec=AuthorizationService)
+    authz.get_platform_capabilities = AsyncMock(return_value=capabilities)
+    return authz
 
 
 def test_capabilities_returns_grants_from_the_service() -> None:
     settings = minimal_oidc_settings()
     with build_test_app(settings) as app:
         override_principal(app)
-        app.dependency_overrides[_get_registry_service] = lambda: _service_returning(
+        app.dependency_overrides[_get_authz] = lambda: _authz_returning(
             {
                 "uploader": True,
                 "upload_reviewer": False,

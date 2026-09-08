@@ -4,7 +4,7 @@ Unlike its sibling files in tests/functional/, this does NOT hit an
 already-running `api` container over HTTP. It builds the app in-process via
 create_app() instead, because exercising the real OpenFGA path requires a
 principal whose issuer is not "local" (see
-RegistryService._openfga_client_for) — and the `api` container in
+AuthorizationService._client_for) — and the `api` container in
 docker-compose.test.yaml always runs with DISABLE_AUTH=true, which forces
 issuer="local" for every request it handles, silently bypassing OpenFGA.
 Dependency-override injection of a non-"local" principal (as

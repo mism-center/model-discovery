@@ -172,7 +172,7 @@ async def post_run(
     `ui/app/routes/upload.tsx`), so the path is load-bearing; renaming it needs
     that call site changed in the same breath.
     """
-    await service._assert_model_owner(principal, model_id=run_id)
+    await service.assert_model_owner(principal, model_id=run_id)
 
     logger.info("Annotation requested for %s by %s", run_id, principal.subject)
     execution_status = await execution_client.annotate(

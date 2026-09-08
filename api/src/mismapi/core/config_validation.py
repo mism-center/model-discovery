@@ -85,7 +85,7 @@ def _ensure_openfga_config(settings: Settings) -> None:
     """Require a store id whenever OpenFGA gating is actually active.
 
     Gated the same way as OIDC (skipped when disable_auth is True) because
-    RegistryService._openfga_client_for also bypasses OpenFGA entirely for
+    AuthorizationService._client_for also bypasses OpenFGA entirely for
     that mode's "local"-issuer principal — so requiring a store id there
     would demand configuration nothing would ever use.
     """

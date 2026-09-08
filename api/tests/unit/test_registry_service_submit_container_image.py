@@ -65,7 +65,7 @@ def _make_service(
         )
     )
     session = MagicMock()
-    return RegistryService(registry=registry, session=session, openfga_client=None)
+    return RegistryService(registry=registry, session=session)
 
 
 # ── Ownership gate ───────────────────────────────────────────────────────
