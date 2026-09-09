@@ -64,14 +64,14 @@ export function EvidenceCard({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-stretch lg:justify-between lg:gap-6">
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex min-h-8 flex-wrap items-center gap-2">
-            <span className={cn(TAG, 'bg-primary-100 text-primary/80')}>
+            <span className={cn(TAG, 'bg-secondary text-white')}>
               {sourceLabel(fields)}
             </span>
-            {fields.accession ? (
+            {/* {fields.accession ? (
               <span className={cn(TAG, 'bg-default-200 text-default-900/90')}>
                 {fields.accession}
               </span>
-            ) : undefined}
+            ) : undefined} */}
           </div>
 
           <h3 className="font-headline text-xl font-bold text-primary">

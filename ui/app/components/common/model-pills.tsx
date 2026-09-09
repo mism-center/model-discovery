@@ -73,9 +73,7 @@ export function SourcePill({
   if (!repository) return;
 
   return (
-    <span
-      className={pillClass(scale, 'border border-default-400 text-default-900')}
-    >
+    <span className={pillClass(scale, 'bg-secondary text-white')}>
       {repository}
     </span>
   );
