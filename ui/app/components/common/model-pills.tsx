@@ -47,7 +47,7 @@ export function ExecutionPill({
     );
   }
   return (
-    <span className={pillClass(scale, 'bg-default-300 text-default-800')}>
+    <span className={pillClass(scale, 'bg-default-300 text-default-900')}>
       Non-executable
     </span>
   );
@@ -89,8 +89,8 @@ export function RegistrationStatusPill({
       className={pillClass(
         scale,
         STALLED.has(status)
-          ? 'bg-danger text-white'
-          : 'bg-warning-600 text-white'
+          ? 'bg-danger text-danger-foreground'
+          : 'bg-warning text-warning-foreground'
       )}
     >
       {label}

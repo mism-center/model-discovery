@@ -151,7 +151,7 @@ export function ModelHeader({ model }: { model: ModelDetailResponse }) {
             <Button
               as={Link}
               className="px-6 rounded-lg text-[15px] font-bold"
-              color="primary"
+              color="warning"
               size="md"
               startContent={<ClipboardDocumentCheckIcon className="size-4" />}
               to={`/annotation-review?id=${model.id}`}
