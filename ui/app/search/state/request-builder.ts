@@ -1,5 +1,10 @@
 import type { SearchFilter, SearchRequest } from '~/api';
-import { facetsForResourceType, type FacetConfig } from './facets.config';
+import {
+  NATIVE_SOURCE_KEY,
+  SOURCE_FACET_FIELD,
+  facetsForResourceType,
+  type FacetConfig,
+} from './facets.config';
 import type { FacetValue, SearchState } from './types';
 
 /**
@@ -57,7 +62,13 @@ function compileFacetFilter(
     case 'terms': {
       if (value.values.length === 0) return [];
       const op = facet.termsOp ?? 'overlap';
-      return [{ field, op, value: value.values }];
+      // `MISM` is a UI-only key standing in for the empty `source_repository`
+      // an upload carries; the column really does store `''`.
+      const values =
+        field === SOURCE_FACET_FIELD
+          ? value.values.map((v) => (v === NATIVE_SOURCE_KEY ? '' : v))
+          : value.values;
+      return [{ field, op, value: values }];
     }
     case 'toggle': {
       if (!value.value) return [];

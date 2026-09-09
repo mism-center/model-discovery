@@ -32,6 +32,22 @@ export interface FacetConfig {
   uiOnly?: boolean;
 }
 
+/** Backend field behind the Model Source facet. */
+export const SOURCE_FACET_FIELD = 'source_repository';
+
+/**
+ * Stand-in bucket key for models authored here rather than imported.
+ *
+ * `source_repository` is `''` on an upload, and `url-codec` drops empty facet
+ * values when reading params, so an empty key cannot survive a URL round-trip.
+ * `request-builder` translates this back to `''` when compiling the filter, and
+ * the sidebar synthesizes its bucket — the API omits empty-keyed buckets.
+ *
+ * Upper-case because `TermsFacet` labels a bucket by capitalizing its key's
+ * first letter, so this renders as "MISM" with no label table.
+ */
+export const NATIVE_SOURCE_KEY = 'MISM';
+
 export const FACETS: readonly FacetConfig[] = [
   {
     id: 'model_status',
@@ -41,6 +57,14 @@ export const FACETS: readonly FacetConfig[] = [
     termsOp: 'in',
     resourceTypes: ['model'],
     uiOnly: true,
+  },
+  {
+    id: 'source_repository',
+    field: SOURCE_FACET_FIELD,
+    label: 'Model Source',
+    widget: 'terms',
+    termsOp: 'in',
+    resourceTypes: ['model'],
   },
   {
     id: 'model_scales',

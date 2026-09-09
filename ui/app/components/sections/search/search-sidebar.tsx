@@ -14,6 +14,8 @@ import { useSearch } from '~/search/context/search-context';
 import { useUser } from '~/api/auth/user';
 import { pendingReviewModelsQueryOptions } from '~/api/query/models';
 import {
+  NATIVE_SOURCE_KEY,
+  SOURCE_FACET_FIELD,
   facetsForResourceType,
   type FacetConfig,
 } from '~/search/state/facets.config';
@@ -54,6 +56,29 @@ export function SearchSidebar() {
     };
   }, [data, pendingReviewData]);
 
+  // `source_repository` is '' for an upload, and the API drops empty-keyed
+  // buckets, so the count for models authored here is the remainder once every
+  // reported repository is subtracted from the result total.
+  const sourceAgg: AggResult | undefined = useMemo(() => {
+    const buckets = data?.aggs?.[SOURCE_FACET_FIELD]?.buckets;
+    if (!data || !buckets) return;
+    const imported = buckets.reduce((sum, b) => sum + b.count, 0);
+    const native = data.total - imported;
+    return {
+      buckets:
+        native > 0
+          ? [...buckets, { key: NATIVE_SOURCE_KEY, count: native }]
+          : buckets,
+    };
+  }, [data]);
+
+  // Facets the API cannot supply buckets for, keyed by facet id (both of these
+  // have `id === field`). Falls through to the real aggregation for the rest.
+  const synthesizedAggs: Record<string, AggResult | undefined> = {
+    model_status: modelStatusAgg,
+    [SOURCE_FACET_FIELD]: sourceAgg,
+  };
+
   return (
     <div className="flex flex-col h-full min-w-[320px]">
       <div className="mb-4 p-6 pb-0">
@@ -83,9 +108,7 @@ export function SearchSidebar() {
       >
         {facets.map((facet, index) => {
           const agg: AggResult | undefined =
-            facet.id === 'model_status'
-              ? modelStatusAgg
-              : data?.aggs?.[facet.field];
+            synthesizedAggs[facet.id] ?? data?.aggs?.[facet.field];
           const value = state.facets[facet.id];
 
           if (facet.widget === 'toggle') {
