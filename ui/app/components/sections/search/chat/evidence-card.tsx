@@ -1,6 +1,5 @@
 import { ArrowTopRightOnSquareIcon } from '@heroicons/react/16/solid';
 import { QuotationMarkIcon } from '@sidekickicons/react/16/solid';
-import { Button } from '@heroui/react';
 import cn from 'classnames';
 
 import type { CairnsEvidenceCard } from '~/api/endpoints/cairns';
@@ -8,7 +7,7 @@ import {
   type EvidenceFields,
   evidenceFields,
 } from '~/chat/state/evidence-fields';
-import { EvidenceImportAction } from './evidence-import-action';
+import { ACTION_LINK, EvidenceImportAction } from './evidence-import-action';
 
 const TAG =
   'px-2 py-0.5 rounded-xs text-[10px] font-bold uppercase tracking-tighter';
@@ -109,20 +108,17 @@ export function EvidenceCard({
               value={attribute.value}
             />
           ))}
-          <div className="mt-auto flex flex-col items-start gap-2">
+          <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1.5">
             {fields.url ? (
-              <Button
-                as="a"
-                className="text-primary"
-                endContent={<ArrowTopRightOnSquareIcon className="size-3.5" />}
+              <a
+                className={ACTION_LINK}
                 href={fields.url}
                 rel="noreferrer noopener"
-                size="sm"
                 target="_blank"
-                variant="flat"
               >
                 View details
-              </Button>
+                <ArrowTopRightOnSquareIcon className="size-3.5" />
+              </a>
             ) : (
               <span className="text-xs text-default-800">
                 No link available
