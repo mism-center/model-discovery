@@ -11,6 +11,7 @@ import { QuotationMarkIcon } from '@sidekickicons/react/16/solid';
 import { Link } from 'react-router';
 
 import type { SearchResultItem } from '~/api';
+import { ExecutionPill } from '~/components/common/model-pills';
 import { formatBytes, formatMonthYear } from '~/utils/format';
 import { AuthorListTooltip } from './author-list-tooltip';
 import { RunControls } from './run-controls';
@@ -46,20 +47,13 @@ export function SearchResult({ result }: SearchResultProps) {
     >
       {/* Left content */}
       <div className="flex-1 min-w-0">
-        {/* Executable badge (models only). Featured/starred isn't modeled by
-            the API yet; if/when it is, add back here. */}
-        {executable && (
+        {/* Execution badge (models only). Featured/starred isn't modeled by
+            the API yet; if/when it is, add back here. Search is gated to
+            approved models, so no registration-status badge belongs here. */}
+        {isModel && (
           <div className="flex items-center flex-wrap gap-x-3 gap-y-3 min-h-8 mb-1">
             <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={cn(
-                  'inline-flex items-center px-2 py-0.5',
-                  'rounded-xs bg-primary',
-                  'text-white text-[10px] font-bold uppercase tracking-wide'
-                )}
-              >
-                Executable
-              </span>
+              <ExecutionPill executionType={result.execution_type} />
             </div>
           </div>
         )}

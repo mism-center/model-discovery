@@ -299,10 +299,14 @@ def test_write_skips_publication_with_null_title_and_warns(
     ]
 
 
-def test_approving_a_second_import_of_one_upstream_model_409s(
+def test_approving_a_second_import_of_one_upstream_model_409s_naming_the_winner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """uq_resources_source covers approved rows only, so the collision lands here."""
+    """uq_resources_source covers approved rows only, so the collision lands here.
+
+    The winner's id must reach the caller: it is the model that displaced theirs,
+    and the UI links straight to it rather than searching for it.
+    """
     service = _make_service(tmp_path, monkeypatch)
     _make_package(tmp_path)
 
@@ -310,6 +314,23 @@ def test_approving_a_second_import_of_one_upstream_model_409s(
     loser.source_repository = "biomodels"
     loser.source_identifier = "BIOMD0000000732"
     service._registry.update_resource(loser)
+
+    service._registry.register_resource(
+        Resource(
+            id="m-2",
+            name="Winner",
+            resource_type=ResourceType.MODEL,
+            location_uri="irods:///m-2/0.1.0",
+            execution_type=ExecutionType.PYTHON,
+            version="0.1.0",
+            version_status=ResourceVersionStatus.ACTIVE,
+            registration_status=ResourceRegistrationStatus.APPROVED,
+            owner="user-2",
+            source_repository="biomodels",
+            source_identifier="BIOMD0000000732",
+            created_at=datetime(2025, 1, 1, tzinfo=UTC),
+        )
+    )
 
     def _collide(_resource: Resource) -> Resource:
         raise IntegrityError("uq_resources_source", None, Exception())
@@ -324,6 +345,7 @@ def test_approving_a_second_import_of_one_upstream_model_409s(
     assert excinfo.value.status_code == 409
     assert excinfo.value.code == "source_already_approved"
     assert excinfo.value.meta is not None
+    assert excinfo.value.meta["model_id"] == "m-2"
     assert excinfo.value.meta["source_identifier"] == "BIOMD0000000732"
 
 

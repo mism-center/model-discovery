@@ -674,9 +674,17 @@ class RegistryService:
                     detail="A conflicting resource already exists.",
                 ) from exc
             # uq_resources_source covers approved rows only, so two imports of one
-            # upstream model collide here rather than at create. source_identifier
-            # is a searchable field and search is gated to approved, so it is
-            # enough for this owner to find the copy that superseded theirs.
+            # upstream model collide here rather than at create. The winner is the
+            # approved row that displaced this one; naming it lets the caller link
+            # straight there instead of re-deriving it from source_identifier.
+            approved = [
+                r
+                for r in self.find_by_source(
+                    repository=resource.source_repository,
+                    identifiers=[resource.source_identifier],
+                )
+                if r.registration_status == ResourceRegistrationStatus.APPROVED
+            ]
             raise APIError(
                 status_code=409,
                 code="source_already_approved",
@@ -685,6 +693,7 @@ class RegistryService:
                     "so this one cannot also be approved."
                 ),
                 meta={
+                    "model_id": approved[0].id if approved else None,
                     "source_repository": resource.source_repository,
                     "source_identifier": resource.source_identifier,
                 },

@@ -1,10 +1,16 @@
-import cn from 'classnames';
 import { BreadcrumbItem, Button } from '@heroui/react';
-import { ArrowRightEndOnRectangleIcon } from '@heroicons/react/16/solid';
-import { useLocation } from 'react-router';
+import {
+  ArrowRightEndOnRectangleIcon,
+  ClipboardDocumentCheckIcon,
+} from '@heroicons/react/16/solid';
+import { Link, useLocation } from 'react-router';
 
 import type { ModelDetailResponse } from '~/api/endpoints/models';
 import { loginHref, useUser } from '~/api/auth/user';
+import {
+  ExecutionPill,
+  RegistrationStatusPill,
+} from '~/components/common/model-pills';
 import { CompactBreadcrumbs } from '~/components/layout/breadcrumbs';
 import { RunControls } from '~/components/sections/search/search-results/run-controls';
 import { ModelByline } from './model-byline';
@@ -72,9 +78,17 @@ function truncateBreadcrumb(name: string): string {
  * a dead band under the header unpinned, and moved the button between states.
  */
 export function ModelHeader({ model }: { model: ModelDetailResponse }) {
+  const { user } = useUser();
   const executable = Boolean(model.execution_type);
   const description = model.description || model.short_description;
   const shortName = truncateBreadcrumb(model.name);
+
+  // The owner is the reviewer: approving is a self-service step on your own
+  // model, so for them the page's primary verb is reviewing it, not running it.
+  const awaitingMyReview =
+    model.registration_status === 'pending_review' &&
+    Boolean(model.owner) &&
+    model.owner === user?.sub;
 
   return (
     // `scroll-mt-20` matches SectionCard, so every nav anchor lands alike.
@@ -98,17 +112,13 @@ export function ModelHeader({ model }: { model: ModelDetailResponse }) {
           375px row without crushing the title. */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 sm:gap-6">
         <div className="min-w-0">
-          {executable && (
-            <span
-              className={cn(
-                'inline-flex items-center px-2 py-0.5 mb-2',
-                'rounded-xs bg-primary',
-                'text-white text-xs font-bold uppercase tracking-wide'
-              )}
-            >
-              Executable
-            </span>
-          )}
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <RegistrationStatusPill
+              scale="page"
+              status={model.registration_status}
+            />
+            <ExecutionPill executionType={model.execution_type} scale="page" />
+          </div>
           <h1 className="text-3xl font-headline font-extrabold text-primary tracking-tight">
             {model.name}
           </h1>
@@ -137,8 +147,23 @@ export function ModelHeader({ model }: { model: ModelDetailResponse }) {
         </div>
 
         <div className="flex flex-col gap-1.5 shrink-0">
-          <SignInToRunPrompt executable={executable} />
-          <RunControls model={model} scale="page" />
+          {awaitingMyReview ? (
+            <Button
+              as={Link}
+              className="px-6 rounded-lg text-[15px] font-bold"
+              color="primary"
+              size="md"
+              startContent={<ClipboardDocumentCheckIcon className="size-4" />}
+              to={`/annotation-review?id=${model.id}`}
+            >
+              Review
+            </Button>
+          ) : (
+            <>
+              <SignInToRunPrompt executable={executable} />
+              <RunControls model={model} scale="page" />
+            </>
+          )}
         </div>
       </div>
     </header>
