@@ -279,6 +279,32 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/imports/biomodels': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Import a BioModels model into the registry
+     * @description Download a BioModels archive, register it as a DRAFT and start annotation.
+     *
+     *     Requires authentication: the import spends the deployment's LLM budget by
+     *     firing an annotation job, the same reasoning that gates ``POST /runs/{id}``.
+     *
+     *     Responds 409 if the model is already in the registry, with the existing
+     *     model's id in ``error.meta`` so the caller can link to it.
+     */
+    post: operations['import_from_biomodels_api_v1_imports_biomodels_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/datasets': {
     parameters: {
       query?: never;
@@ -495,7 +521,9 @@ export interface paths {
      * @description Ask CAIRNS for computational tools and models matching a question.
      *
      *     Evidence cards sourced from BioModels carry a `biomodels` block resolved
-     *     from the BioModels repository; it is null when that lookup found nothing.
+     *     from the BioModels repository, and `mism_model_id` when this registry holds
+     *     an import of the same model. Both key off ids parsed from `tool_id`, so
+     *     neither lookup feeds the other and either may fail on its own.
      */
     post: operations['cairns_recommend_api_v1_cairns_recommend_post'];
     delete?: never;
@@ -626,6 +654,19 @@ export interface components {
        */
       qualifier: string;
     };
+    /** BioModelsAuthorDTO */
+    BioModelsAuthorDTO: {
+      /**
+       * Name
+       * @default
+       */
+      name: string;
+      /**
+       * Institution
+       * @default
+       */
+      institution: string;
+    };
     /** BioModelsContributorDTO */
     BioModelsContributorDTO: {
       /**
@@ -633,6 +674,11 @@ export interface components {
        * @default
        */
       name: string;
+      /**
+       * Email
+       * @default
+       */
+      email: string;
       /**
        * Orcid
        * @default
@@ -643,6 +689,8 @@ export interface components {
        * @default
        */
       affiliation: string;
+      /** External */
+      external?: boolean | null;
       /**
        * Role
        * @default
@@ -668,6 +716,21 @@ export interface components {
        * @default
        */
       mime_type: string;
+      /**
+       * Md5Sum
+       * @default
+       */
+      md5sum: string;
+      /**
+       * Sha1Sum
+       * @default
+       */
+      sha1sum: string;
+      /**
+       * Sha256Sum
+       * @default
+       */
+      sha256sum: string;
     };
     /** BioModelsFilesDTO */
     BioModelsFilesDTO: {
@@ -693,6 +756,43 @@ export interface components {
        * @default
        */
       version: string;
+    };
+    /** BioModelsHistoryDTO */
+    BioModelsHistoryDTO: {
+      /** Revisions */
+      revisions?: components['schemas']['BioModelsRevisionDTO'][];
+    };
+    /** BioModelsImportRequest */
+    BioModelsImportRequest: {
+      /**
+       * Model Id
+       * @description BioModels model id, e.g. 'BIOMD0000000732'.
+       */
+      model_id: string;
+    };
+    /** BioModelsImportResponse */
+    BioModelsImportResponse: {
+      /**
+       * Model Id
+       * @description Id of the model created in this registry.
+       */
+      model_id: string;
+      /** Registration Status */
+      registration_status: string;
+      /**
+       * Source Identifier
+       * @description The upstream BioModels id.
+       */
+      source_identifier: string;
+      /** Files Extracted */
+      files_extracted: number;
+      /** Size Bytes */
+      size_bytes: number;
+      /**
+       * Annotation Started
+       * @description False if the import succeeded but the annotation job could not be started; retry with POST /runs/{model_id}.
+       */
+      annotation_started: boolean;
     };
     /** BioModelsPublicationDTO */
     BioModelsPublicationDTO: {
@@ -721,6 +821,40 @@ export interface components {
        * @default
        */
       synopsis: string;
+      /**
+       * Affiliation
+       * @default
+       */
+      affiliation: string;
+      /**
+       * Link
+       * @default
+       */
+      link: string;
+      /** Year */
+      year?: number | null;
+      /**
+       * Month
+       * @default
+       */
+      month: string;
+      /**
+       * Volume
+       * @default
+       */
+      volume: string;
+      /**
+       * Issue
+       * @default
+       */
+      issue: string;
+      /**
+       * Pages
+       * @default
+       */
+      pages: string;
+      /** Authors */
+      authors?: components['schemas']['BioModelsAuthorDTO'][];
     };
     /** BioModelsRecordDTO */
     BioModelsRecordDTO: {
@@ -740,6 +874,11 @@ export interface components {
        */
       name: string;
       /**
+       * Description
+       * @default
+       */
+      description: string;
+      /**
        * Submission Id
        * @default
        */
@@ -754,6 +893,11 @@ export interface components {
        * @default
        */
       curation_status: string;
+      /**
+       * Vcs Identifier
+       * @default
+       */
+      vcs_identifier: string;
       /** First Published */
       first_published?: string | null;
       format?: components['schemas']['BioModelsFormatDTO'] | null;
@@ -764,6 +908,24 @@ export interface components {
       /** Annotations */
       annotations?: components['schemas']['BioModelsAnnotationDTO'][];
       files?: components['schemas']['BioModelsFilesDTO'] | null;
+      history?: components['schemas']['BioModelsHistoryDTO'] | null;
+    };
+    /** BioModelsRevisionDTO */
+    BioModelsRevisionDTO: {
+      /** Version */
+      version?: number | null;
+      /** Submitted */
+      submitted?: string | null;
+      /**
+       * Submitter
+       * @default
+       */
+      submitter: string;
+      /**
+       * Comment
+       * @default
+       */
+      comment: string;
     };
     /**
      * BioModelsTermDTO
@@ -823,6 +985,11 @@ export interface components {
       url: string;
       /** @description Metadata resolved from the BioModels repository. */
       biomodels?: components['schemas']['BioModelsRecordDTO'] | null;
+      /**
+       * Mism Model Id
+       * @description This registry's model imported from the same source, or null if there is none the caller may see.
+       */
+      mism_model_id?: string | null;
     };
     /** CairnsRecommendRequest */
     CairnsRecommendRequest: {
@@ -1314,6 +1481,26 @@ export interface components {
        * @default
        */
       license: string;
+      /**
+       * Source Repository
+       * @default
+       */
+      source_repository: string;
+      /**
+       * Source Identifier
+       * @default
+       */
+      source_identifier: string;
+      /**
+       * Source Url
+       * @default
+       */
+      source_url: string;
+      /**
+       * Source Revision
+       * @default
+       */
+      source_revision: string;
       /** Metadata */
       metadata?: {
         [key: string]: unknown;
@@ -1465,6 +1652,26 @@ export interface components {
        * @default
        */
       license: string;
+      /**
+       * Source Repository
+       * @default
+       */
+      source_repository: string;
+      /**
+       * Source Identifier
+       * @default
+       */
+      source_identifier: string;
+      /**
+       * Source Url
+       * @default
+       */
+      source_url: string;
+      /**
+       * Source Revision
+       * @default
+       */
+      source_revision: string;
       /**
        * Execution Ref
        * @default
@@ -1908,6 +2115,26 @@ export interface components {
        * @default
        */
       license: string;
+      /**
+       * Source Repository
+       * @default
+       */
+      source_repository: string;
+      /**
+       * Source Identifier
+       * @default
+       */
+      source_identifier: string;
+      /**
+       * Source Url
+       * @default
+       */
+      source_url: string;
+      /**
+       * Source Revision
+       * @default
+       */
+      source_revision: string;
       /** Metadata */
       metadata?: {
         [key: string]: unknown;
@@ -2295,6 +2522,26 @@ export interface components {
        * @default
        */
       license: string;
+      /**
+       * Source Repository
+       * @default
+       */
+      source_repository: string;
+      /**
+       * Source Identifier
+       * @default
+       */
+      source_identifier: string;
+      /**
+       * Source Url
+       * @default
+       */
+      source_url: string;
+      /**
+       * Source Revision
+       * @default
+       */
+      source_revision: string;
       /** Metadata */
       metadata?: {
         [key: string]: unknown;
@@ -2512,6 +2759,9 @@ export interface components {
       error: {
         code: string;
         detail: string;
+        meta?: {
+          [key: string]: unknown;
+        };
       };
     };
   };
@@ -3091,6 +3341,48 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['GitHubImportResponse'];
+        };
+      };
+      /** @description Authentication is required and was missing or invalid. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  import_from_biomodels_api_v1_imports_biomodels_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BioModelsImportRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BioModelsImportResponse'];
         };
       };
       /** @description Authentication is required and was missing or invalid. */

@@ -8,6 +8,7 @@ import {
   type EvidenceFields,
   evidenceFields,
 } from '~/chat/state/evidence-fields';
+import { EvidenceImportAction } from './evidence-import-action';
 
 const TAG =
   'px-2 py-0.5 rounded-xs text-[10px] font-bold uppercase tracking-tighter';
@@ -108,7 +109,7 @@ export function EvidenceCard({
               value={attribute.value}
             />
           ))}
-          <div className="mt-auto">
+          <div className="mt-auto flex flex-col items-start gap-2">
             {fields.url ? (
               <Button
                 as="a"
@@ -127,6 +128,7 @@ export function EvidenceCard({
                 No link available
               </span>
             )}
+            <EvidenceImportAction card={card} />
           </div>
         </div>
       </div>
