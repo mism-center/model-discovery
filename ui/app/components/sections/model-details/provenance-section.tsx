@@ -17,8 +17,9 @@ import {
  * reader asks up front (authors, citation, license, version, date) move into the
  * title byline. See `model-byline.tsx`.
  *
- * Does not show `status` / `registration_status`. Every catalogued model reads
- * "active"/"approved", so the pills cost a field and answered nothing.
+ * Does not show `status` / `registration_status`. Imports made those states
+ * common enough to be worth surfacing, but as a badge beside the title where a
+ * reader looks first — see `model-pills.tsx` — not as a field down here.
  *
  * Styled like every other section — a rule, a heading, fields. Sitting last on
  * the page is the de-emphasis; it needs no container of its own, and giving it
@@ -34,7 +35,11 @@ export function ProvenanceSection({ model }: { model: ModelDetailResponse }) {
   // place.
   const showPublications = (model.publications?.length ?? 0) > 1;
 
+  // Only imported models carry provenance; an upload leaves these empty.
+  const hasSource = Boolean(model.source_repository && model.source_identifier);
+
   const hasScalars =
+    hasSource ||
     Boolean(model.contact_email) ||
     typeof model.size_bytes === 'number' ||
     Boolean(model.digest_sha256);
@@ -52,6 +57,31 @@ export function ProvenanceSection({ model }: { model: ModelDetailResponse }) {
         <>
           {hasScalars && (
             <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {/* First: for an imported model this is the answer to "where did
+                  this come from", which outranks the integrity fields beside it. */}
+              {hasSource && (
+                <Field label="Source">
+                  {model.source_url ? (
+                    <a
+                      className={LINK}
+                      href={model.source_url}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      {model.source_identifier}
+                    </a>
+                  ) : (
+                    <span>{model.source_identifier}</span>
+                  )}
+                  {model.source_revision && (
+                    <span className="text-default-800">
+                      {' '}
+                      · revision {model.source_revision}
+                    </span>
+                  )}
+                </Field>
+              )}
+
               {model.contact_email && (
                 <Field label="Contact">
                   <a href={`mailto:${model.contact_email}`} className={LINK}>
@@ -82,12 +112,9 @@ export function ProvenanceSection({ model }: { model: ModelDetailResponse }) {
                     {model.contacts.map((c) => (
                       <li key={`${c.name}-${c.email}`}>
                         <span className="font-semibold">{c.name}</span>
-                        {c.role && (
-                          <span className="text-default-800"> · {c.role}</span>
-                        )}
                         {c.email && (
                           <>
-                            {' '}
+                            {' · '}
                             <a href={`mailto:${c.email}`} className={LINK}>
                               {c.email}
                             </a>
@@ -95,7 +122,7 @@ export function ProvenanceSection({ model }: { model: ModelDetailResponse }) {
                         )}
                         {c.affiliation && (
                           <div className="text-default-800">
-                            {c.affiliation}
+                            {c.role} · {c.affiliation}
                           </div>
                         )}
                       </li>
@@ -133,10 +160,10 @@ export function ProvenanceSection({ model }: { model: ModelDetailResponse }) {
               )}
 
               {/*
-               * The registry's only provenance link — `qualifier` carries the
-               * relationship (bqmodel:isDerivedFrom, bqbiol:isVersionOf, …),
-               * which is the only thing on the page answering "where did this
-               * come from".
+               * Curated relationships, distinct from the Source field above:
+               * `qualifier` carries how this model relates to another record
+               * (bqmodel:isDerivedFrom, bqbiol:isVersionOf, …), where Source
+               * names the one it was imported from.
                */}
               {hasItems(model.related_resources) && (
                 <Field label="Related">

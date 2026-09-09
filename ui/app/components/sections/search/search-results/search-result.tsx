@@ -11,7 +11,7 @@ import { QuotationMarkIcon } from '@sidekickicons/react/16/solid';
 import { Link } from 'react-router';
 
 import type { SearchResultItem } from '~/api';
-import { ExecutionPill } from '~/components/common/model-pills';
+import { ExecutionPill, SourcePill } from '~/components/common/model-pills';
 import { formatBytes, formatMonthYear } from '~/utils/format';
 import { AuthorListTooltip } from './author-list-tooltip';
 import { RunControls } from './run-controls';
@@ -54,6 +54,7 @@ export function SearchResult({ result }: SearchResultProps) {
           <div className="flex items-center flex-wrap gap-x-3 gap-y-3 min-h-8 mb-1">
             <div className="flex flex-wrap items-center gap-2">
               <ExecutionPill executionType={result.execution_type} />
+              <SourcePill repository={result.source_repository} />
             </div>
           </div>
         )}

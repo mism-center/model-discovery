@@ -53,6 +53,34 @@ export function ExecutionPill({
   );
 }
 
+/**
+ * The upstream repository a model was imported from, for models that were not
+ * uploaded here. Empty for uploads, which carry no provenance.
+ *
+ * Outlined rather than filled: this states where the record came from, not what
+ * state it is in, and a third solid badge beside the others would compete with
+ * them for the same attention. The repository key is shown as-is — a lookup
+ * table of display names would need an entry before a new repository could
+ * appear here at all.
+ */
+export function SourcePill({
+  repository,
+  scale = 'card',
+}: {
+  repository: string | null | undefined;
+  scale?: PillScale;
+}) {
+  if (!repository) return;
+
+  return (
+    <span
+      className={pillClass(scale, 'border border-default-400 text-default-900')}
+    >
+      {repository}
+    </span>
+  );
+}
+
 const STATUS_LABELS: Partial<Record<NonNullable<RegistrationStatus>, string>> =
   {
     draft: 'Draft',

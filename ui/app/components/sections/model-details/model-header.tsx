@@ -10,6 +10,7 @@ import { loginHref, useUser } from '~/api/auth/user';
 import {
   ExecutionPill,
   RegistrationStatusPill,
+  SourcePill,
 } from '~/components/common/model-pills';
 import { CompactBreadcrumbs } from '~/components/layout/breadcrumbs';
 import { RunControls } from '~/components/sections/search/search-results/run-controls';
@@ -118,6 +119,7 @@ export function ModelHeader({ model }: { model: ModelDetailResponse }) {
               status={model.registration_status}
             />
             <ExecutionPill executionType={model.execution_type} scale="page" />
+            <SourcePill repository={model.source_repository} scale="page" />
           </div>
           <h1 className="text-3xl font-headline font-extrabold text-primary tracking-tight">
             {model.name}
