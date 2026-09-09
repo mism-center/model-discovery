@@ -27,6 +27,7 @@ DEFAULT_LANDING_PATH = "/"
 
 ROUTE_PATHS: dict[str, str] = {
     "search": "/search",
+    "chat": "/chat",
     "runs": "/runs",
     "upload": "/upload",
     # Carries the model under review as `?id=<uuid>`; the query rides along via

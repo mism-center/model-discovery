@@ -481,6 +481,29 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/cairns/recommend': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Cairns Recommend
+     * @description Ask CAIRNS for computational tools and models matching a question.
+     *
+     *     Evidence cards sourced from BioModels carry a `biomodels` block resolved
+     *     from the BioModels repository; it is null when that lookup found nothing.
+     */
+    post: operations['cairns_recommend_api_v1_cairns_recommend_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/healthz': {
     parameters: {
       query?: never;
@@ -575,10 +598,261 @@ export interface components {
        */
       role: string;
     };
+    /** BioModelsAnnotationDTO */
+    BioModelsAnnotationDTO: {
+      /**
+       * Accession
+       * @default
+       */
+      accession: string;
+      /**
+       * Name
+       * @default
+       */
+      name: string;
+      /**
+       * Resource
+       * @default
+       */
+      resource: string;
+      /**
+       * Uri
+       * @default
+       */
+      uri: string;
+      /**
+       * Qualifier
+       * @default
+       */
+      qualifier: string;
+    };
+    /** BioModelsContributorDTO */
+    BioModelsContributorDTO: {
+      /**
+       * Name
+       * @default
+       */
+      name: string;
+      /**
+       * Orcid
+       * @default
+       */
+      orcid: string;
+      /**
+       * Affiliation
+       * @default
+       */
+      affiliation: string;
+      /**
+       * Role
+       * @default
+       */
+      role: string;
+    };
+    /** BioModelsFileDTO */
+    BioModelsFileDTO: {
+      /**
+       * Name
+       * @default
+       */
+      name: string;
+      /**
+       * Description
+       * @default
+       */
+      description: string;
+      /** File Size */
+      file_size?: number | null;
+      /**
+       * Mime Type
+       * @default
+       */
+      mime_type: string;
+    };
+    /** BioModelsFilesDTO */
+    BioModelsFilesDTO: {
+      /** Main */
+      main?: components['schemas']['BioModelsFileDTO'][];
+      /** Additional */
+      additional?: components['schemas']['BioModelsFileDTO'][];
+    };
+    /** BioModelsFormatDTO */
+    BioModelsFormatDTO: {
+      /**
+       * Name
+       * @default
+       */
+      name: string;
+      /**
+       * Identifier
+       * @default
+       */
+      identifier: string;
+      /**
+       * Version
+       * @default
+       */
+      version: string;
+    };
+    /** BioModelsPublicationDTO */
+    BioModelsPublicationDTO: {
+      /**
+       * Type
+       * @default
+       */
+      type: string;
+      /**
+       * Accession
+       * @default
+       */
+      accession: string;
+      /**
+       * Journal
+       * @default
+       */
+      journal: string;
+      /**
+       * Title
+       * @default
+       */
+      title: string;
+      /**
+       * Synopsis
+       * @default
+       */
+      synopsis: string;
+    };
+    /** BioModelsRecordDTO */
+    BioModelsRecordDTO: {
+      /**
+       * Identifier
+       * @default
+       */
+      identifier: string;
+      /**
+       * Url
+       * @default
+       */
+      url: string;
+      /**
+       * Name
+       * @default
+       */
+      name: string;
+      /**
+       * Submission Id
+       * @default
+       */
+      submission_id: string;
+      /**
+       * Publication Id
+       * @default
+       */
+      publication_id: string;
+      /**
+       * Curation Status
+       * @default
+       */
+      curation_status: string;
+      /** First Published */
+      first_published?: string | null;
+      format?: components['schemas']['BioModelsFormatDTO'] | null;
+      modelling_approach?: components['schemas']['BioModelsTermDTO'] | null;
+      publication?: components['schemas']['BioModelsPublicationDTO'] | null;
+      /** Contributors */
+      contributors?: components['schemas']['BioModelsContributorDTO'][];
+      /** Annotations */
+      annotations?: components['schemas']['BioModelsAnnotationDTO'][];
+      files?: components['schemas']['BioModelsFilesDTO'] | null;
+    };
+    /**
+     * BioModelsTermDTO
+     * @description An ontology term: BioModels' `modellingApproach` and annotation shape.
+     */
+    BioModelsTermDTO: {
+      /**
+       * Accession
+       * @default
+       */
+      accession: string;
+      /**
+       * Name
+       * @default
+       */
+      name: string;
+      /**
+       * Resource
+       * @default
+       */
+      resource: string;
+      /**
+       * Uri
+       * @default
+       */
+      uri: string;
+    };
     /** Body_upload_resource_file_api_v1_resources__resource_id__files_post */
     Body_upload_resource_file_api_v1_resources__resource_id__files_post: {
       /** File */
       file: string;
+    };
+    /** CairnsEvidenceCardDTO */
+    CairnsEvidenceCardDTO: {
+      /** Tool Id */
+      tool_id: string;
+      /** Name */
+      name: string;
+      /** Source */
+      source: string;
+      /**
+       * Score
+       * @default 0
+       */
+      score: number;
+      /**
+       * Snippet
+       * @default
+       */
+      snippet: string;
+      /** Why Matched */
+      why_matched?: string[];
+      /**
+       * Url
+       * @default
+       */
+      url: string;
+      /** @description Metadata resolved from the BioModels repository. */
+      biomodels?: components['schemas']['BioModelsRecordDTO'] | null;
+    };
+    /** CairnsRecommendRequest */
+    CairnsRecommendRequest: {
+      /**
+       * Question
+       * @description Natural-language question about computational tools.
+       */
+      question: string;
+      /**
+       * Chat History
+       * @description Prior turns as [[user, assistant], ...] for follow-ups.
+       */
+      chat_history?: string[][];
+      /**
+       * Thread Id
+       * @description Optional conversation id.
+       */
+      thread_id?: string | null;
+    };
+    /** CairnsRecommendResponse */
+    CairnsRecommendResponse: {
+      /** Answer */
+      answer: string;
+      /** Evidence */
+      evidence?: components['schemas']['CairnsEvidenceCardDTO'][];
+      /**
+       * Elapsed Seconds
+       * @default 0
+       */
+      elapsed_seconds: number;
     };
     /** ComputeDTO */
     ComputeDTO: {
@@ -3262,6 +3536,39 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['SearchResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  cairns_recommend_api_v1_cairns_recommend_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CairnsRecommendRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CairnsRecommendResponse'];
         };
       };
       /** @description Validation Error */

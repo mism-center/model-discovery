@@ -32,6 +32,7 @@ export async function fetchUser(
 // allowlist).
 const RETURN_TO_KEYS: Record<string, string> = {
   '/search': 'search',
+  '/chat': 'chat',
   '/runs': 'runs',
   '/upload': 'upload',
   '/annotation-review': 'annotation-review',
