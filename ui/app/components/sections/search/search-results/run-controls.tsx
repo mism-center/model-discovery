@@ -3,6 +3,7 @@ import { PlayIcon } from '@heroicons/react/24/solid';
 
 import type { RunnableModel } from '~/api/endpoints/runs';
 import { useUser } from '~/api/auth/user';
+import { useCapabilities } from '~/api/auth/capabilities';
 import { RunModelModal } from './run-model-modal';
 
 interface RunControlsProps {
@@ -24,19 +25,36 @@ interface RunControlsProps {
 /**
  * Launch affordance for an executable model.
  *
- *   - executable + signed in → launch button (opens the launch modal)
- *   - non-executable or signed out → render nothing
+ *   - executable + signed in + can_execute → launch button (opens the launch modal)
+ *   - non-executable, signed out, or lacking can_execute → render nothing
  *
  * Running is an authenticated action — the server rejects anonymous launches —
- * so nothing renders until a user is present. `isUserLoading` avoids flashing
- * the button during the initial `/api/auth/me` fetch.
+ * so nothing renders until a user is present. `isUserLoading`/`isCapabilitiesLoading`
+ * avoid flashing the button during the initial `/api/auth/me` /
+ * `/api/auth/capabilities` fetches.
+ *
+ * The `can_execute` pre-check (MISM-291) mirrors the backend relation it
+ * approximates — true for the model's owner *or* a holder of the platform-wide
+ * `executor` role — client-side, so a caller who would just get a 403 never
+ * sees the button at all. This is a UX pre-check only; `create_run` still
+ * enforces the real, authoritative `_assert_can_execute` check server-side
+ * regardless of what this component decides to render.
  */
 export function RunControls({ model, scale = 'card' }: RunControlsProps) {
   const isExecutable = Boolean(model.execution_type);
   const launchModal = useDisclosure();
   const { user, isLoading: isUserLoading } = useUser();
+  const { capabilities, isLoading: isCapabilitiesLoading } = useCapabilities();
+  const canExecute = user?.sub === model.owner || capabilities.executor;
 
-  if (!isExecutable || isUserLoading || !user) return null;
+  if (
+    !isExecutable ||
+    isUserLoading ||
+    isCapabilitiesLoading ||
+    !user ||
+    !canExecute
+  )
+    return null;
 
   return (
     <>

@@ -153,7 +153,15 @@ export function MetadataFormViewer({
     setSaveWarnings([]);
   }
 
-  async function handleApprove() {
+  /**
+   * Writes edits back via `PUT .../metadata-package/raw`. Named `handleSave`,
+   * not `handleApprove` — despite the button's pre-MISM-291 label, this
+   * endpoint no longer decides `registration_status` at all (see
+   * `RegistryService.write_metadata_package_raw`'s docstring); the actual
+   * approve/reject decision is `POST .../review` (UI-Phase 4-B), a
+   * reviewer-only action this owner-facing editor never calls.
+   */
+  async function handleSave() {
     setSaveState('saving');
     setSaveWarnings([]);
 
@@ -485,7 +493,7 @@ export function MetadataFormViewer({
         </Tab>
       </Tabs>
 
-      {/* Approve action bar */}
+      {/* Save action bar */}
       <div className="flex flex-col gap-2 pt-2 border-t border-default-200">
         <div className="flex items-center gap-2">
           <Button
@@ -495,9 +503,9 @@ export function MetadataFormViewer({
             className="text-foreground"
             isLoading={saveState === 'saving'}
             isDisabled={saveState === 'saving'}
-            onPress={() => void handleApprove()}
+            onPress={() => void handleSave()}
           >
-            Approve
+            Save
           </Button>
           {(isDirty || isExecDirty) && saveState === 'idle' && (
             <span className="text-xs text-default-800">Unsaved changes</span>
@@ -509,7 +517,7 @@ export function MetadataFormViewer({
         {saveState === 'saved' && saveWarnings.length > 0 && (
           <div className="rounded border border-warning-200 bg-warning-50 p-2 text-xs text-warning-800">
             <p className="font-semibold mb-1">
-              Approved, but {saveWarnings.length} field
+              Saved, but {saveWarnings.length} field
               {saveWarnings.length > 1 ? 's' : ''} could not be fully parsed:
             </p>
             <ul className="list-disc list-inside space-y-0.5">

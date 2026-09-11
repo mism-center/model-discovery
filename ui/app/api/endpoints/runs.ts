@@ -27,11 +27,35 @@ export type UserRunItem = components['schemas']['UserRunItem'];
  *
  * `entry_points` is required, not incidental: the run modal lets the user pick
  * one, so narrowing this type without it silently breaks launching from search.
+ *
+ * `owner` backs `RunControls`' client-side `can_execute` pre-check (MISM-291):
+ * the backend relation resolves to true for the model's owner *or* a holder of
+ * the platform-wide `executor` role, and owner comparison is the half of that
+ * the UI can't get from `useCapabilities()` alone.
  */
 export type RunnableModel = Pick<
   components['schemas']['SearchResultItem'],
-  'id' | 'name' | 'execution_type' | 'io_spec' | 'entry_points'
->;
+  'id' | 'name' | 'execution_type' | 'io_spec' | 'entry_points' | 'owner'
+> & {
+  /**
+   * Backs `RunModelModal`'s image-review blocking message (MISM-291).
+   * Optional, not `Pick`'d, because `SearchResultItem` doesn't carry this
+   * field at all — a known backend/schema gap (see UI-Phase 1-C's deferred
+   * finding: list/search views don't surface it). `undefined` is treated
+   * the same as `'not_applicable'` — unknown, so don't block on it.
+   */
+  image_review_status?: string;
+  /**
+   * Backs `RunModelModal`'s registration-review blocking message (MISM-291).
+   * Optional, not `Pick`'d, because `SearchResultItem` doesn't carry this
+   * field — search results are always `approved` (the search gate in
+   * `RegistryService.search` forces `registration_status=approved` on every
+   * query), so there is nothing to block there. `undefined` is treated as
+   * not blocked (best-effort); the server-side `validate_registration_approved`
+   * check in `prepare_run` remains authoritative either way.
+   */
+  registration_status?: string;
+};
 
 export const TERMINAL_RUN_STATUSES: ReadonlySet<RunStatus> = new Set([
   'completed',

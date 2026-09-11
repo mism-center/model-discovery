@@ -305,18 +305,20 @@ async def test_create_model_writes_real_tuples_after_role_granted(
     assert carol_can_execute is True
 
 
-# ── upload_reviewer (MISM-291 Phase 3) ───────────────────────────────
+# ── metadata review ownership gate (MISM-291) ────────────────────────
 
 
-async def test_review_metadata_package_denied_without_upload_reviewer_role(
+async def test_review_metadata_package_denied_when_not_owner(
     live_settings: Settings, raw_openfga_client: OpenFGAClient
 ) -> None:
-    principal = _fresh_principal("review-denied")
-    user = f"user:{principal.subject}"
-    await raw_openfga_client.write_tuple(user=user, relation="uploader", object_="platform:main")
+    owner = _fresh_principal("review-owner")
+    non_owner = _fresh_principal("review-non-owner")
+    await raw_openfga_client.write_tuple(
+        user=f"user:{owner.subject}", relation="uploader", object_="platform:main"
+    )
 
-    with _client_for(live_settings, principal) as (client, _exec_client):
-        create_resp = client.post(
+    with _client_for(live_settings, owner) as (owner_client, _):
+        create_resp = owner_client.post(
             "/api/v1/models",
             json={
                 "name": unique_name("live-model-review-denied"),
@@ -327,14 +329,27 @@ async def test_review_metadata_package_denied_without_upload_reviewer_role(
         assert create_resp.status_code == 201
         model_id = create_resp.json()["id"]
 
-        # No upload_reviewer grant — denial happens before the (still-DRAFT)
-        # model's state is even considered.
-        response = client.post(f"/api/v1/models/{model_id}/review", json={"approve": True})
+        _advance_registration(
+            live_settings,
+            model_id,
+            ResourceRegistrationStatus.ANNOTATING,
+            ResourceRegistrationStatus.PENDING_REVIEW,
+        )
+
+    # A different principal (not the owner) cannot review, even if they hold
+    # the uploader role — the gate is ownership, not role.
+    await raw_openfga_client.write_tuple(
+        user=f"user:{non_owner.subject}", relation="uploader", object_="platform:main"
+    )
+    with _client_for(live_settings, non_owner) as (non_owner_client, _):
+        response = non_owner_client.post(
+            f"/api/v1/models/{model_id}/review", json={"approve": True}
+        )
         assert response.status_code == 403
         assert response.json()["error"]["code"] == "not_authorized"
 
 
-async def test_review_metadata_package_allowed_after_role_granted(
+async def test_review_metadata_package_allowed_for_owner(
     live_settings: Settings, raw_openfga_client: OpenFGAClient
 ) -> None:
     principal = _fresh_principal("review-allowed")
@@ -359,10 +374,8 @@ async def test_review_metadata_package_allowed_after_role_granted(
             ResourceRegistrationStatus.ANNOTATING,
             ResourceRegistrationStatus.PENDING_REVIEW,
         )
-        await raw_openfga_client.write_tuple(
-            user=user, relation="upload_reviewer", object_="platform:main"
-        )
 
+        # The owner can approve their own model — no role grant required.
         response = client.post(f"/api/v1/models/{model_id}/review", json={"approve": True})
         assert response.status_code == 200
         assert response.json()["registration_status"] == "approved"

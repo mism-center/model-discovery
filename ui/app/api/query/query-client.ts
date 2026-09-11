@@ -8,8 +8,9 @@ import { ApiError } from '~/api/client/errors';
  * - `retry: 1` — be forgiving of transient network hiccups but don't
  *    silently spam the API on real failures.
  * - On any auth failure (401/403) from a non-auth query, drop the cached
- *    user to `null` so the UI flips to a signed-out state. The auth query
- *    itself already resolves to `null` on 401 in `fetchUser`, so the
+ *    user to `null` and capabilities to all-false so the UI flips to a
+ *    signed-out state. Both auth queries already resolve those same values
+ *    on 401 themselves (`fetchUser`, `fetchCapabilities`), so the
  *    `query.queryKey[0] !== 'auth'` guard avoids a no-op self-loop.
  */
 export function createQueryClient(): QueryClient {
@@ -29,8 +30,15 @@ export function createQueryClient(): QueryClient {
           error.isAuthError &&
           query.queryKey[0] !== 'auth'
         ) {
-          // Inlined to avoid circular import with ~/api/auth/user.
+          // Inlined to avoid a circular import with ~/api/auth/user and
+          // ~/api/auth/capabilities.
           client.setQueryData(['auth', 'me'], null);
+          client.setQueryData(['auth', 'capabilities'], {
+            uploader: false,
+            upload_reviewer: false,
+            image_checker: false,
+            executor: false,
+          });
         }
       },
     }),

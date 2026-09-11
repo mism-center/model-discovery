@@ -30,6 +30,7 @@ import {
 } from '@heroicons/react/16/solid';
 
 import { loginHref, signOut, useUser, type CurrentUser } from '~/api/auth/user';
+import { useCapabilities } from '~/api/auth/capabilities';
 
 interface NavbarDropdownItemProps extends DropdownItemProps {
   isActive?: boolean;
@@ -258,6 +259,7 @@ export function Header() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
   const { user } = useUser();
+  const { capabilities } = useCapabilities();
 
   const navLinkClassnames = ({ isActive }: { isActive: boolean }) =>
     cn(
@@ -326,21 +328,46 @@ export function Header() {
             />
           </DropdownMenu>
         </Dropdown>
-        {/* `/upload` and `/runs` are both `requireUser`-gated, so the links are
-            hidden rather than left to bounce an anonymous visitor through login
-            to reach a page they were never offered a reason to want. */}
+        {/* `/runs` is `requireUser`-gated, so the link is hidden rather than
+            left to bounce an anonymous visitor through login to reach a page
+            they were never offered a reason to want. */}
         {user && (
           <>
-            <NavbarItem>
-              <NavLink to="/upload" className={navLinkClassnames}>
-                Upload
-              </NavLink>
-            </NavbarItem>
+            {/* `/upload` is `requireCapability`-gated on `uploader`
+                (MISM-291, UI-Phase 8-A — previously only `requireUser`-gated,
+                a gap found during 8-A's full role audit and fixed here). */}
+            {capabilities.uploader && (
+              <NavbarItem>
+                <NavLink to="/upload" className={navLinkClassnames}>
+                  Upload
+                </NavLink>
+              </NavbarItem>
+            )}
             <NavbarItem>
               <NavLink to="/runs" className={navLinkClassnames}>
                 My Runs
               </NavLink>
             </NavbarItem>
+            {/* `/pending-reviews` is auth-gated (MISM-291) — visible to any
+                signed-in user so they can see and approve their own pending
+                models. No role required. */}
+            {!!user && (
+              <NavbarItem>
+                <NavLink to="/pending-reviews" className={navLinkClassnames}>
+                  Annotation Review
+                </NavLink>
+              </NavbarItem>
+            )}
+            {/* `/image-review` is `requireCapability`-gated on
+                `image_checker` (MISM-291, UI-Phase 6-A) — same reasoning
+                as `/pending-reviews` above. */}
+            {capabilities.image_checker && (
+              <NavbarItem>
+                <NavLink to="/image-review" className={navLinkClassnames}>
+                  Image Review
+                </NavLink>
+              </NavbarItem>
+            )}
           </>
         )}
         <NavbarItem>

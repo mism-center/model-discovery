@@ -3,13 +3,14 @@ import cn from 'classnames';
 import { ClipboardDocumentIcon, CheckIcon } from '@heroicons/react/16/solid';
 
 import type { ModelDetailResponse } from '~/api/endpoints/models';
-import { formatBytes } from '~/utils/format';
+import { formatMonthYear, formatBytes } from '~/utils/format';
 import {
   Field,
   LINK,
   SectionAbsence,
   SectionCard,
   hasItems,
+  hasValue,
 } from './primitives';
 
 /**
@@ -17,8 +18,13 @@ import {
  * reader asks up front (authors, citation, license, version, date) move into the
  * title byline. See `model-byline.tsx`.
  *
- * Does not show `status` / `registration_status`. Every catalogued model reads
- * "active"/"approved", so the pills cost a field and answered nothing.
+ * Does not show bare `status` / `registration_status` as a pill — every
+ * *catalogued* (publicly visible) model reads "active"/"approved", so the pill
+ * would cost a field and answer nothing. It does show the metadata review
+ * decision below, once there is one to show: a rejection reason is exactly the
+ * kind of information the pill's absence-of-variance argument does not cover,
+ * since only the model's owner (or a reviewer) ever sees a non-approved model
+ * at all.
  *
  * Styled like every other section — a rule, a heading, fields. Sitting last on
  * the page is the de-emphasis; it needs no container of its own, and giving it
@@ -34,10 +40,23 @@ export function ProvenanceSection({ model }: { model: ModelDetailResponse }) {
   // place.
   const showPublications = (model.publications?.length ?? 0) > 1;
 
+  // Gated on `registration_status` itself, not just on `metadata_reviewed_by`
+  // being set: after a rejected package is resubmitted, status bounces back to
+  // `pending_review` while `metadata_reviewed_by`/`_at` are left as history of
+  // the *previous* decision (see the backend's resubmit convention) — showing
+  // "Approved"/"Rejected" while a fresh review is pending would misrepresent an
+  // old verdict as the current one. Pre-MISM-291 resources have an empty
+  // `metadata_reviewed_by`, so `hasValue` alone already excludes them.
+  const hasMetadataReview =
+    (model.registration_status === 'approved' ||
+      model.registration_status === 'rejected') &&
+    hasValue(model.metadata_reviewed_by);
+
   const hasScalars =
     Boolean(model.contact_email) ||
     typeof model.size_bytes === 'number' ||
-    Boolean(model.digest_sha256);
+    Boolean(model.digest_sha256) ||
+    hasMetadataReview;
 
   const hasLongForm =
     hasItems(model.contacts) ||
@@ -67,6 +86,12 @@ export function ProvenanceSection({ model }: { model: ModelDetailResponse }) {
               {model.digest_sha256 && (
                 <Field label="SHA-256">
                   <ChecksumValue value={model.digest_sha256} />
+                </Field>
+              )}
+
+              {hasMetadataReview && (
+                <Field label="Metadata review">
+                  <MetadataReviewValue model={model} />
                 </Field>
               )}
             </dl>
@@ -182,6 +207,34 @@ export function ProvenanceSection({ model }: { model: ModelDetailResponse }) {
         </SectionAbsence>
       )}
     </SectionCard>
+  );
+}
+
+/**
+ * The UPLOAD_REVIEWER's decision on this model's metadata package (MISM-291).
+ * Only rendered by the caller once `registration_status` is `approved` or
+ * `rejected` with a real `metadata_reviewed_by` — see `hasMetadataReview`'s
+ * comment above for why the gate checks status rather than reviewer presence.
+ */
+function MetadataReviewValue({ model }: { model: ModelDetailResponse }) {
+  const rejected = model.registration_status === 'rejected';
+  return (
+    <>
+      <span className={cn('font-semibold', rejected && 'text-danger-600')}>
+        {rejected ? 'Rejected' : 'Approved'}
+      </span>
+      <span className="text-default-800">
+        {' '}
+        · {model.metadata_reviewed_by}
+        {model.metadata_reviewed_at &&
+          ` · ${formatMonthYear(model.metadata_reviewed_at)}`}
+      </span>
+      {rejected && hasValue(model.metadata_rejection_reason) && (
+        <div className="mt-1 text-default-800">
+          {model.metadata_rejection_reason}
+        </div>
+      )}
+    </>
   );
 }
 
