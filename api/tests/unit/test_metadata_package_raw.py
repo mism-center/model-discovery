@@ -346,144 +346,37 @@ def test_write_from_rejected_returns_to_pending_review_and_clears_reason(
     assert stored.metadata_reviewed_by == "erin"
 
 
-def test_write_from_approved_returns_to_pending_review(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Editing an APPROVED model's package re-enters the reviewer queue.
-
-    Without this gate an owner could silently overwrite published metadata
-    (including container images) without going back through review. Treated
-    identically to the REJECTED -> PENDING_REVIEW resubmit path."""
+def test_write_from_approved_raises_409(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Editing an APPROVED model is blocked — the model is publicly visible
+    and editing post-approval is not permitted."""
     _make_package(tmp_path)
     service = _make_service(tmp_path, monkeypatch)
     resource = service._registry.get_resource("m-1")
     resource.registration_status = ResourceRegistrationStatus.APPROVED
     service._registry.update_resource(resource)
 
-    service.write_metadata_package_raw(
-        _principal(), model_id="m-1", files=[("metadata.yaml", _META_NEW)]
-    )
+    with pytest.raises(APIError) as exc:
+        service.write_metadata_package_raw(
+            _principal(), model_id="m-1", files=[("metadata.yaml", _META_NEW)]
+        )
 
-    stored = service._registry.get_resource("m-1")
-    assert stored.registration_status == ResourceRegistrationStatus.PENDING_REVIEW
+    assert exc.value.status_code == 409
+    assert exc.value.code == "model_already_approved"
 
 
-def test_write_from_approved_with_changed_containers_resets_image_review(
+def test_write_from_approved_does_not_touch_disk(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Swapping the container list on a published model clears image approval.
-
-    An owner changing the container image on an IMAGE_APPROVED model would
-    otherwise bypass image review entirely. The new image must go back through
-    PENDING_IMAGE_CHECK before the model is executable again."""
-    from mism_registry.enums import ImageReviewStatus
-    from mism_registry.types import Container
-
+    """The 409 guard must fire before any file write."""
     pkg = _make_package(tmp_path)
     service = _make_service(tmp_path, monkeypatch)
     resource = service._registry.get_resource("m-1")
     resource.registration_status = ResourceRegistrationStatus.APPROVED
-    resource.image_review_status = ImageReviewStatus.IMAGE_APPROVED
-    resource.image_reviewed_by = "reviewer-1"
-    resource.containers = [Container(kind="docker", image_name="original:1.0")]
     service._registry.update_resource(resource)
 
-    # Write a package whose execution.yaml names a different image.
-    new_exec = (
-        "execution:\n"
-        "  environment_kind: docker\n"
-        "  containers:\n"
-        "    - kind: docker\n"
-        "      image_name: swapped:2.0\n"
-    )
-    (pkg / "execution.yaml").write_text(new_exec, encoding="utf-8")
-    service.write_metadata_package_raw(
-        _principal(), model_id="m-1", files=[("execution.yaml", new_exec)]
-    )
+    with pytest.raises(APIError):
+        service.write_metadata_package_raw(
+            _principal(), model_id="m-1", files=[("metadata.yaml", _META_NEW)]
+        )
 
-    stored = service._registry.get_resource("m-1")
-    assert stored.registration_status == ResourceRegistrationStatus.PENDING_REVIEW
-    assert stored.image_review_status == ImageReviewStatus.PENDING_IMAGE_CHECK
-    assert stored.image_reviewed_by == ""
-    assert stored.image_reviewed_at is None
-
-
-def test_write_from_approved_without_container_change_preserves_image_review(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A metadata-only edit (no container change) on an IMAGE_APPROVED model
-    re-enters annotation review but does not reset image review — the
-    already-vetted image hasn't changed.
-
-    The execution.yaml on disk must describe the same container as the DB
-    record so that re-parsing the package produces matching containers.
-    In practice these are always in sync; the test explicitly aligns them
-    so the guard's container-equality comparison sees no change.
-    """
-    from mism_registry.enums import ImageReviewStatus
-    from mism_registry.types import Container
-
-    pkg = _make_package(tmp_path)
-    service = _make_service(tmp_path, monkeypatch)
-
-    # Write an execution.yaml that describes the approved container so that
-    # re-parsing the package produces the same container list as the DB record.
-    exec_with_container = (
-        "execution:\n"
-        "  environment_kind: docker\n"
-        "  containers:\n"
-        "    - kind: docker\n"
-        "      image_name: approved:1.0\n"
-    )
-    (pkg / "execution.yaml").write_text(exec_with_container, encoding="utf-8")
-
-    resource = service._registry.get_resource("m-1")
-    resource.registration_status = ResourceRegistrationStatus.APPROVED
-    resource.image_review_status = ImageReviewStatus.IMAGE_APPROVED
-    resource.image_reviewed_by = "reviewer-1"
-    resource.containers = [Container(kind="docker", image_name="approved:1.0")]
-    service._registry.update_resource(resource)
-
-    # Submit only metadata.yaml — the container in execution.yaml is unchanged,
-    # so parsed.containers matches old_containers and image review is preserved.
-    service.write_metadata_package_raw(
-        _principal(), model_id="m-1", files=[("metadata.yaml", _META_NEW)]
-    )
-
-    stored = service._registry.get_resource("m-1")
-    assert stored.registration_status == ResourceRegistrationStatus.PENDING_REVIEW
-    assert stored.image_review_status == ImageReviewStatus.IMAGE_APPROVED
-    assert stored.image_reviewed_by == "reviewer-1"
-
-
-def test_write_with_changed_containers_when_image_not_approved_leaves_image_status(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Container changes on a model whose image was rejected (or never approved)
-    do not touch image_review_status — there is nothing to revoke."""
-    from mism_registry.enums import ImageReviewStatus
-    from mism_registry.types import Container
-
-    pkg = _make_package(tmp_path)
-    service = _make_service(tmp_path, monkeypatch)
-    resource = service._registry.get_resource("m-1")
-    resource.registration_status = ResourceRegistrationStatus.APPROVED
-    resource.image_review_status = ImageReviewStatus.IMAGE_REJECTED
-    resource.containers = [Container(kind="docker", image_name="original:1.0")]
-    service._registry.update_resource(resource)
-
-    new_exec = (
-        "execution:\n"
-        "  environment_kind: docker\n"
-        "  containers:\n"
-        "    - kind: docker\n"
-        "      image_name: swapped:2.0\n"
-    )
-    (pkg / "execution.yaml").write_text(new_exec, encoding="utf-8")
-    service.write_metadata_package_raw(
-        _principal(), model_id="m-1", files=[("execution.yaml", new_exec)]
-    )
-
-    stored = service._registry.get_resource("m-1")
-    assert stored.registration_status == ResourceRegistrationStatus.PENDING_REVIEW
-    assert stored.image_review_status == ImageReviewStatus.IMAGE_REJECTED
+    assert (pkg / "metadata.yaml").read_text(encoding="utf-8") == _META

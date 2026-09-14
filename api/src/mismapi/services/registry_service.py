@@ -213,8 +213,24 @@ class RegistryService:
         principal: AuthenticatedPrincipal,
         model_id: str,
     ) -> None:
-        """Delete a model: remove the DB record and wipe its on-disk directory."""
+        """Delete a model: remove the DB record and wipe its on-disk directory.
+
+        Blocked once the model reaches APPROVED status: at that point it is
+        publicly visible and may already be referenced by other users' runs or
+        datasets. Owners may delete models in any pre-approval state (DRAFT,
+        ANNOTATING, ANNOTATION_FAILED, PENDING_REVIEW, REJECTED).
+        """
         resource = self.get_resource_and_assert_ownership(principal, resource_id=model_id)
+
+        if resource.registration_status == ResourceRegistrationStatus.APPROVED:
+            raise APIError(
+                status_code=409,
+                code="model_already_approved",
+                detail=(
+                    f"Model '{model_id}' is approved and publicly visible. "
+                    "Deletion of approved models is not permitted."
+                ),
+            )
 
         mount = get_settings().irods_mount_path
         try:
@@ -632,26 +648,29 @@ class RegistryService:
         so the user's edits aren't lost; they can fix the structural issue
         and re-submit.
 
-        On success, two re-entry gates apply:
+        On success, one re-entry gate applies:
 
-        * ``REJECTED`` or ``APPROVED`` → ``PENDING_REVIEW``: any edit
-          re-enters the reviewer queue and clears ``metadata_rejection_reason``.
-          For REJECTED this is the "resubmit after manual fix" path; for
-          APPROVED it closes a bypass where an owner could otherwise silently
-          overwrite published metadata without going back through review.
-          Other statuses (PENDING_REVIEW, DRAFT, ANNOTATING, ANNOTATION_FAILED)
-          are left untouched.
+        * ``REJECTED`` → ``PENDING_REVIEW``: editing a rejected submission
+          re-queues it for review and clears ``metadata_rejection_reason``.
+          Other statuses are left untouched.
 
-        * Container-image bypass: if the container list changed *and* the
-          image was previously ``IMAGE_APPROVED``, ``image_review_status`` is
-          reset to ``PENDING_IMAGE_CHECK`` and the audit fields are cleared —
-          the new image has not been vetted.
-
-        Raises 403 (not owner), 404 (missing model/resource), 400 (unknown
+        Raises 403 (not owner), 404 (missing model/resource), 409 (model
+        already approved — editing is blocked past that point), 400 (unknown
         filename, syntactically malformed YAML, or a metadata-package that
         can't be mapped onto a Resource at all).
         """
-        self.get_resource_and_assert_ownership(principal, resource_id=model_id)
+        resource_check = self.get_resource_and_assert_ownership(principal, resource_id=model_id)
+
+        if resource_check.registration_status == ResourceRegistrationStatus.APPROVED:
+            raise APIError(
+                status_code=409,
+                code="model_already_approved",
+                detail=(
+                    f"Model '{model_id}' has been approved. "
+                    "Editing metadata of an approved model is not permitted."
+                ),
+            )
+
         pkg_dir = self._metadata_package_dir(model_id)
 
         # Validate everything up front so a bad file never partially overwrites.
@@ -700,9 +719,6 @@ class RegistryService:
         except ResourceNotFoundError as exc:
             raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
 
-        # Capture before mutation so the image-bypass guard below can compare.
-        old_containers = resource.containers
-
         # Apply YAML-derived fields. Always preserve system-managed fields
         # regardless: id, owner, registration_status, metadata dict,
         # location_uri (iRODS path), execution_ref, format_tags, digest_sha256,
@@ -745,36 +761,12 @@ class RegistryService:
         resource.tests = parsed.tests
         resource.io = parsed.io
 
-        # Re-entry gates: any edit to a REJECTED or APPROVED model re-enters
-        # the reviewer queue. REJECTED -> PENDING_REVIEW is the "resubmit after
-        # manual fix" path. APPROVED -> PENDING_REVIEW closes a bypass: without
-        # this gate an owner could silently overwrite published metadata
-        # (including the container list) without going back through review.
-        # PENDING_REVIEW, DRAFT, ANNOTATING, ANNOTATION_FAILED are left alone —
-        # the latter three are unreachable here in practice since
-        # _metadata_package_dir 404s before a package exists.
-        if resource.registration_status in (
-            ResourceRegistrationStatus.REJECTED,
-            ResourceRegistrationStatus.APPROVED,
-        ):
+        # Re-entry gate: editing a REJECTED model re-queues it for review.
+        # APPROVED is blocked above; PENDING_REVIEW, DRAFT, ANNOTATING,
+        # ANNOTATION_FAILED are left untouched.
+        if resource.registration_status == ResourceRegistrationStatus.REJECTED:
             resource.registration_status = ResourceRegistrationStatus.PENDING_REVIEW
             resource.metadata_rejection_reason = ""
-
-        # Image-bypass guard: if the container list changed and the image had
-        # already been approved, the new image hasn't been vetted — reset it
-        # to PENDING_IMAGE_CHECK so it re-enters the image review queue.
-        # This specifically closes the path where an owner swaps in an
-        # arbitrary container image on a published model without re-review.
-        # list() normalizes both sides: the DB may store a tuple while
-        # build_resource_from_package returns a list; element equality still holds.
-        if (
-            list(resource.containers) != list(old_containers)
-            and resource.image_review_status == ImageReviewStatus.IMAGE_APPROVED
-        ):
-            resource.image_review_status = ImageReviewStatus.PENDING_IMAGE_CHECK
-            resource.image_reviewed_by = ""
-            resource.image_reviewed_at = None
-            resource.image_rejection_reason = ""
 
         try:
             self._registry.update_resource(resource)
