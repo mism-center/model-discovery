@@ -97,9 +97,9 @@ class AppContainer:
             future=True,
         )
 
-        # Upload backend: filesystem PVC (default while no upload service
-        # exists) or remote HTTP upload service. Both expose the same async
-        # protocol so the upload endpoint is backend-agnostic.
+        # Upload backend: filesystem PVC (UPLOAD_BACKEND=local, the default)
+        # or remote HTTP upload service (UPLOAD_BACKEND=http). Both expose
+        # the same async protocol so the upload endpoint is backend-agnostic.
         upload_client: UploadServiceClient | LocalFileUploadClient
         if settings.upload_backend == "local":
             upload_client = LocalFileUploadClient(

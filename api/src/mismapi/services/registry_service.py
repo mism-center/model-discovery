@@ -74,8 +74,7 @@ class RegistryService:
     # ── Auth delegation ──────────────────────────────────────────────
     # These public methods keep the existing call-site signatures stable
     # for routes and other callers while the underlying logic lives in
-    # AuthorizationService. Phase 6 will migrate the capabilities endpoint
-    # to inject AuthzDep directly; the run/model view methods can follow.
+    # AuthorizationService.
 
     async def assert_can_view_model(
         self,
@@ -983,36 +982,14 @@ class RegistryService:
 
         Used by the model detail page's run history. Pass ``triggered_by`` to
         scope the result to one user's runs.
-
-        Preferred path pushes ``triggered_by`` into the query so other users'
-        runs are never hydrated. That parameter only exists in the
-        metadata-schema working tree, not in the DAL revision
-        ``api/pyproject.toml`` pins, so there is a compatibility fallback that
-        filters after the fact. The fallback is strictly less efficient — it
-        hydrates rows it then discards — but it must never be less *safe*: both
-        paths return only the caller's runs. Delete the fallback once the pinned
-        DAL ref is bumped.
         """
         try:
-            try:
-                summary = get_model_run_details(  # type: ignore[call-arg]
-                    self._registry,
-                    model_id=model_id,
-                    status=status,
-                    triggered_by=triggered_by,
-                )
-            except TypeError:
-                summary = get_model_run_details(self._registry, model_id=model_id, status=status)
-                if triggered_by is not None:
-                    summary = dataclasses.replace(
-                        summary,
-                        runs=[
-                            detail
-                            for detail in summary.runs
-                            if detail.run.triggered_by == triggered_by
-                        ],
-                    )
-            return summary
+            return get_model_run_details(
+                self._registry,
+                model_id=model_id,
+                status=status,
+                triggered_by=triggered_by,
+            )
         except ResourceNotFoundError as exc:
             raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
         except RegistryValidationError as exc:
@@ -1089,7 +1066,7 @@ class RegistryService:
         registration_status: str | None = None,
         image_review_status: str | None = None,
     ) -> list[Resource]:
-        """Return models visible to ``principal`` matching the given filters (MISM-291 Phase 5).
+        """Return models visible to ``principal`` matching the given filters.
 
         Visibility filter (string-equality, not OpenFGA): approved models are
         public; anything still in the registration workflow is visible only to
@@ -1342,7 +1319,7 @@ class RegistryService:
         organisms: list[str] | None = None,
         scales: list[str] | None = None,
     ) -> list[Resource]:
-        """Return datasets visible to ``principal`` matching the given filters (MISM-291 Phase 5).
+        """Return datasets visible to ``principal`` matching the given filters.
 
         Same visibility predicate as ``list_models`` (approved OR owner) —
         see that method's docstring for the rationale.
