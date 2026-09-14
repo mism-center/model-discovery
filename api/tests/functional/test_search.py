@@ -381,6 +381,8 @@ def test_search_response_shape(api: httpx.Client) -> None:
         "created_at",
         "updated_at",
         "score",
+        # Authorization
+        "can_execute",
     }
     assert set(item.keys()) == expected_keys
 
