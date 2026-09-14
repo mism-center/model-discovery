@@ -313,11 +313,20 @@ async def test_assert_can_view_model_passes_with_fga_allowed() -> None:
     mock.check.assert_awaited_once_with(user="user:jack", relation="can_view", object_="model:m-2")
 
 
-async def test_assert_can_view_model_raises_404_with_fga_denied() -> None:
+async def test_assert_can_view_model_raises_404_with_fga_denied_non_owner() -> None:
+    """FGA denies and the principal is not the DB owner → 404."""
+    resource = _resource(owner="alice")
     with pytest.raises(APIError) as exc:
-        await _authz(_client(False)).assert_can_view_model(_principal(), resource=_resource())
+        await _authz(_client(False)).assert_can_view_model(_principal("bob"), resource=resource)
     assert exc.value.status_code == 404
     assert exc.value.code == "not_found"
+
+
+async def test_assert_can_view_model_fga_denied_owner_fallback_passes() -> None:
+    """FGA denies but the principal is the DB owner (pre-migration model without
+    an FGA tuple) → allowed via owner fallback."""
+    resource = _resource(owner="alice")
+    await _authz(_client(False)).assert_can_view_model(_principal("alice"), resource=resource)
 
 
 async def test_assert_can_view_model_fallback_passes_for_owner() -> None:

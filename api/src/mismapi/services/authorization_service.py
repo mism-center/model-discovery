@@ -269,7 +269,16 @@ class AuthorizationService:
                 relation="can_view",
                 object_=f"model:{resource.id}",
             )
-            if not allowed:
+            if allowed:
+                return
+            # FGA denied, but the principal may be the DB owner on a model
+            # created before FGA tuple-writing was wired (i.e. no owner tuple
+            # exists yet).  Fall back to string-equality so pre-migration
+            # models remain accessible to their owners.  Once a backfill
+            # writes the missing owner tuples, this branch becomes unreachable
+            # for legitimate owners and the FGA check becomes the sole gate.
+            owned = bool(resource.owner) and resource.owner == principal.subject
+            if not owned:
                 raise _not_visible
             return
 
