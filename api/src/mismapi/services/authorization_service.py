@@ -284,10 +284,15 @@ class AuthorizationService:
         Raises 404 (not 403) on the id-oracle-avoidance convention: a caller
         who cannot see a resource must not be told it exists.
 
-        Three resolution paths:
+        Resolution paths:
         * Anonymous (``principal is None``): approved == public; no identity to
           check ownership against.
-        * Authenticated + FGA client: ``can_view`` on ``model:{id}``.
+        * Authenticated + FGA client, allowed: ``can_view`` on ``model:{id}``
+          returns True.
+        * Authenticated + FGA client, denied but DB owner: FGA and Postgres can
+          diverge when the OpenFGA container restarts with ephemeral storage;
+          DB-owner equality is the fallback so the owner can still reach their
+          model.
         * Authenticated, no FGA client (``issuer == "local"`` or unconfigured):
           string-equality fallback — approved OR owner match.
         """
@@ -310,12 +315,12 @@ class AuthorizationService:
             )
             if allowed:
                 return
-            # FGA denied, but the principal may be the DB owner on a model
-            # created before FGA tuple-writing was wired (i.e. no owner tuple
-            # exists yet).  Fall back to string-equality so pre-migration
-            # models remain accessible to their owners.  Once a backfill
-            # writes the missing owner tuples, this branch becomes unreachable
-            # for legitimate owners and the FGA check becomes the sole gate.
+            # FGA denied, but the DB and FGA stores can diverge: if the
+            # OpenFGA container restarts with ephemeral storage (the default
+            # dev/test setup), its tuples are lost while the Postgres records
+            # remain.  Fall back to DB-owner equality so the owner can still
+            # reach their own model.  With persistent OpenFGA storage this
+            # branch is unreachable for legitimate owners.
             owned = bool(resource.owner) and resource.owner == principal.subject
             if not owned:
                 raise _not_visible
@@ -345,7 +350,7 @@ class AuthorizationService:
         * Authenticated + FGA client + MODEL resource: ``can_view`` on ``model:{id}``.
         * Authenticated, no FGA client (``issuer == "local"`` or unconfigured):
           string-equality fallback — approved OR owner match.
-        * Non-model resource types (e.g. datasets): no FGA tuples exist yet;
+        * Non-model resource types (e.g. datasets): not modelled in FGA;
           string-equality fallback regardless of client presence.
         """
         _not_visible = APIError(
@@ -446,7 +451,7 @@ class AuthorizationService:
 
         The platform tuple is required for ``model#can_execute``'s
         ``tupleToUserset`` (``owner`` OR ``platform#executor``) to resolve.
-        Both writes are skipped per ``_client_for``'s rules.
+        Skipped when ``_client_for`` returns None.
         """
         client = self._client_for(principal)
         if client is None:
