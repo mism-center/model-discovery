@@ -45,71 +45,49 @@ export function RunControls({ model, scale = 'card' }: RunControlsProps) {
 
   if (!isExecutable || isUserLoading || !user) return null;
 
-  if (!canExecute) {
-    // Authenticated but lacks the executor role and is not the model owner.
-    // Span wrapper required: HeroUI sets pointer-events:none on isDisabled
-    // buttons, which breaks Tooltip's hover listeners without it.
-    const noPermission = "You don't have permission to run this model";
-    return scale === 'card' ? (
-      <Tooltip content={noPermission} delay={300} closeDelay={100} radius="sm">
-        <span>
-          <Button
-            isIconOnly
-            size="sm"
-            color="primary"
-            isDisabled
-            aria-label="Run model (permission required)"
-            className="rounded-lg"
-          >
-            <PlayIcon className="size-4" />
-          </Button>
-        </span>
-      </Tooltip>
-    ) : (
-      <Tooltip content={noPermission} delay={300} closeDelay={100} radius="sm">
-        <span>
-          <Button
-            size="md"
-            color="primary"
-            isDisabled
-            className="px-6 rounded-lg text-[15px] font-bold"
-            startContent={<PlayIcon className="size-4" />}
-          >
-            Run model
-          </Button>
-        </span>
-      </Tooltip>
-    );
-  }
+  const isCard = scale === 'card';
+  // Page + enabled is the only case that needs no tooltip (button has a visible label).
+  const enabledTooltip = isCard ? 'Run model' : null;
+  const tooltipContent = canExecute
+    ? enabledTooltip
+    : "You don't have permission to run this model";
+  // Card buttons are icon-only; aria-label is their sole accessible name.
+  const cardAriaLabel = canExecute
+    ? 'Run model'
+    : 'Run model (permission required)';
+
+  const button = (
+    <Button
+      isIconOnly={isCard}
+      size={isCard ? 'sm' : 'md'}
+      color="primary"
+      isDisabled={!canExecute}
+      aria-label={isCard ? cardAriaLabel : undefined}
+      className={
+        isCard ? 'rounded-lg' : 'px-6 rounded-lg text-[15px] font-bold'
+      }
+      startContent={isCard ? undefined : <PlayIcon className="size-4" />}
+      onPress={canExecute ? launchModal.onOpen : undefined}
+    >
+      {isCard ? <PlayIcon className="size-4" /> : 'Run model'}
+    </Button>
+  );
 
   return (
     <>
-      {scale === 'card' ? (
-        // A tooltip *and* an aria-label: with no visible text, pointer users need
-        // the former and assistive tech the latter. `size="sm"` + `isIconOnly`
-        // gives a 32px square, matching the bookmark button above it.
-        <Tooltip content="Run model" delay={300} closeDelay={100} radius="sm">
-          <Button
-            isIconOnly
-            size="sm"
-            color="primary"
-            aria-label="Run model"
-            className="rounded-lg"
-            onPress={launchModal.onOpen}
-          >
-            <PlayIcon className="size-4" />
-          </Button>
-        </Tooltip>
+      {tooltipContent == null ? (
+        button
       ) : (
-        <Button
-          size="md"
-          color="primary"
-          className="px-6 rounded-lg text-[15px] font-bold"
-          startContent={<PlayIcon className="size-4" />}
-          onPress={launchModal.onOpen}
+        <Tooltip
+          content={tooltipContent}
+          delay={300}
+          closeDelay={100}
+          radius="sm"
         >
-          Run model
-        </Button>
+          {/* Span required when disabled: HeroUI sets pointer-events:none on
+              isDisabled buttons, which breaks Tooltip's hover listeners. */}
+          {canExecute ? button : <span>{button}</span>}
+        </Tooltip>
       )}
       {/* Mount only while open so each launch starts from fresh form state. */}
       {launchModal.isOpen && (
