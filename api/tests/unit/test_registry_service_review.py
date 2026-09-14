@@ -72,13 +72,27 @@ def _make_service(
 
 
 async def test_review_denied_when_openfga_check_fails() -> None:
-    service = _make_service(_client(allowed=False))
+    # Non-owner ("erin") + FGA denies → 403.  Owner ("dana") would bypass FGA
+    # entirely; use a different principal to exercise the denial path.
+    service = _make_service(_client(allowed=False), owner="dana")
 
     with pytest.raises(APIError) as excinfo:
-        await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
+        await service.review_metadata_package(_principal("erin"), model_id="m-1", approve=True)
 
     assert excinfo.value.status_code == 403
     assert excinfo.value.code == "not_authorized"
+
+
+async def test_owner_can_self_review_without_upload_reviewer_role() -> None:
+    """Model owner may approve their own submission even if FGA would deny upload_reviewer."""
+    service = _make_service(_client(allowed=False), owner="dana")
+
+    resource = await service.review_metadata_package(
+        _principal("dana"), model_id="m-1", approve=True
+    )
+
+    assert resource.registration_status == ResourceRegistrationStatus.APPROVED
+    assert resource.metadata_reviewed_by == "dana"
 
 
 async def test_review_local_issuer_bypasses_all_auth_checks() -> None:

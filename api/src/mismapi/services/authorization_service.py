@@ -112,6 +112,45 @@ class AuthorizationService:
                 detail="Principal does not hold the platform upload_reviewer role.",
             )
 
+    async def assert_can_review_metadata(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        resource: Resource,
+    ) -> None:
+        """Gate metadata-review on ownership OR the platform-wide ``upload_reviewer`` role.
+
+        Owner bypass: if the principal is the DB owner of ``resource``, they
+        may approve/reject their own submission without holding the
+        ``upload_reviewer`` platform role.  Non-owners fall through to the FGA
+        platform-role check.
+
+        Intentionally different from ``assert_upload_reviewer``, which checks
+        the role unconditionally: uploaders should be able to self-review
+        without needing a separate role grant.
+        """
+        # Owner bypass: the self-service path needs no role check.
+        if bool(resource.owner) and resource.owner == principal.subject:
+            return
+        # Non-owner: fall through to the FGA platform-role check.
+        client = self._client_for(principal)
+        if client is None:
+            return
+        allowed = await client.check(
+            user=f"user:{principal.subject}",
+            relation="upload_reviewer",
+            object_=_PLATFORM_OBJECT,
+        )
+        if not allowed:
+            raise APIError(
+                status_code=403,
+                code="not_authorized",
+                detail=(
+                    "Principal is not the model owner and does not hold "
+                    "the platform upload_reviewer role."
+                ),
+            )
+
     async def assert_image_checker(self, principal: AuthenticatedPrincipal) -> None:
         """Gate image-review actions on the platform-wide ``image_checker`` role.
 

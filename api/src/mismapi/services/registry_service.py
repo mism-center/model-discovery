@@ -102,6 +102,15 @@ class RegistryService:
         """Gate mutation operations on per-model ownership."""
         await self._authz.assert_model_owner(principal, model_id=model_id)
 
+    async def assert_can_review_metadata(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        resource: Resource,
+    ) -> None:
+        """Gate metadata-review on ownership OR the upload_reviewer role."""
+        await self._authz.assert_can_review_metadata(principal, resource=resource)
+
     async def check_can_execute(
         self,
         principal: AuthenticatedPrincipal | None,
@@ -790,21 +799,21 @@ class RegistryService:
         approve: bool,
         reason: str = "",
     ) -> Resource:
-        """An UPLOAD_REVIEWER's approve/reject decision on a model's metadata
-        review (MISM-291, workflow steps e/f).
+        """Approve/reject decision on a model's metadata review (MISM-291, workflow steps e/f).
 
-        Gated on the platform-wide ``upload_reviewer`` role — global, not
-        per-submission, and self-review is explicitly allowed (a reviewer may
-        act on a model they themselves uploaded). Delegates the actual
+        Gated on ownership OR the platform-wide ``upload_reviewer`` role: the
+        model owner may self-approve without holding the role; non-owners must
+        hold ``upload_reviewer``. Delegates the actual
         ``PENDING_REVIEW -> APPROVED/REJECTED`` transition to
         ``mism_registry.set_registration_status``, which enforces the
         registration state machine and stamps ``metadata_reviewed_by``/
         ``metadata_reviewed_at``/``metadata_rejection_reason``.
 
-        Raises 403 (not a reviewer), 404 (model missing), 400 (illegal
-        transition, e.g. reviewing a model that isn't PENDING_REVIEW).
+        Raises 403 (not the owner and not a reviewer), 404 (model missing),
+        400 (illegal transition, e.g. reviewing a model that isn't PENDING_REVIEW).
         """
-        await self._authz.assert_upload_reviewer(principal)
+        resource = self.get_model(model_id)
+        await self._authz.assert_can_review_metadata(principal, resource=resource)
 
         target = (
             ResourceRegistrationStatus.APPROVED if approve else ResourceRegistrationStatus.REJECTED

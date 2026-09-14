@@ -7,6 +7,7 @@ import { reviewModelMetadata } from '~/api';
 import type { ModelListItem } from '~/api/endpoints/models';
 import { modelKeys } from '~/api/query/models';
 import { useCapabilities } from '~/api/auth/capabilities';
+import { useUser } from '~/api/auth/user';
 import { ApiErrorDisplay } from '~/components/common/api-error-display';
 import { ReviewCard } from '~/components/common/review-card';
 import { RejectReviewModal } from './reject-review-modal';
@@ -33,6 +34,8 @@ export function ReviewQueueCard({ model }: ReviewQueueCardProps) {
   const queryClient = useQueryClient();
   const rejectModal = useDisclosure();
   const { capabilities } = useCapabilities();
+  const { user } = useUser();
+  const isOwner = !!user && model.owner === user.sub;
 
   const approveMutation = useMutation({
     mutationFn: () =>
@@ -80,7 +83,8 @@ export function ReviewQueueCard({ model }: ReviewQueueCardProps) {
             startContent={<XMarkIcon className="size-4" />}
             onPress={rejectModal.onOpen}
             isDisabled={
-              !capabilities.upload_reviewer || approveMutation.isPending
+              (!capabilities.upload_reviewer && !isOwner) ||
+              approveMutation.isPending
             }
           >
             Reject
@@ -93,7 +97,8 @@ export function ReviewQueueCard({ model }: ReviewQueueCardProps) {
             onPress={() => approveMutation.mutate()}
             isLoading={approveMutation.isPending}
             isDisabled={
-              !capabilities.upload_reviewer || approveMutation.isPending
+              (!capabilities.upload_reviewer && !isOwner) ||
+              approveMutation.isPending
             }
           >
             Approve
