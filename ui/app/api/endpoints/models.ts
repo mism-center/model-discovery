@@ -32,16 +32,19 @@ export async function listModels(
   options: {
     registration_status?: string;
     owner?: string;
+    image_review_status?: string;
     client?: ApiClientType;
     signal?: AbortSignal;
   } = {}
 ): Promise<ModelListResponse> {
-  const { registration_status, owner, client, signal } = options;
+  const { registration_status, owner, image_review_status, client, signal } =
+    options;
   const { data } = await (client ?? apiClient).GET('/api/v1/models', {
     params: {
       query: {
         ...(registration_status ? { registration_status } : {}),
         ...(owner ? { owner } : {}),
+        ...(image_review_status ? { image_review_status } : {}),
         limit: 100,
       },
     },

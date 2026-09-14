@@ -45,13 +45,7 @@ function PendingReviewSection({ models }: { models: ModelListItem[] }) {
 
 // ── PendingImageReviewSection ─────────────────────────────────────────────────
 
-function PendingImageReviewSection({
-  models,
-  userId,
-}: {
-  models: ModelListItem[];
-  userId: string;
-}) {
+function PendingImageReviewSection({ models }: { models: ModelListItem[] }) {
   if (models.length === 0) return null;
 
   return (
@@ -61,11 +55,7 @@ function PendingImageReviewSection({
       </p>
       <div className="flex flex-col">
         {models.map((model) => (
-          <PendingImageReviewCard
-            key={model.id}
-            model={model}
-            userId={userId}
-          />
+          <PendingImageReviewCard key={model.id} model={model} />
         ))}
       </div>
       <div className="border-b border-default-200 mx-6 mt-2" />
@@ -203,10 +193,7 @@ export function SearchResults() {
       <SearchResultsHeader />
       {showPendingSection && <PendingReviewSection models={pendingModels} />}
       {showPendingImageSection && (
-        <PendingImageReviewSection
-          models={pendingImageModels}
-          userId={userId}
-        />
+        <PendingImageReviewSection models={pendingImageModels} />
       )}
       {showMainResults && (
         <SearchResultsContent filterExecutable={filterToExecutable} />

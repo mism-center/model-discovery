@@ -31,6 +31,10 @@ export class ApiError extends Error {
     this.url = options.url;
   }
 
+  get isUnauthenticated(): boolean {
+    return this.status === 401;
+  }
+
   get isAuthError(): boolean {
     return this.status === 401 || this.status === 403;
   }

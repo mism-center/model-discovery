@@ -102,41 +102,23 @@ class RegistryService:
         """Gate mutation operations on per-model ownership."""
         await self._authz.assert_model_owner(principal, model_id=model_id)
 
-    def _assert_input_resource_visible(
-        self, principal: AuthenticatedPrincipal, resource: Resource
-    ) -> None:
-        """Reject naming a run input the caller may not view (MISM-291 Phase 5).
+    async def check_can_execute(
+        self,
+        principal: AuthenticatedPrincipal | None,
+        *,
+        model_id: str,
+    ) -> bool:
+        """Non-asserting can_execute check — for embedding in responses."""
+        return await self._authz.check_can_execute(principal, model_id=model_id)
 
-        Closes the gap flagged in ``Docs/OpenFGA/MISM-OpenFGA-Auth-Model.md``
-        (goal 1, checklist item 8): ``create_run`` previously passed
-        ``input_resource_ids`` straight to ``prepare_run`` with no visibility
-        check, so a caller could name someone else's private dataset (or
-        model — ``prepare_run`` places no type restriction on inputs) as a run
-        input and have its contents surfaced back via the run's mounted
-        filesystem/outputs.
-
-        Interim string-equality check (not OpenFGA), matching this phase's
-        decision to reuse existing visibility logic rather than build a real
-        `can_view` check now — a real check would need the deferred
-        `viewer@user:*` wildcard tuple-writing (goal 1) as a prerequisite, or
-        it would incorrectly deny access to public/approved resources today.
-
-        Visibility predicate: approved (public) OR owned by the caller. Written
-        inline rather than imported — no `services` module imports from `api`
-        anywhere in this codebase. Raises 404 (not 403) on the
-        id-oracle-avoidance convention for *visibility* checks specifically —
-        as opposed to `get_resource_and_assert_ownership`'s 403, which gates
-        mutation-ownership, a different question. Label is generic ("Resource"),
-        not "Model" or "Dataset", since an input can be either.
-        """
-        public = resource.registration_status == ResourceRegistrationStatus.APPROVED
-        owned_by_caller = bool(resource.owner) and resource.owner == principal.subject
-        if not (public or owned_by_caller):
-            raise APIError(
-                status_code=404,
-                code="not_found",
-                detail=f"Resource '{resource.id}' not found.",
-            )
+    async def batch_check_can_execute(
+        self,
+        principal: AuthenticatedPrincipal | None,
+        *,
+        model_ids: list[str],
+    ) -> dict[str, bool]:
+        """Batch can_execute check — one FGA round trip for a list of model IDs."""
+        return await self._authz.batch_check_can_execute(principal, model_ids=model_ids)
 
     # ── Model operations ─────────────────────────────────────────────
 
@@ -389,7 +371,7 @@ class RegistryService:
                 input_resource = self._registry.get_resource(input_resource_id)
             except ResourceNotFoundError as exc:
                 raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
-            self._assert_input_resource_visible(principal, input_resource)
+            await self._authz.assert_can_view_input_resource(principal, resource=input_resource)
 
         try:
             run = prepare_run(
@@ -640,11 +622,22 @@ class RegistryService:
         DB is left untouched. The edited YAML text has already been written
         to disk by this point (validated above as syntactically-valid YAML),
         so the user's edits aren't lost; they can fix the structural issue
-        and re-submit. On success, ``registration_status`` is left alone,
-        with one exception: resubmitting a manually-fixed ``REJECTED``
-        package moves it back to ``PENDING_REVIEW`` (the state machine's
-        "resubmit after manual fix" transition) and clears
-        ``metadata_rejection_reason``, so it re-enters the reviewer queue.
+        and re-submit.
+
+        On success, two re-entry gates apply:
+
+        * ``REJECTED`` or ``APPROVED`` → ``PENDING_REVIEW``: any edit
+          re-enters the reviewer queue and clears ``metadata_rejection_reason``.
+          For REJECTED this is the "resubmit after manual fix" path; for
+          APPROVED it closes a bypass where an owner could otherwise silently
+          overwrite published metadata without going back through review.
+          Other statuses (PENDING_REVIEW, DRAFT, ANNOTATING, ANNOTATION_FAILED)
+          are left untouched.
+
+        * Container-image bypass: if the container list changed *and* the
+          image was previously ``IMAGE_APPROVED``, ``image_review_status`` is
+          reset to ``PENDING_IMAGE_CHECK`` and the audit fields are cleared —
+          the new image has not been vetted.
 
         Raises 403 (not owner), 404 (missing model/resource), 400 (unknown
         filename, syntactically malformed YAML, or a metadata-package that
@@ -677,7 +670,7 @@ class RegistryService:
 
         # Parse the updated package and sync every YAML-derived field into the DB.
         # A structural parse failure means the package can't be trusted at all —
-        # raise rather than approve, so the caller has to fix it and re-submit.
+        # raise so the caller has to fix it and re-submit; the DB is left untouched.
         try:
             parsed, warnings = build_resource_from_package(pkg_dir)
         except (
@@ -698,6 +691,9 @@ class RegistryService:
             resource = self._registry.get_resource(model_id)
         except ResourceNotFoundError as exc:
             raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+        # Capture before mutation so the image-bypass guard below can compare.
+        old_containers = resource.containers
 
         # Apply YAML-derived fields. Always preserve system-managed fields
         # regardless: id, owner, registration_status, metadata dict,
@@ -741,17 +737,36 @@ class RegistryService:
         resource.tests = parsed.tests
         resource.io = parsed.io
 
-        # Resubmitting a manually-fixed rejected package re-enters the
-        # reviewer queue automatically — the state machine already allows
-        # REJECTED -> PENDING_REVIEW for exactly this "resubmit after manual
-        # fix" case. Every other status (PENDING_REVIEW, APPROVED,
-        # DRAFT/ANNOTATING/ANNOTATION_FAILED — the latter three unreachable
-        # here in practice since _metadata_package_dir 404s before a package
-        # exists) is left untouched: this endpoint no longer decides
-        # approval at all — see RegistryService.review_metadata_package.
-        if resource.registration_status == ResourceRegistrationStatus.REJECTED:
+        # Re-entry gates: any edit to a REJECTED or APPROVED model re-enters
+        # the reviewer queue. REJECTED -> PENDING_REVIEW is the "resubmit after
+        # manual fix" path. APPROVED -> PENDING_REVIEW closes a bypass: without
+        # this gate an owner could silently overwrite published metadata
+        # (including the container list) without going back through review.
+        # PENDING_REVIEW, DRAFT, ANNOTATING, ANNOTATION_FAILED are left alone —
+        # the latter three are unreachable here in practice since
+        # _metadata_package_dir 404s before a package exists.
+        if resource.registration_status in (
+            ResourceRegistrationStatus.REJECTED,
+            ResourceRegistrationStatus.APPROVED,
+        ):
             resource.registration_status = ResourceRegistrationStatus.PENDING_REVIEW
             resource.metadata_rejection_reason = ""
+
+        # Image-bypass guard: if the container list changed and the image had
+        # already been approved, the new image hasn't been vetted — reset it
+        # to PENDING_IMAGE_CHECK so it re-enters the image review queue.
+        # This specifically closes the path where an owner swaps in an
+        # arbitrary container image on a published model without re-review.
+        # list() normalizes both sides: the DB may store a tuple while
+        # build_resource_from_package returns a list; element equality still holds.
+        if (
+            list(resource.containers) != list(old_containers)
+            and resource.image_review_status == ImageReviewStatus.IMAGE_APPROVED
+        ):
+            resource.image_review_status = ImageReviewStatus.PENDING_IMAGE_CHECK
+            resource.image_reviewed_by = ""
+            resource.image_reviewed_at = None
+            resource.image_rejection_reason = ""
 
         try:
             self._registry.update_resource(resource)
@@ -1063,6 +1078,7 @@ class RegistryService:
         organisms: list[str] | None = None,
         scales: list[str] | None = None,
         registration_status: str | None = None,
+        image_review_status: str | None = None,
     ) -> list[Resource]:
         """Return models visible to ``principal`` matching the given filters (MISM-291 Phase 5).
 
@@ -1086,6 +1102,8 @@ class RegistryService:
         )
         if registration_status is not None:
             resources = [r for r in resources if r.registration_status.value == registration_status]
+        if image_review_status is not None:
+            resources = [r for r in resources if r.image_review_status.value == image_review_status]
         return [
             r
             for r in resources

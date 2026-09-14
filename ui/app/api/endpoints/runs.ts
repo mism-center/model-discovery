@@ -28,14 +28,20 @@ export type UserRunItem = components['schemas']['UserRunItem'];
  * `entry_points` is required, not incidental: the run modal lets the user pick
  * one, so narrowing this type without it silently breaks launching from search.
  *
- * `owner` backs `RunControls`' client-side `can_execute` pre-check (MISM-291):
- * the backend relation resolves to true for the model's owner *or* a holder of
- * the platform-wide `executor` role, and owner comparison is the half of that
- * the UI can't get from `useCapabilities()` alone.
+ * `can_execute` is the server-authoritative OpenFGA answer for whether the
+ * requesting principal may run this model. Populated by the search and detail
+ * endpoints via a batch check so the UI never needs to approximate it
+ * client-side.
  */
 export type RunnableModel = Pick<
   components['schemas']['SearchResultItem'],
-  'id' | 'name' | 'execution_type' | 'io_spec' | 'entry_points' | 'owner'
+  | 'id'
+  | 'name'
+  | 'execution_type'
+  | 'io_spec'
+  | 'entry_points'
+  | 'owner'
+  | 'can_execute'
 > & {
   /**
    * Backs `RunModelModal`'s image-review blocking message (MISM-291).

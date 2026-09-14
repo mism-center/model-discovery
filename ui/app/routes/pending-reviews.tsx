@@ -18,7 +18,9 @@ export function meta() {
 
 /**
  * Auth-gated route (MISM-291): any signed-in user reaches this page to see
- * and act on their own models awaiting metadata approval — see `requireUser`.
+ * models awaiting metadata approval. Only ``upload_reviewer`` role holders
+ * can act on them — the approve/reject buttons in `ReviewQueueCard` enforce
+ * this via `useCapabilities`. See `requireUser`.
  * Mirrors `runs.tsx`'s loader shape exactly.
  */
 export async function loader({ request }: Route.LoaderArgs) {

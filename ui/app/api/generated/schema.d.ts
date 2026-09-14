@@ -254,13 +254,12 @@ export interface paths {
     put?: never;
     /**
      * Review Model Metadata Package
-     * @description An UPLOAD_REVIEWER's approve/reject decision on a PENDING_REVIEW model.
+     * @description An upload_reviewer's approve/reject decision on a PENDING_REVIEW model
+     *     (workflow steps e/f).
      *
-     *     Gated on the platform-wide ``upload_reviewer`` role, not ownership — the
-     *     human-review step (workflow steps e/f) that replaces
-     *     ``write_metadata_package_raw``'s old self-approve behavior. Self-review
-     *     is allowed here: the caller may hold ``upload_reviewer`` and also be the
-     *     model's uploader.
+     *     Gated on the platform-wide ``upload_reviewer`` role — global, not
+     *     per-submission. Self-review is allowed: a reviewer may act on a model
+     *     they themselves uploaded.
      */
     post: operations['review_model_metadata_package_api_v1_models__model_id__review_post'];
     delete?: never;
@@ -474,7 +473,7 @@ export interface paths {
      *     times out the client gets a 504 (see ExecutionClient.get_status).
      *
      *     Requires authentication, and only the user who triggered the run may read
-     *     it (404 otherwise — see ``_authz``).
+     *     it (404 otherwise).
      */
     get: operations['get_run_api_v1_runs__run_id__get'];
     put?: never;
@@ -1504,6 +1503,11 @@ export interface components {
        * @default
        */
       image_rejection_reason: string;
+      /**
+       * Can Execute
+       * @default false
+       */
+      can_execute: boolean;
       /**
        * Short Description
        * @default
@@ -2549,6 +2553,11 @@ export interface components {
       updated_at: string;
       /** Score */
       score?: number | null;
+      /**
+       * Can Execute
+       * @default false
+       */
+      can_execute: boolean;
     };
     /** SearchSortDTO */
     SearchSortDTO: {

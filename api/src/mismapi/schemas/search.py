@@ -123,6 +123,10 @@ class SearchResultItem(BaseModel):
     created_at: datetime
     updated_at: datetime
     score: float | None = None
+    # Permission hint: whether the requesting principal may execute this model.
+    # Populated server-side via OpenFGA; False for anonymous callers and
+    # non-executable resources.
+    can_execute: bool = False
 
 
 class AggBucketDTO(BaseModel):

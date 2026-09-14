@@ -1,28 +1,15 @@
 import cn from 'classnames';
 import { Button, useDisclosure } from '@heroui/react';
 import { CheckIcon, XMarkIcon } from '@heroicons/react/24/solid';
-import { CalendarIcon, UserIcon } from '@heroicons/react/16/solid';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router';
 
 import { reviewModelMetadata } from '~/api';
 import type { ModelListItem } from '~/api/endpoints/models';
 import { modelKeys } from '~/api/query/models';
-import { useUser } from '~/api/auth/user';
+import { useCapabilities } from '~/api/auth/capabilities';
 import { ApiErrorDisplay } from '~/components/common/api-error-display';
+import { ReviewCard } from '~/components/common/review-card';
 import { RejectReviewModal } from './reject-review-modal';
-
-function formatDate(iso: string) {
-  const date = new Date(iso);
-  if (Number.isNaN(date.valueOf())) return iso;
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(date);
-}
 
 interface ReviewQueueCardProps {
   model: ModelListItem;
@@ -45,9 +32,7 @@ interface ReviewQueueCardProps {
 export function ReviewQueueCard({ model }: ReviewQueueCardProps) {
   const queryClient = useQueryClient();
   const rejectModal = useDisclosure();
-  const { user } = useUser();
-  const isOwner = !!user && user.sub === model.owner;
-  const displayDate = model.date_published ?? model.created_at;
+  const { capabilities } = useCapabilities();
 
   const approveMutation = useMutation({
     mutationFn: () =>
@@ -58,102 +43,63 @@ export function ReviewQueueCard({ model }: ReviewQueueCardProps) {
   });
 
   return (
-    <div
-      className={cn(
-        'group relative p-6 rounded-2xl',
-        'flex items-stretch justify-between gap-6',
-        'transition-all duration-200',
-        'bg-transparent hover:bg-warning/4',
-        'hover:shadow-sm hover:shadow-warning/5 hover:-translate-y-px'
-      )}
-    >
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center flex-wrap gap-x-3 gap-y-3 min-h-8 mb-1">
-          <span
-            className={cn(
-              'inline-flex items-center px-2 py-0.5',
-              'rounded-xs bg-warning',
-              'text-white text-[10px] font-bold uppercase tracking-wide'
-            )}
-          >
-            Annotation Pending Review
-          </span>
-        </div>
-
-        <Link
-          to={`/models/${encodeURIComponent(model.id)}`}
-          className="text-xl font-bold font-headline text-primary hover:underline"
-        >
-          {model.name}
-        </Link>
-
-        {model.description && (
+    <ReviewCard
+      badge="Annotation Pending Review"
+      model={model}
+      titleAs="link"
+      subtitle={
+        model.description && (
           <p className="text-sm text-default-800 line-clamp-2 mt-2 leading-relaxed">
             {model.description}
           </p>
-        )}
-
-        <div className="flex items-center gap-4 mt-3 min-h-8">
-          <div
-            className={cn(
-              'flex flex-wrap items-center gap-x-4 gap-y-2',
-              'text-[11px] text-default-800 uppercase tracking-tight'
-            )}
-          >
-            {model.owner && (
-              <div className="flex items-center gap-1.5 font-medium text-primary">
-                <UserIcon className="size-3.5" />
-                <span>{model.owner}</span>
-              </div>
-            )}
-            <div className="flex items-center gap-1.5">
-              <CalendarIcon className="size-3.5" />
-              <span>{formatDate(displayDate)}</span>
-            </div>
-          </div>
-        </div>
-
-        {approveMutation.isError && (
+        )
+      }
+      error={
+        approveMutation.isError && (
           <ApiErrorDisplay
             error={approveMutation.error}
             title="Failed to approve"
             className="mt-3"
           />
-        )}
-      </div>
-
-      <RejectReviewModal
-        model={model}
-        isOpen={rejectModal.isOpen}
-        onClose={rejectModal.onClose}
-      />
-
-      <div className="flex flex-col justify-between items-end gap-2">
-        <Button
-          size="sm"
-          variant="flat"
-          className={cn(
-            'bg-transparent rounded-lg hover:opacity-100! active:opacity-90!',
-            'text-danger hover:bg-danger hover:text-white'
-          )}
-          startContent={<XMarkIcon className="size-4" />}
-          onPress={rejectModal.onOpen}
-          isDisabled={!isOwner || approveMutation.isPending}
-        >
-          Reject
-        </Button>
-        <Button
-          size="sm"
-          color="primary"
-          className="min-w-24 rounded-lg text-white font-bold"
-          startContent={<CheckIcon className="size-4" />}
-          onPress={() => approveMutation.mutate()}
-          isLoading={approveMutation.isPending}
-          isDisabled={!isOwner || approveMutation.isPending}
-        >
-          Approve
-        </Button>
-      </div>
-    </div>
+        )
+      }
+      actions={
+        <>
+          <RejectReviewModal
+            model={model}
+            isOpen={rejectModal.isOpen}
+            onClose={rejectModal.onClose}
+          />
+          <Button
+            size="sm"
+            variant="flat"
+            className={cn(
+              'bg-transparent rounded-lg hover:opacity-100! active:opacity-90!',
+              'text-danger hover:bg-danger hover:text-white'
+            )}
+            startContent={<XMarkIcon className="size-4" />}
+            onPress={rejectModal.onOpen}
+            isDisabled={
+              !capabilities.upload_reviewer || approveMutation.isPending
+            }
+          >
+            Reject
+          </Button>
+          <Button
+            size="sm"
+            color="primary"
+            className="min-w-24 rounded-lg text-white font-bold"
+            startContent={<CheckIcon className="size-4" />}
+            onPress={() => approveMutation.mutate()}
+            isLoading={approveMutation.isPending}
+            isDisabled={
+              !capabilities.upload_reviewer || approveMutation.isPending
+            }
+          >
+            Approve
+          </Button>
+        </>
+      }
+    />
   );
 }

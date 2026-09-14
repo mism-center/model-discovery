@@ -135,11 +135,12 @@ def _model_response(r: Resource) -> RegisterModelResponse:
     )
 
 
-def _model_detail_response(r: Resource) -> ModelDetailResponse:
+def _model_detail_response(r: Resource, *, can_execute: bool = False) -> ModelDetailResponse:
     # `entry_points` and `containers` are deliberately not repeated below:
     # `RegisterModelResponse` carries them, so they arrive via `base` and passing
     # them again raises "got multiple values for keyword argument".
     base = _model_response(r).model_dump()
+    base["can_execute"] = can_execute
     return ModelDetailResponse(
         **base,
         # Model characterization (schema.md Section A)
@@ -184,6 +185,9 @@ async def list_models(
     registration_status: str | None = Query(
         default=None, description="Exact match on registration status"
     ),
+    image_review_status: str | None = Query(
+        default=None, description="Exact match on image review status"
+    ),
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> ModelListResponse:
@@ -195,6 +199,7 @@ async def list_models(
         organisms=organisms,
         scales=scales,
         registration_status=registration_status,
+        image_review_status=image_review_status,
     )
 
     total = len(resources)
@@ -228,7 +233,8 @@ async def get_model(
     """
     resource = service.get_model(model_id)
     await service.assert_can_view_model(principal, resource=resource)
-    return _model_detail_response(resource)
+    can_execute = await service.check_can_execute(principal, model_id=model_id)
+    return _model_detail_response(resource, can_execute=can_execute)
 
 
 @router.post("/models", response_model=RegisterModelResponse, status_code=201)
@@ -415,10 +421,12 @@ async def review_model_metadata_package(
     service: RegistryServiceDep,
     principal: AuthenticatedPrincipalDep,
 ) -> RegisterModelResponse:
-    """The model owner's approve/reject decision on their own PENDING_REVIEW model.
+    """An upload_reviewer's approve/reject decision on a PENDING_REVIEW model
+    (workflow steps e/f).
 
-    Gated on ownership — only the principal who originally uploaded the model
-    may approve or reject its metadata package (workflow steps e/f).
+    Gated on the platform-wide ``upload_reviewer`` role — global, not
+    per-submission. Self-review is allowed: a reviewer may act on a model
+    they themselves uploaded.
     """
     resource = await service.review_metadata_package(
         principal,
