@@ -30,17 +30,39 @@ export interface FacetConfig {
    * params via the normal facet codec, but request-builder.ts skips it.
    */
   uiOnly?: boolean;
+  /**
+   * When true, this facet is sent to the API as a real filter/aggregation
+   * (not uiOnly) but is not rendered as an accordion section in the sidebar.
+   * Used for status fields (registration_status, image_review_status) that
+   * are set programmatically via URL params rather than sidebar interaction.
+   */
+  sidebarHidden?: boolean;
 }
 
 export const FACETS: readonly FacetConfig[] = [
+  // registration_status and image_review_status are real API filter fields —
+  // they compile into search requests and are URL-codec-supported — but they
+  // are not exposed as sidebar accordion items. Callers reach them via URL
+  // (e.g. ?registration_status=pending_review) rather than sidebar interaction.
+  // The backend conditionally lifts the registration_status=approved gate for
+  // authenticated callers and adds an owner constraint automatically.
   {
-    id: 'model_status',
-    field: 'model_status',
-    label: 'Model Status',
+    id: 'registration_status',
+    field: 'registration_status',
+    label: 'Registration Status',
     widget: 'terms',
     termsOp: 'in',
     resourceTypes: ['model'],
-    uiOnly: true,
+    sidebarHidden: true,
+  },
+  {
+    id: 'image_review_status',
+    field: 'image_review_status',
+    label: 'Image Review Status',
+    widget: 'terms',
+    termsOp: 'in',
+    resourceTypes: ['model'],
+    sidebarHidden: true,
   },
   {
     id: 'model_scales',

@@ -43,7 +43,7 @@ async def search_resources(
         offset=body.offset,
     )
 
-    result = service.search(query)
+    result = service.search(query, principal=principal)
 
     items = [
         SearchResultItem(

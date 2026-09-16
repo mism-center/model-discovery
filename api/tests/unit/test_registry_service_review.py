@@ -1,10 +1,18 @@
 """Unit tests for RegistryService.review_metadata_package (MISM-291).
 
-Covers the model-owner approve/reject action: ownership gate via
-`_assert_model_owner` (OpenFGA ``owner`` relation on ``model:{id}``),
-delegation to `mism_registry.set_registration_status` (state machine +
-reviewer-identity stamping), and error mapping
-(InvalidStateTransitionError -> 400).
+Covers:
+- Ownership gate via `_assert_model_owner` (OpenFGA ``owner`` relation on
+  ``model:{id}``)
+- Delegation to `mism_registry.set_registration_status` (state machine +
+  reviewer-identity stamping)
+- Error mapping (InvalidStateTransitionError -> 400)
+- Auto-apply of the annotation package on approval: ``_apply_metadata_package``
+  is called (and only called) when ``approve=True``, and a failure there
+  blocks approval and rolls back the transaction.
+
+The autouse ``_stub_apply_metadata_package`` fixture replaces the real
+disk-access call with a no-op for the auth / state-machine / OpenFGA tests.
+The auto-apply section at the bottom overrides it with controlled spies.
 """
 
 from __future__ import annotations
@@ -65,6 +73,22 @@ def _make_service(
     session = MagicMock()
     return RegistryService(
         registry=registry, session=session, authz=AuthorizationService(client=openfga_client)
+    )
+
+
+@pytest.fixture(autouse=True)
+def _stub_apply_metadata_package(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub out disk I/O for all tests in this module.
+
+    Auth / state-machine / OpenFGA tests don't care about the annotation
+    package contents — they just need approval not to fail on a missing
+    file.  The auto-apply section below overrides this stub per-test with
+    its own controlled spy or error-raising mock.
+    """
+    monkeypatch.setattr(
+        RegistryService,
+        "_apply_metadata_package",
+        lambda self, model_id, resource: [],
     )
 
 
@@ -242,3 +266,59 @@ async def test_approve_local_issuer_skips_viewer_tuple() -> None:
 
     assert resource.registration_status == ResourceRegistrationStatus.APPROVED
     client.write_tuple.assert_not_awaited()
+
+
+# ── Auto-apply on approval ────────────────────────────────────────────────
+
+
+async def test_approve_calls_apply_metadata_package(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Approval auto-applies the annotation package so search fields are populated."""
+    service = _make_service(_client(allowed=True))
+    calls: list[str] = []
+
+    def _spy(self: RegistryService, model_id: str, resource: Resource) -> list[str]:
+        calls.append(model_id)
+        return []
+
+    monkeypatch.setattr(RegistryService, "_apply_metadata_package", _spy)
+
+    await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
+
+    assert calls == ["m-1"]
+
+
+async def test_reject_skips_apply_metadata_package(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rejection skips the auto-apply — the package may be incomplete."""
+    service = _make_service(_client(allowed=True))
+    calls: list[str] = []
+
+    def _spy(self: RegistryService, model_id: str, resource: Resource) -> list[str]:
+        calls.append(model_id)
+        return []
+
+    monkeypatch.setattr(RegistryService, "_apply_metadata_package", _spy)
+
+    await service.review_metadata_package(
+        _principal("dana"), model_id="m-1", approve=False, reason="Needs work."
+    )
+
+    assert calls == []
+
+
+async def test_approve_rolls_back_when_apply_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A missing/broken annotation package blocks approval and rolls back the DB."""
+    service = _make_service(_client(allowed=True))
+    session = cast(MagicMock, service._session)
+
+    def _raise(self: RegistryService, model_id: str, resource: Resource) -> list[str]:
+        raise APIError(status_code=404, code="metadata_package_not_found", detail="no pkg")
+
+    monkeypatch.setattr(RegistryService, "_apply_metadata_package", _raise)
+
+    with pytest.raises(APIError) as excinfo:
+        await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
+
+    assert excinfo.value.status_code == 404
+    assert excinfo.value.code == "metadata_package_not_found"
+    session.commit.assert_not_called()
+    session.rollback.assert_called_once()

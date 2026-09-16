@@ -3,6 +3,7 @@ import cn from 'classnames';
 import { Link } from 'react-router';
 import { CalendarIcon, UserIcon } from '@heroicons/react/16/solid';
 
+import type { SearchResultItem } from '~/api';
 import type { ModelListItem } from '~/api/endpoints/models';
 import { formatDateTime } from '~/utils/format';
 import { AuthorListTooltip } from '~/components/sections/search/search-results/author-list-tooltip';
@@ -10,7 +11,9 @@ import { AuthorListTooltip } from '~/components/sections/search/search-results/a
 interface ReviewCardProps {
   /** Text shown in the warning badge above the title. */
   badge: string;
-  model: ModelListItem;
+  /** Accepts both search result items and models-list items — the fields
+   *  used here exist on both. */
+  model: ModelListItem | SearchResultItem;
   /**
    * How the title is rendered:
    * - `'link'`    — `<Link>` to the model detail page (reviewer cards)

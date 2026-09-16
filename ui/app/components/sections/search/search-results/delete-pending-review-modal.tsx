@@ -8,13 +8,13 @@ import {
 } from '@heroui/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
-import type { ModelListItem } from '~/api/endpoints/models';
+import type { SearchResultItem } from '~/api';
 import { deleteModel } from '~/api/endpoints/models';
 import { modelKeys } from '~/api/query/models';
 import { ApiErrorDisplay } from '~/components/common/api-error-display';
 
 interface DeletePendingReviewModalProps {
-  model: ModelListItem;
+  model: SearchResultItem;
   isOpen: boolean;
   onClose: () => void;
   /** Called after the deletion succeeds, before `onClose`. Use to invalidate

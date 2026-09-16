@@ -610,6 +610,63 @@ class RegistryService:
                 detail=f"Could not parse metadata-package for model {model_id}: {exc}",
             ) from exc
 
+    def _apply_metadata_package(self, model_id: str, resource: Resource) -> list[str]:
+        """Parse the on-disk metadata-package and apply all YAML-derived fields
+        to *resource* in place.  Returns the non-blocking parser warnings.
+
+        Raises APIError 404 if the package is missing, 400 if it cannot be
+        parsed.  Does NOT call ``update_resource`` or commit — the caller owns
+        the transaction.
+
+        Called by both ``write_metadata_package_raw`` (manual reviewer save)
+        and ``review_metadata_package`` (auto-apply on approval), ensuring
+        the DB is always populated before a model becomes publicly searchable.
+        """
+        parsed, warnings = self.parse_metadata_package(model_id)
+
+        # Apply YAML-derived fields.  Always preserve system-managed fields:
+        # id, owner, registration_status, metadata dict, location_uri,
+        # execution_ref, format_tags, digest_sha256, size_bytes, io_spec,
+        # version_status, new_version_of, superseded_by, organization,
+        # contact_email, date_published.
+        resource.name = parsed.name
+        resource.short_description = parsed.short_description
+        resource.description = parsed.description
+        resource.external_ids = parsed.external_ids
+        resource.license = parsed.license
+        resource.authors = parsed.authors
+        resource.contacts = parsed.contacts
+        resource.publications = parsed.publications
+        resource.related_resources = parsed.related_resources
+        resource.funding = parsed.funding
+        resource.model_scales = parsed.model_scales
+        resource.organisms = parsed.organisms
+        resource.domains = parsed.domains
+        resource.infectious_agents = parsed.infectious_agents
+        resource.health_conditions = parsed.health_conditions
+        resource.biological_processes = parsed.biological_processes
+        resource.molecular_entities = parsed.molecular_entities
+        resource.proteins_genes = parsed.proteins_genes
+        resource.model_class = parsed.model_class
+        resource.formalism = parsed.formalism
+        resource.determinism = parsed.determinism
+        resource.time_dynamics = parsed.time_dynamics
+        resource.spatial = parsed.spatial
+        resource.multiscale = parsed.multiscale
+        resource.execution_type = parsed.execution_type
+        resource.execution_status = parsed.execution_status
+        resource.language_name = parsed.language_name
+        resource.language_version = parsed.language_version
+        resource.execution_notes = parsed.execution_notes
+        resource.dependencies = parsed.dependencies
+        resource.containers = parsed.containers
+        resource.compute = parsed.compute
+        resource.entry_points = parsed.entry_points
+        resource.tests = parsed.tests
+        resource.io = parsed.io
+
+        return warnings
+
     def read_metadata_package_raw(self, model_id: str) -> list[tuple[str, str]]:
         """Return the raw text of each metadata-package YAML file, in order.
 
@@ -695,71 +752,15 @@ class RegistryService:
             (pkg_dir / name).write_text(content, encoding="utf-8")
         logger.info("Updated metadata-package for model %s by %s", model_id, principal.subject)
 
-        # Parse the updated package and sync every YAML-derived field into the DB.
-        # A structural parse failure means the package can't be trusted at all —
-        # raise so the caller has to fix it and re-submit; the DB is left untouched.
-        try:
-            parsed, warnings = build_resource_from_package(pkg_dir)
-        except (
-            KeyError,
-            TypeError,
-            ValueError,
-            AttributeError,
-            FileNotFoundError,
-            yaml.YAMLError,
-        ) as exc:
-            raise APIError(
-                status_code=400,
-                code="invalid_metadata_package",
-                detail=f"Metadata-package for model {model_id} could not be parsed: {exc}",
-            ) from exc
-
         try:
             resource = self._registry.get_resource(model_id)
         except ResourceNotFoundError as exc:
             raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
 
-        # Apply YAML-derived fields. Always preserve system-managed fields
-        # regardless: id, owner, registration_status, metadata dict,
-        # location_uri (iRODS path), execution_ref, format_tags, digest_sha256,
-        # size_bytes, io_spec, version_status, new_version_of, superseded_by,
-        # organization, contact_email, date_published.
-        resource.name = parsed.name
-        resource.short_description = parsed.short_description
-        resource.description = parsed.description
-        # resource.version = parsed.version
-        resource.external_ids = parsed.external_ids
-        resource.license = parsed.license
-        resource.authors = parsed.authors
-        resource.contacts = parsed.contacts
-        resource.publications = parsed.publications
-        resource.related_resources = parsed.related_resources
-        resource.funding = parsed.funding
-        resource.model_scales = parsed.model_scales
-        resource.organisms = parsed.organisms
-        resource.domains = parsed.domains
-        resource.infectious_agents = parsed.infectious_agents
-        resource.health_conditions = parsed.health_conditions
-        resource.biological_processes = parsed.biological_processes
-        resource.molecular_entities = parsed.molecular_entities
-        resource.proteins_genes = parsed.proteins_genes
-        resource.model_class = parsed.model_class
-        resource.formalism = parsed.formalism
-        resource.determinism = parsed.determinism
-        resource.time_dynamics = parsed.time_dynamics
-        resource.spatial = parsed.spatial
-        resource.multiscale = parsed.multiscale
-        resource.execution_type = parsed.execution_type
-        resource.execution_status = parsed.execution_status
-        resource.language_name = parsed.language_name
-        resource.language_version = parsed.language_version
-        resource.execution_notes = parsed.execution_notes
-        resource.dependencies = parsed.dependencies
-        resource.containers = parsed.containers
-        resource.compute = parsed.compute
-        resource.entry_points = parsed.entry_points
-        resource.tests = parsed.tests
-        resource.io = parsed.io
+        # Parse the updated package and sync every YAML-derived field into the DB.
+        # A structural parse failure means the package can't be trusted at all —
+        # raise so the caller has to fix it and re-submit; the DB is left untouched.
+        warnings = self._apply_metadata_package(model_id, resource)
 
         # Re-entry gate: editing a REJECTED model re-queues it for review.
         # APPROVED is blocked above; PENDING_REVIEW, DRAFT, ANNOTATING,
@@ -800,8 +801,18 @@ class RegistryService:
         registration state machine and stamps ``metadata_reviewed_by``/
         ``metadata_reviewed_at``/``metadata_rejection_reason``.
 
-        Raises 403 (not the owner and not a reviewer), 404 (model missing),
-        400 (illegal transition, e.g. reviewing a model that isn't PENDING_REVIEW).
+        On approval, auto-applies the on-disk metadata-package to the DB in
+        the same transaction so all YAML-derived search fields (organisms,
+        model_scales, etc.) are always populated before the model becomes
+        publicly searchable — even if the reviewer never explicitly pressed
+        "Save" on the annotation-review page.  Raises 404 if the package is
+        missing or 400 if it cannot be parsed, blocking approval until the
+        annotation is valid.
+
+        Rejection skips the auto-apply; the owner will fix and resubmit.
+
+        Raises 403 (not the owner and not a reviewer), 404 (model or package
+        missing on approval), 400 (illegal transition or unparseable package).
         """
         resource = self.get_model(model_id)
         await self._authz.assert_can_review_metadata(principal, resource=resource)
@@ -810,6 +821,13 @@ class RegistryService:
             ResourceRegistrationStatus.APPROVED if approve else ResourceRegistrationStatus.REJECTED
         )
         try:
+            # Auto-apply the annotation package before approving so every
+            # YAML-derived search field is written to the DB atomically.
+            # Skipped for rejection — the package may be incomplete and the
+            # owner will fix and resubmit.
+            if approve:
+                self._apply_metadata_package(model_id, resource)
+                self._registry.update_resource(resource)
             resource = set_registration_status(
                 self._registry,
                 resource_id=model_id,
@@ -1091,22 +1109,63 @@ class RegistryService:
 
     # ── Search ────────────────────────────────────────────────────────
 
-    # Search only surfaces published resources: the active version of a resource
-    # whose registration workflow reached APPROVED. Enforced here (not the
-    # endpoint) so no caller can bypass or widen the gate.
-    _SEARCH_GATE = {"version_status": "active", "registration_status": "approved"}
+    # version_status=active is always forced — no caller can widen it.
+    _ALWAYS_GATE: dict[str, str] = {"version_status": "active"}
+    # registration_status=approved is forced by default. Authenticated callers
+    # may override it to surface their own non-approved models (an owner
+    # constraint is added automatically — see search() below).
+    _DEFAULT_REG_GATE: dict[str, str] = {"registration_status": "approved"}
 
-    def search(self, query: SearchQuery) -> SearchResult:
+    def search(
+        self,
+        query: SearchQuery,
+        *,
+        principal: AuthenticatedPrincipal | None = None,
+    ) -> SearchResult:
         """Validate and execute a full-text search with filters and aggregations.
 
-        A fixed gate (version_status=active, registration_status=approved) is
-        forced on every search, overriding any client-supplied filters on those
-        fields so drafts / pending / rejected resources never leak into results.
+        Two gate layers apply:
+
+        * ``version_status=active`` — always forced; drafts / archived versions
+          never appear regardless of who is asking.
+        * ``registration_status=approved`` — forced by default so pending /
+          rejected models are invisible to public callers. An authenticated
+          caller (non-anonymous, non-local-dev) who explicitly supplies a
+          ``registration_status`` filter may override this gate to see their own
+          non-approved models; an ``owner == principal.subject`` constraint is
+          automatically appended so they cannot see other users' models. The
+          same owner-scoping applies when ``image_review_status`` is filtered
+          (approved models pending image review are visible only to their owner
+          unless an explicit ``owner`` filter is already present).
         """
+        explicit_reg_status = any(f.field == "registration_status" for f in query.filters)
+        explicit_img_status = any(f.field == "image_review_status" for f in query.filters)
+        # "local" issuer = dev auth-bypass; subject is synthetic, not a real user.
+        is_real_user = principal is not None and principal.issuer != "local"
+
+        # Build the effective always-gate and conditionally add the reg-status gate.
+        effective_gate = dict(self._ALWAYS_GATE)
+        if not (explicit_reg_status and is_real_user):
+            effective_gate.update(self._DEFAULT_REG_GATE)
+
         # Drop client filters on the gated fields, then append the forced gate.
-        kept = tuple(f for f in query.filters if f.field not in self._SEARCH_GATE)
-        gate = tuple(FieldFilter(field=k, op="eq", value=v) for k, v in self._SEARCH_GATE.items())
-        query = dataclasses.replace(query, filters=kept + gate)
+        kept = tuple(f for f in query.filters if f.field not in effective_gate)
+        gate_filters = tuple(
+            FieldFilter(field=k, op="eq", value=v) for k, v in effective_gate.items()
+        )
+        filters = kept + gate_filters
+
+        # When a real user overrides the registration_status gate or filters by
+        # image_review_status, add an owner constraint so they only see their
+        # own models — not those of other users.
+        if (
+            is_real_user
+            and (explicit_reg_status or explicit_img_status)
+            and not any(f.field == "owner" for f in query.filters)
+        ):
+            filters += (FieldFilter(field="owner", op="eq", value=principal.subject),)  # type: ignore[union-attr]
+
+        query = dataclasses.replace(query, filters=filters)
 
         # Validate filter fields and operators
         for f in query.filters:

@@ -2,11 +2,11 @@ import { useNavigate } from 'react-router';
 import { Button } from '@heroui/react';
 import { EyeIcon } from '@heroicons/react/24/solid';
 
-import type { ModelListItem } from '~/api/endpoints/models';
+import type { SearchResultItem } from '~/api';
 import { ReviewCard } from '~/components/common/review-card';
 
 interface PendingImageReviewCardProps {
-  model: ModelListItem;
+  model: SearchResultItem;
 }
 
 export function PendingImageReviewCard({ model }: PendingImageReviewCardProps) {

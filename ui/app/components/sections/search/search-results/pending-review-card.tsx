@@ -4,12 +4,12 @@ import { Button, useDisclosure } from '@heroui/react';
 import { TrashIcon } from '@heroicons/react/24/outline';
 import { WrenchIcon } from '@heroicons/react/24/solid';
 
-import type { ModelListItem } from '~/api/endpoints/models';
+import type { SearchResultItem } from '~/api';
 import { ReviewCard } from '~/components/common/review-card';
 import { DeletePendingReviewModal } from './delete-pending-review-modal';
 
 interface PendingReviewCardProps {
-  model: ModelListItem;
+  model: SearchResultItem;
 }
 
 export function PendingReviewCard({ model }: PendingReviewCardProps) {
