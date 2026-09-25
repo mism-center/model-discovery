@@ -2,7 +2,6 @@ import { Accordion, AccordionItem, DatePicker, Skeleton } from '@heroui/react';
 import { parseDate } from '@internationalized/date';
 import { useMemo } from 'react';
 import cn from 'classnames';
-import { useQuery } from '@tanstack/react-query';
 
 import type { AggResult } from '~/api';
 import {
@@ -11,8 +10,6 @@ import {
   TermsCheckboxGroup,
 } from '~/components/common/facets';
 import { useSearch } from '~/search/context/search-context';
-import { useUser } from '~/api/auth/user';
-import { pendingReviewModelsQueryOptions } from '~/api/query/models';
 import {
   facetsForResourceType,
   type FacetConfig,
@@ -21,15 +18,10 @@ import type { FacetValue } from '~/search/state/types';
 
 export function SearchSidebar() {
   const { state, data, setFacet, clearFacet } = useSearch();
-  const { user } = useUser();
-
-  const { data: pendingReviewData } = useQuery({
-    ...pendingReviewModelsQueryOptions(),
-    enabled: !!user,
-  });
 
   const facets = useMemo(
-    () => facetsForResourceType(state.resourceType),
+    () =>
+      facetsForResourceType(state.resourceType).filter((f) => !f.sidebarHidden),
     [state.resourceType]
   );
 
@@ -37,22 +29,6 @@ export function SearchSidebar() {
     () => facets.filter((f) => f.widget !== 'toggle').map((f) => f.id),
     [facets]
   );
-
-  // Pre-compute the model_status aggregation from available data so the
-  // TermsFacet can render counts without a real API aggregation field.
-  const modelStatusAgg: AggResult | undefined = useMemo(() => {
-    if (!data) return;
-    const executableCount = (
-      data.aggs?.['execution_type']?.buckets ?? []
-    ).reduce((sum, b) => sum + b.count, 0);
-    const pendingCount = pendingReviewData?.total ?? 0;
-    return {
-      buckets: [
-        { key: 'executable', count: executableCount },
-        { key: 'pending_review', count: pendingCount },
-      ],
-    };
-  }, [data, pendingReviewData]);
 
   return (
     <div className="flex flex-col h-full min-w-[320px] pb-8">
@@ -82,10 +58,7 @@ export function SearchSidebar() {
         className="p-0"
       >
         {facets.map((facet, index) => {
-          const agg: AggResult | undefined =
-            facet.id === 'model_status'
-              ? modelStatusAgg
-              : data?.aggs?.[facet.field];
+          const agg: AggResult | undefined = data?.aggs?.[facet.field];
           const value = state.facets[facet.id];
 
           if (facet.widget === 'toggle') {

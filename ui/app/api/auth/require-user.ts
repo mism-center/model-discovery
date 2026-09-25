@@ -63,8 +63,12 @@ export async function requireUser(
  * Build the login URL, carrying a `return_to` route key + the current query so
  * the post-login callback returns the user to the route they were gated out
  * of. Mirrors the params `loginHref()` sends from the browser.
+ *
+ * Exported for `requireCapability` (`~/api/auth/require-capability`), which
+ * needs the exact same anonymous-visitor redirect this file's `requireUser`
+ * already builds.
  */
-function buildLoginUrl(request: Request, returnToKey?: string): string {
+export function buildLoginUrl(request: Request, returnToKey?: string): string {
   const params = new URLSearchParams();
   if (returnToKey) {
     params.set('return_to_key', returnToKey);

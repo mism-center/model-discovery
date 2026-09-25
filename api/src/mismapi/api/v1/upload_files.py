@@ -32,10 +32,8 @@ async def upload_resource_file(
     writes to the iRODS PVC; `UPLOAD_BACKEND=http` forwards to the upload
     service) is selected at app startup; the route is backend-agnostic.
 
-    Ownership-gated (goal 1 stopgap — matches ``import_from_github``'s pattern):
-    without this, any authenticated principal could overwrite any resource's
-    files, regardless of who owns it (``TODO.md``'s "Auth / authz" section
-    already tracked this exact gap).
+    Ownership-gated: without this, any authenticated principal could
+    overwrite any resource's files, regardless of who owns it.
     """
     service.get_resource_and_assert_ownership(principal, resource_id=resource_id)
 

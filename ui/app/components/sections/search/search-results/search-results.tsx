@@ -1,13 +1,11 @@
 import { motion } from 'framer-motion';
 import { Pagination } from '@heroui/react';
-import { useQuery } from '@tanstack/react-query';
 import { useSearch } from '~/search/context/search-context';
-import { useUser } from '~/api/auth/user';
-import { pendingReviewModelsQueryOptions } from '~/api/query/models';
-import type { ModelListItem } from '~/api/endpoints/models';
+import type { SearchResultItem } from '~/api';
 import { ApiErrorDisplay } from '~/components/common/api-error-display';
 import { SearchResult } from './search-result';
 import { PendingReviewCard } from './pending-review-card';
+import { PendingImageReviewCard } from './pending-image-review-card';
 import { ResultSkeleton } from './skeleton';
 import { SearchResultsHeader } from './search-header';
 
@@ -21,13 +19,13 @@ const motionTransition = {
 
 // ── PendingReviewSection ──────────────────────────────────────────────────────
 
-function PendingReviewSection({ models }: { models: ModelListItem[] }) {
+function PendingReviewSection({ models }: { models: SearchResultItem[] }) {
   if (models.length === 0) return null;
 
   return (
     <div className="mb-6">
       <p className="text-[11px] font-bold uppercase tracking-widest text-default-500 px-6 mb-1">
-        Pending Review
+        Annotation Review
       </p>
       <div className="flex flex-col">
         {models.map((model) => (
@@ -39,13 +37,29 @@ function PendingReviewSection({ models }: { models: ModelListItem[] }) {
   );
 }
 
+// ── PendingImageReviewSection ─────────────────────────────────────────────────
+
+function PendingImageReviewSection({ models }: { models: SearchResultItem[] }) {
+  if (models.length === 0) return null;
+
+  return (
+    <div className="mb-6">
+      <p className="text-[11px] font-bold uppercase tracking-widest text-default-500 px-6 mb-1">
+        Image Pending Review
+      </p>
+      <div className="flex flex-col">
+        {models.map((model) => (
+          <PendingImageReviewCard key={model.id} model={model} />
+        ))}
+      </div>
+      <div className="border-b border-default-200 mx-6 mt-2" />
+    </div>
+  );
+}
+
 // ── SearchResultsContent ──────────────────────────────────────────────────────
 
-function SearchResultsContent({
-  filterExecutable,
-}: {
-  filterExecutable: boolean;
-}) {
+function SearchResultsContent() {
   const { state, data, isLoading, error, refetch } = useSearch();
 
   if (error) {
@@ -54,9 +68,7 @@ function SearchResultsContent({
     );
   }
 
-  const results = filterExecutable
-    ? (data?.results ?? []).filter((r) => Boolean(r.execution_type))
-    : (data?.results ?? []);
+  const results = data?.results ?? [];
 
   return (
     <motion.div
@@ -80,11 +92,6 @@ function SearchResultsContent({
         results.map((result) => (
           <SearchResult key={result.id} result={result} />
         ))}
-      {!isLoading && filterExecutable && results.length === 0 && (
-        <p className="text-sm text-default-500 px-6 py-4">
-          No executable models found.
-        </p>
-      )}
     </motion.div>
   );
 }
@@ -124,38 +131,39 @@ function SearchResultsPagination() {
 // ── SearchResults (root) ──────────────────────────────────────────────────────
 
 export function SearchResults() {
-  const { state, getFacet } = useSearch();
-  const { user } = useUser();
+  const { state, data } = useSearch();
 
-  const { data: pendingReviewData } = useQuery({
-    ...pendingReviewModelsQueryOptions(),
-    enabled: !!user,
-  });
-
-  const pendingModels = pendingReviewData?.results ?? [];
-  const hasPendingModels = pendingModels.length > 0;
   const isModelTab = state.resourceType === 'model';
 
-  const modelStatus = getFacet('model_status');
-  const selectedStatuses =
-    modelStatus?.kind === 'terms' ? modelStatus.values : [];
-  const pendingReviewOn = selectedStatuses.includes('pending_review');
-  const executableOn = selectedStatuses.includes('executable');
-  const anyFilterOn = pendingReviewOn || executableOn;
+  // Determine which status-filtered sections to show based on the active facets.
+  // registration_status=pending_review and image_review_status=pending_image_check
+  // are set via URL params (e.g. from admin page links); the backend gates the
+  // results to the caller's own models automatically.
+  const regStatus = state.facets['registration_status'];
+  const pendingReviewOn =
+    regStatus?.kind === 'terms' && regStatus.values.includes('pending_review');
 
-  const showPendingSection =
-    isModelTab && hasPendingModels && (!anyFilterOn || pendingReviewOn);
-  const showMainResults = !anyFilterOn || executableOn;
-  const filterToExecutable = isModelTab && executableOn;
+  const imgStatus = state.facets['image_review_status'];
+  const imagePendingReviewOn =
+    imgStatus?.kind === 'terms' &&
+    imgStatus.values.includes('pending_image_check');
+
+  // When a status filter is active the main search returns exactly those models;
+  // render the appropriate branded section instead of the generic result list.
+  const results = data?.results ?? [];
+  const showPendingSection = isModelTab && pendingReviewOn;
+  const showPendingImageSection = isModelTab && imagePendingReviewOn;
+  const showMainResults = !showPendingSection && !showPendingImageSection;
 
   return (
     <div className="flex flex-col w-full grow p-10">
       <SearchResultsHeader />
-      {showPendingSection && <PendingReviewSection models={pendingModels} />}
-      {showMainResults && (
-        <SearchResultsContent filterExecutable={filterToExecutable} />
+      {showPendingSection && <PendingReviewSection models={results} />}
+      {showPendingImageSection && (
+        <PendingImageReviewSection models={results} />
       )}
-      {showMainResults && !filterToExecutable && <SearchResultsPagination />}
+      {showMainResults && <SearchResultsContent />}
+      {showMainResults && <SearchResultsPagination />}
     </div>
   );
 }

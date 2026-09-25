@@ -441,6 +441,10 @@ class ModelDetailResponse(RegisterModelResponse):
     Create/update endpoints keep returning ``RegisterModelResponse``.
     """
 
+    # Permission hint: whether the requesting principal may execute this model.
+    # Populated server-side via OpenFGA; False for anonymous callers and
+    # non-executable resources.
+    can_execute: bool = False
     # Model characterization (schema.md Section A)
     short_description: str = ""
     model_class: list[str] = Field(default_factory=list)

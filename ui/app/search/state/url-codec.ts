@@ -54,12 +54,6 @@ export function searchStateFromParams(params: URLSearchParams): SearchState {
     if (value) facets[facet.id] = value;
   }
 
-  // Default model_status to 'executable' when on the models tab and nothing
-  // has been explicitly selected yet.
-  if (resourceType === 'model' && !facets['model_status']) {
-    facets['model_status'] = { kind: 'terms', values: ['executable'] };
-  }
-
   return {
     query,
     resourceType,
@@ -97,10 +91,8 @@ export function searchStateToParams(state: SearchState): URLSearchParams {
 /**
  * Whether the URL carries an explicit facet selection.
  *
- * Read from params, not from `SearchState.facets`, which is never empty on the
- * models tab: `searchStateFromParams` injects the default
- * `model_status=executable` there, so a state-based check reports "filtered" even
- * on a bare `/search`.
+ * Read from params, not from `SearchState.facets`, to avoid false positives
+ * from any state-initialization side-effects in `searchStateFromParams`.
  */
 export function hasExplicitFacetParams(params: URLSearchParams): boolean {
   for (const key of params.keys()) {

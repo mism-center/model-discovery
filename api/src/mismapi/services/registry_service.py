@@ -74,8 +74,7 @@ class RegistryService:
     # ── Auth delegation ──────────────────────────────────────────────
     # These public methods keep the existing call-site signatures stable
     # for routes and other callers while the underlying logic lives in
-    # AuthorizationService. Phase 6 will migrate the capabilities endpoint
-    # to inject AuthzDep directly; the run/model view methods can follow.
+    # AuthorizationService.
 
     async def assert_can_view_model(
         self,
@@ -102,41 +101,32 @@ class RegistryService:
         """Gate mutation operations on per-model ownership."""
         await self._authz.assert_model_owner(principal, model_id=model_id)
 
-    def _assert_input_resource_visible(
-        self, principal: AuthenticatedPrincipal, resource: Resource
+    async def assert_can_review_metadata(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        resource: Resource,
     ) -> None:
-        """Reject naming a run input the caller may not view (MISM-291 Phase 5).
+        """Gate metadata-review on ownership OR the upload_reviewer role."""
+        await self._authz.assert_can_review_metadata(principal, resource=resource)
 
-        Closes the gap flagged in ``Docs/OpenFGA/MISM-OpenFGA-Auth-Model.md``
-        (goal 1, checklist item 8): ``create_run`` previously passed
-        ``input_resource_ids`` straight to ``prepare_run`` with no visibility
-        check, so a caller could name someone else's private dataset (or
-        model — ``prepare_run`` places no type restriction on inputs) as a run
-        input and have its contents surfaced back via the run's mounted
-        filesystem/outputs.
+    async def check_can_execute(
+        self,
+        principal: AuthenticatedPrincipal | None,
+        *,
+        model_id: str,
+    ) -> bool:
+        """Non-asserting can_execute check — for embedding in responses."""
+        return await self._authz.check_can_execute(principal, model_id=model_id)
 
-        Interim string-equality check (not OpenFGA), matching this phase's
-        decision to reuse existing visibility logic rather than build a real
-        `can_view` check now — a real check would need the deferred
-        `viewer@user:*` wildcard tuple-writing (goal 1) as a prerequisite, or
-        it would incorrectly deny access to public/approved resources today.
-
-        Visibility predicate: approved (public) OR owned by the caller. Written
-        inline rather than imported — no `services` module imports from `api`
-        anywhere in this codebase. Raises 404 (not 403) on the
-        id-oracle-avoidance convention for *visibility* checks specifically —
-        as opposed to `get_resource_and_assert_ownership`'s 403, which gates
-        mutation-ownership, a different question. Label is generic ("Resource"),
-        not "Model" or "Dataset", since an input can be either.
-        """
-        public = resource.registration_status == ResourceRegistrationStatus.APPROVED
-        owned_by_caller = bool(resource.owner) and resource.owner == principal.subject
-        if not (public or owned_by_caller):
-            raise APIError(
-                status_code=404,
-                code="not_found",
-                detail=f"Resource '{resource.id}' not found.",
-            )
+    async def batch_check_can_execute(
+        self,
+        principal: AuthenticatedPrincipal | None,
+        *,
+        model_ids: list[str],
+    ) -> dict[str, bool]:
+        """Batch can_execute check — one FGA round trip for a list of model IDs."""
+        return await self._authz.batch_check_can_execute(principal, model_ids=model_ids)
 
     # ── Model operations ─────────────────────────────────────────────
 
@@ -223,8 +213,24 @@ class RegistryService:
         principal: AuthenticatedPrincipal,
         model_id: str,
     ) -> None:
-        """Delete a model: remove the DB record and wipe its on-disk directory."""
+        """Delete a model: remove the DB record and wipe its on-disk directory.
+
+        Blocked once the model reaches APPROVED status: at that point it is
+        publicly visible and may already be referenced by other users' runs or
+        datasets. Owners may delete models in any pre-approval state (DRAFT,
+        ANNOTATING, ANNOTATION_FAILED, PENDING_REVIEW, REJECTED).
+        """
         resource = self.get_resource_and_assert_ownership(principal, resource_id=model_id)
+
+        if resource.registration_status == ResourceRegistrationStatus.APPROVED:
+            raise APIError(
+                status_code=409,
+                code="model_already_approved",
+                detail=(
+                    f"Model '{model_id}' is approved and publicly visible. "
+                    "Deletion of approved models is not permitted."
+                ),
+            )
 
         mount = get_settings().irods_mount_path
         try:
@@ -389,7 +395,7 @@ class RegistryService:
                 input_resource = self._registry.get_resource(input_resource_id)
             except ResourceNotFoundError as exc:
                 raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
-            self._assert_input_resource_visible(principal, input_resource)
+            await self._authz.assert_can_view_input_resource(principal, resource=input_resource)
 
         try:
             run = prepare_run(
@@ -604,6 +610,63 @@ class RegistryService:
                 detail=f"Could not parse metadata-package for model {model_id}: {exc}",
             ) from exc
 
+    def _apply_metadata_package(self, model_id: str, resource: Resource) -> list[str]:
+        """Parse the on-disk metadata-package and apply all YAML-derived fields
+        to *resource* in place.  Returns the non-blocking parser warnings.
+
+        Raises APIError 404 if the package is missing, 400 if it cannot be
+        parsed.  Does NOT call ``update_resource`` or commit — the caller owns
+        the transaction.
+
+        Called by both ``write_metadata_package_raw`` (manual reviewer save)
+        and ``review_metadata_package`` (auto-apply on approval), ensuring
+        the DB is always populated before a model becomes publicly searchable.
+        """
+        parsed, warnings = self.parse_metadata_package(model_id)
+
+        # Apply YAML-derived fields.  Always preserve system-managed fields:
+        # id, owner, registration_status, metadata dict, location_uri,
+        # execution_ref, format_tags, digest_sha256, size_bytes, io_spec,
+        # version_status, new_version_of, superseded_by, organization,
+        # contact_email, date_published.
+        resource.name = parsed.name
+        resource.short_description = parsed.short_description
+        resource.description = parsed.description
+        resource.external_ids = parsed.external_ids
+        resource.license = parsed.license
+        resource.authors = parsed.authors
+        resource.contacts = parsed.contacts
+        resource.publications = parsed.publications
+        resource.related_resources = parsed.related_resources
+        resource.funding = parsed.funding
+        resource.model_scales = parsed.model_scales
+        resource.organisms = parsed.organisms
+        resource.domains = parsed.domains
+        resource.infectious_agents = parsed.infectious_agents
+        resource.health_conditions = parsed.health_conditions
+        resource.biological_processes = parsed.biological_processes
+        resource.molecular_entities = parsed.molecular_entities
+        resource.proteins_genes = parsed.proteins_genes
+        resource.model_class = parsed.model_class
+        resource.formalism = parsed.formalism
+        resource.determinism = parsed.determinism
+        resource.time_dynamics = parsed.time_dynamics
+        resource.spatial = parsed.spatial
+        resource.multiscale = parsed.multiscale
+        resource.execution_type = parsed.execution_type
+        resource.execution_status = parsed.execution_status
+        resource.language_name = parsed.language_name
+        resource.language_version = parsed.language_version
+        resource.execution_notes = parsed.execution_notes
+        resource.dependencies = parsed.dependencies
+        resource.containers = parsed.containers
+        resource.compute = parsed.compute
+        resource.entry_points = parsed.entry_points
+        resource.tests = parsed.tests
+        resource.io = parsed.io
+
+        return warnings
+
     def read_metadata_package_raw(self, model_id: str) -> list[tuple[str, str]]:
         """Return the raw text of each metadata-package YAML file, in order.
 
@@ -640,17 +703,31 @@ class RegistryService:
         DB is left untouched. The edited YAML text has already been written
         to disk by this point (validated above as syntactically-valid YAML),
         so the user's edits aren't lost; they can fix the structural issue
-        and re-submit. On success, ``registration_status`` is left alone,
-        with one exception: resubmitting a manually-fixed ``REJECTED``
-        package moves it back to ``PENDING_REVIEW`` (the state machine's
-        "resubmit after manual fix" transition) and clears
-        ``metadata_rejection_reason``, so it re-enters the reviewer queue.
+        and re-submit.
 
-        Raises 403 (not owner), 404 (missing model/resource), 400 (unknown
+        On success, one re-entry gate applies:
+
+        * ``REJECTED`` → ``PENDING_REVIEW``: editing a rejected submission
+          re-queues it for review and clears ``metadata_rejection_reason``.
+          Other statuses are left untouched.
+
+        Raises 403 (not owner), 404 (missing model/resource), 409 (model
+        already approved — editing is blocked past that point), 400 (unknown
         filename, syntactically malformed YAML, or a metadata-package that
         can't be mapped onto a Resource at all).
         """
-        self.get_resource_and_assert_ownership(principal, resource_id=model_id)
+        resource_check = self.get_resource_and_assert_ownership(principal, resource_id=model_id)
+
+        if resource_check.registration_status == ResourceRegistrationStatus.APPROVED:
+            raise APIError(
+                status_code=409,
+                code="model_already_approved",
+                detail=(
+                    f"Model '{model_id}' has been approved. "
+                    "Editing metadata of an approved model is not permitted."
+                ),
+            )
+
         pkg_dir = self._metadata_package_dir(model_id)
 
         # Validate everything up front so a bad file never partially overwrites.
@@ -675,80 +752,19 @@ class RegistryService:
             (pkg_dir / name).write_text(content, encoding="utf-8")
         logger.info("Updated metadata-package for model %s by %s", model_id, principal.subject)
 
-        # Parse the updated package and sync every YAML-derived field into the DB.
-        # A structural parse failure means the package can't be trusted at all —
-        # raise rather than approve, so the caller has to fix it and re-submit.
-        try:
-            parsed, warnings = build_resource_from_package(pkg_dir)
-        except (
-            KeyError,
-            TypeError,
-            ValueError,
-            AttributeError,
-            FileNotFoundError,
-            yaml.YAMLError,
-        ) as exc:
-            raise APIError(
-                status_code=400,
-                code="invalid_metadata_package",
-                detail=f"Metadata-package for model {model_id} could not be parsed: {exc}",
-            ) from exc
-
         try:
             resource = self._registry.get_resource(model_id)
         except ResourceNotFoundError as exc:
             raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
 
-        # Apply YAML-derived fields. Always preserve system-managed fields
-        # regardless: id, owner, registration_status, metadata dict,
-        # location_uri (iRODS path), execution_ref, format_tags, digest_sha256,
-        # size_bytes, io_spec, version_status, new_version_of, superseded_by,
-        # organization, contact_email, date_published.
-        resource.name = parsed.name
-        resource.short_description = parsed.short_description
-        resource.description = parsed.description
-        # resource.version = parsed.version
-        resource.external_ids = parsed.external_ids
-        resource.license = parsed.license
-        resource.authors = parsed.authors
-        resource.contacts = parsed.contacts
-        resource.publications = parsed.publications
-        resource.related_resources = parsed.related_resources
-        resource.funding = parsed.funding
-        resource.model_scales = parsed.model_scales
-        resource.organisms = parsed.organisms
-        resource.domains = parsed.domains
-        resource.infectious_agents = parsed.infectious_agents
-        resource.health_conditions = parsed.health_conditions
-        resource.biological_processes = parsed.biological_processes
-        resource.molecular_entities = parsed.molecular_entities
-        resource.proteins_genes = parsed.proteins_genes
-        resource.model_class = parsed.model_class
-        resource.formalism = parsed.formalism
-        resource.determinism = parsed.determinism
-        resource.time_dynamics = parsed.time_dynamics
-        resource.spatial = parsed.spatial
-        resource.multiscale = parsed.multiscale
-        resource.execution_type = parsed.execution_type
-        resource.execution_status = parsed.execution_status
-        resource.language_name = parsed.language_name
-        resource.language_version = parsed.language_version
-        resource.execution_notes = parsed.execution_notes
-        resource.dependencies = parsed.dependencies
-        resource.containers = parsed.containers
-        resource.compute = parsed.compute
-        resource.entry_points = parsed.entry_points
-        resource.tests = parsed.tests
-        resource.io = parsed.io
+        # Parse the updated package and sync every YAML-derived field into the DB.
+        # A structural parse failure means the package can't be trusted at all —
+        # raise so the caller has to fix it and re-submit; the DB is left untouched.
+        warnings = self._apply_metadata_package(model_id, resource)
 
-        # Resubmitting a manually-fixed rejected package re-enters the
-        # reviewer queue automatically — the state machine already allows
-        # REJECTED -> PENDING_REVIEW for exactly this "resubmit after manual
-        # fix" case. Every other status (PENDING_REVIEW, APPROVED,
-        # DRAFT/ANNOTATING/ANNOTATION_FAILED — the latter three unreachable
-        # here in practice since _metadata_package_dir 404s before a package
-        # exists) is left untouched: this endpoint no longer decides
-        # approval at all — see RegistryService.review_metadata_package.
+        # Re-entry gate: editing a REJECTED model re-queues it for review.
+        # APPROVED is blocked above; PENDING_REVIEW, DRAFT, ANNOTATING,
+        # ANNOTATION_FAILED are left untouched.
         if resource.registration_status == ResourceRegistrationStatus.REJECTED:
             resource.registration_status = ResourceRegistrationStatus.PENDING_REVIEW
             resource.metadata_rejection_reason = ""
@@ -775,26 +791,43 @@ class RegistryService:
         approve: bool,
         reason: str = "",
     ) -> Resource:
-        """An UPLOAD_REVIEWER's approve/reject decision on a model's metadata
-        review (MISM-291, workflow steps e/f).
+        """Approve/reject decision on a model's metadata review (MISM-291, workflow steps e/f).
 
-        Gated on the platform-wide ``upload_reviewer`` role — global, not
-        per-submission, and self-review is explicitly allowed (a reviewer may
-        act on a model they themselves uploaded). Delegates the actual
+        Gated on ownership OR the platform-wide ``upload_reviewer`` role: the
+        model owner may self-approve without holding the role; non-owners must
+        hold ``upload_reviewer``. Delegates the actual
         ``PENDING_REVIEW -> APPROVED/REJECTED`` transition to
         ``mism_registry.set_registration_status``, which enforces the
         registration state machine and stamps ``metadata_reviewed_by``/
         ``metadata_reviewed_at``/``metadata_rejection_reason``.
 
-        Raises 403 (not a reviewer), 404 (model missing), 400 (illegal
-        transition, e.g. reviewing a model that isn't PENDING_REVIEW).
+        On approval, auto-applies the on-disk metadata-package to the DB in
+        the same transaction so all YAML-derived search fields (organisms,
+        model_scales, etc.) are always populated before the model becomes
+        publicly searchable — even if the reviewer never explicitly pressed
+        "Save" on the annotation-review page.  Raises 404 if the package is
+        missing or 400 if it cannot be parsed, blocking approval until the
+        annotation is valid.
+
+        Rejection skips the auto-apply; the owner will fix and resubmit.
+
+        Raises 403 (not the owner and not a reviewer), 404 (model or package
+        missing on approval), 400 (illegal transition or unparseable package).
         """
-        await self._authz.assert_upload_reviewer(principal)
+        resource = self.get_model(model_id)
+        await self._authz.assert_can_review_metadata(principal, resource=resource)
 
         target = (
             ResourceRegistrationStatus.APPROVED if approve else ResourceRegistrationStatus.REJECTED
         )
         try:
+            # Auto-apply the annotation package before approving so every
+            # YAML-derived search field is written to the DB atomically.
+            # Skipped for rejection — the package may be incomplete and the
+            # owner will fix and resubmit.
+            if approve:
+                self._apply_metadata_package(model_id, resource)
+                self._registry.update_resource(resource)
             resource = set_registration_status(
                 self._registry,
                 resource_id=model_id,
@@ -959,36 +992,14 @@ class RegistryService:
 
         Used by the model detail page's run history. Pass ``triggered_by`` to
         scope the result to one user's runs.
-
-        Preferred path pushes ``triggered_by`` into the query so other users'
-        runs are never hydrated. That parameter only exists in the
-        metadata-schema working tree, not in the DAL revision
-        ``api/pyproject.toml`` pins, so there is a compatibility fallback that
-        filters after the fact. The fallback is strictly less efficient — it
-        hydrates rows it then discards — but it must never be less *safe*: both
-        paths return only the caller's runs. Delete the fallback once the pinned
-        DAL ref is bumped.
         """
         try:
-            try:
-                summary = get_model_run_details(  # type: ignore[call-arg]
-                    self._registry,
-                    model_id=model_id,
-                    status=status,
-                    triggered_by=triggered_by,
-                )
-            except TypeError:
-                summary = get_model_run_details(self._registry, model_id=model_id, status=status)
-                if triggered_by is not None:
-                    summary = dataclasses.replace(
-                        summary,
-                        runs=[
-                            detail
-                            for detail in summary.runs
-                            if detail.run.triggered_by == triggered_by
-                        ],
-                    )
-            return summary
+            return get_model_run_details(
+                self._registry,
+                model_id=model_id,
+                status=status,
+                triggered_by=triggered_by,
+            )
         except ResourceNotFoundError as exc:
             raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
         except RegistryValidationError as exc:
@@ -1063,8 +1074,9 @@ class RegistryService:
         organisms: list[str] | None = None,
         scales: list[str] | None = None,
         registration_status: str | None = None,
+        image_review_status: str | None = None,
     ) -> list[Resource]:
-        """Return models visible to ``principal`` matching the given filters (MISM-291 Phase 5).
+        """Return models visible to ``principal`` matching the given filters.
 
         Visibility filter (string-equality, not OpenFGA): approved models are
         public; anything still in the registration workflow is visible only to
@@ -1086,6 +1098,8 @@ class RegistryService:
         )
         if registration_status is not None:
             resources = [r for r in resources if r.registration_status.value == registration_status]
+        if image_review_status is not None:
+            resources = [r for r in resources if r.image_review_status.value == image_review_status]
         return [
             r
             for r in resources
@@ -1095,22 +1109,63 @@ class RegistryService:
 
     # ── Search ────────────────────────────────────────────────────────
 
-    # Search only surfaces published resources: the active version of a resource
-    # whose registration workflow reached APPROVED. Enforced here (not the
-    # endpoint) so no caller can bypass or widen the gate.
-    _SEARCH_GATE = {"version_status": "active", "registration_status": "approved"}
+    # version_status=active is always forced — no caller can widen it.
+    _ALWAYS_GATE: dict[str, str] = {"version_status": "active"}
+    # registration_status=approved is forced by default. Authenticated callers
+    # may override it to surface their own non-approved models (an owner
+    # constraint is added automatically — see search() below).
+    _DEFAULT_REG_GATE: dict[str, str] = {"registration_status": "approved"}
 
-    def search(self, query: SearchQuery) -> SearchResult:
+    def search(
+        self,
+        query: SearchQuery,
+        *,
+        principal: AuthenticatedPrincipal | None = None,
+    ) -> SearchResult:
         """Validate and execute a full-text search with filters and aggregations.
 
-        A fixed gate (version_status=active, registration_status=approved) is
-        forced on every search, overriding any client-supplied filters on those
-        fields so drafts / pending / rejected resources never leak into results.
+        Two gate layers apply:
+
+        * ``version_status=active`` — always forced; drafts / archived versions
+          never appear regardless of who is asking.
+        * ``registration_status=approved`` — forced by default so pending /
+          rejected models are invisible to public callers. An authenticated
+          caller (non-anonymous, non-local-dev) who explicitly supplies a
+          ``registration_status`` filter may override this gate to see their own
+          non-approved models; an ``owner == principal.subject`` constraint is
+          automatically appended so they cannot see other users' models. The
+          same owner-scoping applies when ``image_review_status`` is filtered
+          (approved models pending image review are visible only to their owner
+          unless an explicit ``owner`` filter is already present).
         """
+        explicit_reg_status = any(f.field == "registration_status" for f in query.filters)
+        explicit_img_status = any(f.field == "image_review_status" for f in query.filters)
+        # "local" issuer = dev auth-bypass; subject is synthetic, not a real user.
+        is_real_user = principal is not None and principal.issuer != "local"
+
+        # Build the effective always-gate and conditionally add the reg-status gate.
+        effective_gate = dict(self._ALWAYS_GATE)
+        if not (explicit_reg_status and is_real_user):
+            effective_gate.update(self._DEFAULT_REG_GATE)
+
         # Drop client filters on the gated fields, then append the forced gate.
-        kept = tuple(f for f in query.filters if f.field not in self._SEARCH_GATE)
-        gate = tuple(FieldFilter(field=k, op="eq", value=v) for k, v in self._SEARCH_GATE.items())
-        query = dataclasses.replace(query, filters=kept + gate)
+        kept = tuple(f for f in query.filters if f.field not in effective_gate)
+        gate_filters = tuple(
+            FieldFilter(field=k, op="eq", value=v) for k, v in effective_gate.items()
+        )
+        filters = kept + gate_filters
+
+        # When a real user overrides the registration_status gate or filters by
+        # image_review_status, add an owner constraint so they only see their
+        # own models — not those of other users.
+        if (
+            is_real_user
+            and (explicit_reg_status or explicit_img_status)
+            and not any(f.field == "owner" for f in query.filters)
+        ):
+            filters += (FieldFilter(field="owner", op="eq", value=principal.subject),)  # type: ignore[union-attr]
+
+        query = dataclasses.replace(query, filters=filters)
 
         # Validate filter fields and operators
         for f in query.filters:
@@ -1315,7 +1370,7 @@ class RegistryService:
         organisms: list[str] | None = None,
         scales: list[str] | None = None,
     ) -> list[Resource]:
-        """Return datasets visible to ``principal`` matching the given filters (MISM-291 Phase 5).
+        """Return datasets visible to ``principal`` matching the given filters.
 
         Same visibility predicate as ``list_models`` (approved OR owner) —
         see that method's docstring for the rationale.

@@ -56,6 +56,41 @@ class OpenFGAClient:
             )
         return allowed
 
+    async def batch_check(
+        self,
+        checks: dict[str, tuple[str, str, str]],
+    ) -> dict[str, bool]:
+        """Perform multiple relation checks in one OpenFGA round trip.
+
+        ``checks`` maps a caller-supplied correlation ID to a
+        ``(user, relation, object)`` triple. Returns a map of correlation IDs
+        to boolean ``allowed`` values. Empty input returns ``{}`` without a
+        network call.
+        """
+        if not checks:
+            return {}
+        body: dict[str, Any] = {
+            "checks": [
+                {
+                    "tuple_key": {
+                        "user": user,
+                        "relation": relation,
+                        "object": object_,
+                    },
+                    "correlation_id": corr_id,
+                }
+                for corr_id, (user, relation, object_) in checks.items()
+            ]
+        }
+        if self._authorization_model_id:
+            body["authorization_model_id"] = self._authorization_model_id
+
+        response = await self._post(
+            f"/stores/{self._store_id}/batch-check", body, action="batch_check"
+        )
+        result = response.get("result", {})
+        return {corr_id: bool(result.get(corr_id, {}).get("allowed", False)) for corr_id in checks}
+
     async def write_tuple(self, *, user: str, relation: str, object_: str) -> None:
         """Write a single relation tuple (e.g. grant a platform role or ownership)."""
         await self._write(writes=[{"user": user, "relation": relation, "object": object_}])

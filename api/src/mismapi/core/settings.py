@@ -90,7 +90,7 @@ class Settings(BaseSettings):
     )
     execution_timeout_seconds: float = Field(default=120.0, alias="EXECUTION_TIMEOUT_SECONDS")
 
-    # OpenFGA (authorization) — MISM-291 administrator approval gate
+    # OpenFGA (authorization) — platform role checks and per-model access control
     openfga_api_url: str = Field(default="http://localhost:8080", alias="OPENFGA_API_URL")
     openfga_store_id: str = Field(default="", alias="OPENFGA_STORE_ID")
     # Pins a specific authorization-model version rather than "whatever's

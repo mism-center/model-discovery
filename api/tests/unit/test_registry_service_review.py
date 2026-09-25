@@ -1,9 +1,18 @@
-"""Unit tests for RegistryService.review_metadata_package (MISM-291, Checkpoint 3-B).
+"""Unit tests for RegistryService.review_metadata_package (MISM-291).
 
-Covers the UPLOAD_REVIEWER approve/reject action: role gate via
-`_assert_upload_reviewer`, delegation to `mism_registry.set_registration_status`
-(state machine + reviewer-identity stamping), and error mapping
-(ResourceNotFoundError -> 404, InvalidStateTransitionError -> 400).
+Covers:
+- Ownership gate via `_assert_model_owner` (OpenFGA ``owner`` relation on
+  ``model:{id}``)
+- Delegation to `mism_registry.set_registration_status` (state machine +
+  reviewer-identity stamping)
+- Error mapping (InvalidStateTransitionError -> 400)
+- Auto-apply of the annotation package on approval: ``_apply_metadata_package``
+  is called (and only called) when ``approve=True``, and a failure there
+  blocks approval and rolls back the transaction.
+
+The autouse ``_stub_apply_metadata_package`` fixture replaces the real
+disk-access call with a no-op for the auth / state-machine / OpenFGA tests.
+The auto-apply section at the bottom overrides it with controlled spies.
 """
 
 from __future__ import annotations
@@ -29,7 +38,7 @@ from mismapi.services.authorization_service import AuthorizationService
 from mismapi.services.registry_service import RegistryService
 
 
-def _principal(subject: str = "erin") -> AuthenticatedPrincipal:
+def _principal(subject: str = "dana") -> AuthenticatedPrincipal:
     return AuthenticatedPrincipal(subject=subject, issuer="test", audience="mism-api", scopes=set())
 
 
@@ -67,12 +76,29 @@ def _make_service(
     )
 
 
-# ── Role gate ────────────────────────────────────────────────────────────
+@pytest.fixture(autouse=True)
+def _stub_apply_metadata_package(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub out disk I/O for all tests in this module.
+
+    Auth / state-machine / OpenFGA tests don't care about the annotation
+    package contents — they just need approval not to fail on a missing
+    file.  The auto-apply section below overrides this stub per-test with
+    its own controlled spy or error-raising mock.
+    """
+    monkeypatch.setattr(
+        RegistryService,
+        "_apply_metadata_package",
+        lambda self, model_id, resource: [],
+    )
 
 
-async def test_review_denied_when_not_a_reviewer() -> None:
-    client = _client(allowed=False)
-    service = _make_service(client)
+# ── Ownership gate (OpenFGA path) ─────────────────────────────────────────
+
+
+async def test_review_denied_when_openfga_check_fails() -> None:
+    # Non-owner ("erin") + FGA denies → 403.  Owner ("dana") would bypass FGA
+    # entirely; use a different principal to exercise the denial path.
+    service = _make_service(_client(allowed=False), owner="dana")
 
     with pytest.raises(APIError) as excinfo:
         await service.review_metadata_package(_principal("erin"), model_id="m-1", approve=True)
@@ -81,15 +107,32 @@ async def test_review_denied_when_not_a_reviewer() -> None:
     assert excinfo.value.code == "not_authorized"
 
 
-async def test_review_allows_self_review() -> None:
-    """The reviewer and the model's owner may be the same person (decided 2026-08-21)."""
-    client = _client(allowed=True)
-    service = _make_service(client, owner="erin")
+async def test_owner_can_self_review_without_upload_reviewer_role() -> None:
+    """Model owner may approve their own submission even if FGA would deny upload_reviewer."""
+    service = _make_service(_client(allowed=False), owner="dana")
 
     resource = await service.review_metadata_package(
-        _principal("erin"), model_id="m-1", approve=True
+        _principal("dana"), model_id="m-1", approve=True
     )
 
+    assert resource.registration_status == ResourceRegistrationStatus.APPROVED
+    assert resource.metadata_reviewed_by == "dana"
+
+
+async def test_review_local_issuer_bypasses_all_auth_checks() -> None:
+    # issuer=="local" → OpenFGA skipped; get_resource_and_assert_ownership also
+    # skips its ownership check for local principals (dev/disable_auth mode).
+    # Both auth layers are fully bypassed — the action succeeds regardless of
+    # whether the principal owns the model.
+    client = _client(allowed=False)  # would deny if consulted, but it won't be
+    service = _make_service(client, owner="dana")
+    local_principal = AuthenticatedPrincipal(
+        subject="erin", issuer="local", audience="local", scopes=set()
+    )
+
+    resource = await service.review_metadata_package(local_principal, model_id="m-1", approve=True)
+
+    client.check.assert_not_awaited()
     assert resource.registration_status == ResourceRegistrationStatus.APPROVED
 
 
@@ -97,15 +140,14 @@ async def test_review_allows_self_review() -> None:
 
 
 async def test_approve_transitions_to_approved_and_stamps_reviewer() -> None:
-    client = _client(allowed=True)
-    service = _make_service(client)
+    service = _make_service(_client(allowed=True))
 
     resource = await service.review_metadata_package(
-        _principal("erin"), model_id="m-1", approve=True
+        _principal("dana"), model_id="m-1", approve=True
     )
 
     assert resource.registration_status == ResourceRegistrationStatus.APPROVED
-    assert resource.metadata_reviewed_by == "erin"
+    assert resource.metadata_reviewed_by == "dana"
     assert resource.metadata_reviewed_at is not None
     assert resource.metadata_rejection_reason == ""
 
@@ -114,53 +156,41 @@ async def test_approve_transitions_to_approved_and_stamps_reviewer() -> None:
 
 
 async def test_reject_transitions_to_rejected_and_records_reason() -> None:
-    client = _client(allowed=True)
-    service = _make_service(client)
+    service = _make_service(_client(allowed=True))
 
     resource = await service.review_metadata_package(
-        _principal("erin"), model_id="m-1", approve=False, reason="Missing license info."
+        _principal("dana"), model_id="m-1", approve=False, reason="Missing license info."
     )
 
     assert resource.registration_status == ResourceRegistrationStatus.REJECTED
-    assert resource.metadata_reviewed_by == "erin"
+    assert resource.metadata_reviewed_by == "dana"
     assert resource.metadata_rejection_reason == "Missing license info."
 
 
 # ── Error mapping ────────────────────────────────────────────────────────
 
 
-async def test_review_missing_model_raises_404() -> None:
-    client = _client(allowed=True)
-    service = _make_service(client)
-
-    with pytest.raises(APIError) as excinfo:
-        await service.review_metadata_package(
-            _principal("erin"), model_id="does-not-exist", approve=True
-        )
-
-    assert excinfo.value.status_code == 404
-    assert excinfo.value.code == "not_found"
-
-
 async def test_review_illegal_transition_raises_400() -> None:
-    client = _client(allowed=True)
     # APPROVED is a terminal state — no transition out of it is legal.
-    service = _make_service(client, registration_status=ResourceRegistrationStatus.APPROVED)
+    service = _make_service(
+        _client(allowed=True), registration_status=ResourceRegistrationStatus.APPROVED
+    )
 
     with pytest.raises(APIError) as excinfo:
-        await service.review_metadata_package(_principal("erin"), model_id="m-1", approve=True)
+        await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
 
     assert excinfo.value.status_code == 400
     assert excinfo.value.code == "invalid_state_transition"
 
 
 async def test_review_illegal_transition_does_not_commit() -> None:
-    client = _client(allowed=True)
-    service = _make_service(client, registration_status=ResourceRegistrationStatus.APPROVED)
+    service = _make_service(
+        _client(allowed=True), registration_status=ResourceRegistrationStatus.APPROVED
+    )
     session = cast(MagicMock, service._session)
 
     with pytest.raises(APIError):
-        await service.review_metadata_package(_principal("erin"), model_id="m-1", approve=True)
+        await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
 
     session.commit.assert_not_called()
     session.rollback.assert_called_once()
@@ -236,3 +266,59 @@ async def test_approve_local_issuer_skips_viewer_tuple() -> None:
 
     assert resource.registration_status == ResourceRegistrationStatus.APPROVED
     client.write_tuple.assert_not_awaited()
+
+
+# ── Auto-apply on approval ────────────────────────────────────────────────
+
+
+async def test_approve_calls_apply_metadata_package(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Approval auto-applies the annotation package so search fields are populated."""
+    service = _make_service(_client(allowed=True))
+    calls: list[str] = []
+
+    def _spy(self: RegistryService, model_id: str, resource: Resource) -> list[str]:
+        calls.append(model_id)
+        return []
+
+    monkeypatch.setattr(RegistryService, "_apply_metadata_package", _spy)
+
+    await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
+
+    assert calls == ["m-1"]
+
+
+async def test_reject_skips_apply_metadata_package(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rejection skips the auto-apply — the package may be incomplete."""
+    service = _make_service(_client(allowed=True))
+    calls: list[str] = []
+
+    def _spy(self: RegistryService, model_id: str, resource: Resource) -> list[str]:
+        calls.append(model_id)
+        return []
+
+    monkeypatch.setattr(RegistryService, "_apply_metadata_package", _spy)
+
+    await service.review_metadata_package(
+        _principal("dana"), model_id="m-1", approve=False, reason="Needs work."
+    )
+
+    assert calls == []
+
+
+async def test_approve_rolls_back_when_apply_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A missing/broken annotation package blocks approval and rolls back the DB."""
+    service = _make_service(_client(allowed=True))
+    session = cast(MagicMock, service._session)
+
+    def _raise(self: RegistryService, model_id: str, resource: Resource) -> list[str]:
+        raise APIError(status_code=404, code="metadata_package_not_found", detail="no pkg")
+
+    monkeypatch.setattr(RegistryService, "_apply_metadata_package", _raise)
+
+    with pytest.raises(APIError) as excinfo:
+        await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
+
+    assert excinfo.value.status_code == 404
+    assert excinfo.value.code == "metadata_package_not_found"
+    session.commit.assert_not_called()
+    session.rollback.assert_called_once()

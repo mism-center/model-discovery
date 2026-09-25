@@ -1,18 +1,20 @@
 """Unit tests for RegistryService's create_run input-resource visibility gate
 (MISM-291, Checkpoint 5-B).
 
-Covers `_assert_input_resource_visible`: `create_run` previously passed
-`input_resource_ids` straight to `prepare_run` with no visibility check, so a
-caller could name someone else's private dataset as a run input and have its
-contents surfaced back via the run's mounted filesystem/outputs
-(`Docs/OpenFGA/MISM-OpenFGA-Auth-Model.md`, goal 1, checklist item 8). This is
-an interim string-equality check (approved OR owner match), not a real
-OpenFGA `can_view` check — see the docstring on
-`_assert_input_resource_visible` for why.
+Covers `AuthorizationService.assert_can_view_input_resource` via `create_run`:
+previously `input_resource_ids` were passed straight to `prepare_run` with no
+visibility check, so a caller could name someone else's private dataset as a
+run input and have its contents surfaced back via the run's mounted
+filesystem/outputs (`Docs/OpenFGA/MISM-OpenFGA-Auth-Model.md`, goal 1,
+checklist item 8).
 
-The model itself is always caller-owned and OpenFGA-unconfigured (`client=None`)
-in these tests so `_assert_can_execute` (Checkpoint 5-A) never interferes —
-these tests isolate the *input-resource* gate specifically.
+All tests run with no OpenFGA client (`client=None`) so they exercise the
+string-equality fallback path (approved OR owner match). FGA-path coverage
+belongs in the AuthorizationService unit tests.
+
+The model itself is always caller-owned and OpenFGA-unconfigured so
+`assert_can_execute` (Checkpoint 5-A) never interferes — these tests isolate
+the *input-resource* gate specifically.
 """
 
 from __future__ import annotations

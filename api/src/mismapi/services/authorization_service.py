@@ -13,7 +13,7 @@ import logging
 from dataclasses import dataclass
 from typing import Literal
 
-from mism_registry.enums import ResourceRegistrationStatus
+from mism_registry.enums import ResourceRegistrationStatus, ResourceType
 from mism_registry.resource import Resource
 from mism_registry.run import Run
 
@@ -112,6 +112,45 @@ class AuthorizationService:
                 detail="Principal does not hold the platform upload_reviewer role.",
             )
 
+    async def assert_can_review_metadata(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        resource: Resource,
+    ) -> None:
+        """Gate metadata-review on ownership OR the platform-wide ``upload_reviewer`` role.
+
+        Owner bypass: if the principal is the DB owner of ``resource``, they
+        may approve/reject their own submission without holding the
+        ``upload_reviewer`` platform role.  Non-owners fall through to the FGA
+        platform-role check.
+
+        Intentionally different from ``assert_upload_reviewer``, which checks
+        the role unconditionally: uploaders should be able to self-review
+        without needing a separate role grant.
+        """
+        # Owner bypass: the self-service path needs no role check.
+        if bool(resource.owner) and resource.owner == principal.subject:
+            return
+        # Non-owner: fall through to the FGA platform-role check.
+        client = self._client_for(principal)
+        if client is None:
+            return
+        allowed = await client.check(
+            user=f"user:{principal.subject}",
+            relation="upload_reviewer",
+            object_=_PLATFORM_OBJECT,
+        )
+        if not allowed:
+            raise APIError(
+                status_code=403,
+                code="not_authorized",
+                detail=(
+                    "Principal is not the model owner and does not hold "
+                    "the platform upload_reviewer role."
+                ),
+            )
+
     async def assert_image_checker(self, principal: AuthenticatedPrincipal) -> None:
         """Gate image-review actions on the platform-wide ``image_checker`` role.
 
@@ -156,6 +195,59 @@ class AuthorizationService:
                 detail="Principal is not authorized to execute this model.",
             )
 
+    async def check_can_execute(
+        self,
+        principal: AuthenticatedPrincipal | None,
+        *,
+        model_id: str,
+    ) -> bool:
+        """Return True if ``principal`` holds ``can_execute`` on ``model:{model_id}``.
+
+        Non-asserting variant of ``assert_can_execute`` — returns a bool rather
+        than raising, for embedding permission hints in responses.
+
+        * ``principal is None`` (anonymous) → ``False``.
+        * No FGA client (local dev / unconfigured) → ``True`` (permissive default).
+        * FGA client present → real ``can_execute`` check on ``model:{model_id}``.
+        """
+        if principal is None:
+            return False
+        client = self._client_for(principal)
+        if client is None:
+            return True
+        return await client.check(
+            user=f"user:{principal.subject}",
+            relation="can_execute",
+            object_=f"model:{model_id}",
+        )
+
+    async def batch_check_can_execute(
+        self,
+        principal: AuthenticatedPrincipal | None,
+        *,
+        model_ids: list[str],
+    ) -> dict[str, bool]:
+        """Return ``{model_id: can_execute}`` for every id in ``model_ids``.
+
+        One OpenFGA round trip regardless of list length (uses ``/batch-check``).
+
+        * Empty list → ``{}``.
+        * ``principal is None`` (anonymous) → all ``False``.
+        * No FGA client (local dev / unconfigured) → all ``True``.
+        * FGA client present → real per-model ``can_execute`` checks.
+        """
+        if not model_ids:
+            return {}
+        if principal is None:
+            return dict.fromkeys(model_ids, False)
+        client = self._client_for(principal)
+        if client is None:
+            return dict.fromkeys(model_ids, True)
+        user = f"user:{principal.subject}"
+        return await client.batch_check(
+            {mid: (user, "can_execute", f"model:{mid}") for mid in model_ids}
+        )
+
     async def assert_model_owner(self, principal: AuthenticatedPrincipal, *, model_id: str) -> None:
         """Gate mutation operations on per-model ownership.
 
@@ -192,10 +284,15 @@ class AuthorizationService:
         Raises 404 (not 403) on the id-oracle-avoidance convention: a caller
         who cannot see a resource must not be told it exists.
 
-        Three resolution paths:
+        Resolution paths:
         * Anonymous (``principal is None``): approved == public; no identity to
           check ownership against.
-        * Authenticated + FGA client: ``can_view`` on ``model:{id}``.
+        * Authenticated + FGA client, allowed: ``can_view`` on ``model:{id}``
+          returns True.
+        * Authenticated + FGA client, denied but DB owner: FGA and Postgres can
+          diverge when the OpenFGA container restarts with ephemeral storage;
+          DB-owner equality is the fallback so the owner can still reach their
+          model.
         * Authenticated, no FGA client (``issuer == "local"`` or unconfigured):
           string-equality fallback — approved OR owner match.
         """
@@ -216,11 +313,63 @@ class AuthorizationService:
                 relation="can_view",
                 object_=f"model:{resource.id}",
             )
-            if not allowed:
+            if allowed:
+                return
+            # FGA denied, but the DB and FGA stores can diverge: if the
+            # OpenFGA container restarts with ephemeral storage (the default
+            # dev/test setup), its tuples are lost while the Postgres records
+            # remain.  Fall back to DB-owner equality so the owner can still
+            # reach their own model.  With persistent OpenFGA storage this
+            # branch is unreachable for legitimate owners.
+            owned = bool(resource.owner) and resource.owner == principal.subject
+            if not owned:
                 raise _not_visible
             return
 
         # No FGA client (local dev or unconfigured): string-equality fallback.
+        public = resource.registration_status == ResourceRegistrationStatus.APPROVED
+        owned = bool(resource.owner) and resource.owner == principal.subject
+        if not (public or owned):
+            raise _not_visible
+
+    async def assert_can_view_input_resource(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        resource: Resource,
+    ) -> None:
+        """Raise APIError(404) if ``principal`` cannot view ``resource`` as a run input.
+
+        Closes the gap flagged in ``Docs/OpenFGA/MISM-OpenFGA-Auth-Model.md``
+        (goal 1, checklist item 8): a caller must not be able to name a private
+        resource as a run input and surface its contents via the mounted filesystem.
+
+        Raises 404 (not 403) on the id-oracle-avoidance convention.
+
+        Resolution paths:
+        * Authenticated + FGA client + MODEL resource: ``can_view`` on ``model:{id}``.
+        * Authenticated, no FGA client (``issuer == "local"`` or unconfigured):
+          string-equality fallback — approved OR owner match.
+        * Non-model resource types (e.g. datasets): not modelled in FGA;
+          string-equality fallback regardless of client presence.
+        """
+        _not_visible = APIError(
+            status_code=404,
+            code="not_found",
+            detail=f"Resource '{resource.id}' not found.",
+        )
+        client = self._client_for(principal)
+        if client is not None and resource.resource_type == ResourceType.MODEL:
+            allowed = await client.check(
+                user=f"user:{principal.subject}",
+                relation="can_view",
+                object_=f"model:{resource.id}",
+            )
+            if not allowed:
+                raise _not_visible
+            return
+
+        # No FGA client, or non-model resource type: string-equality fallback.
         public = resource.registration_status == ResourceRegistrationStatus.APPROVED
         owned = bool(resource.owner) and resource.owner == principal.subject
         if not (public or owned):
@@ -302,7 +451,7 @@ class AuthorizationService:
 
         The platform tuple is required for ``model#can_execute``'s
         ``tupleToUserset`` (``owner`` OR ``platform#executor``) to resolve.
-        Both writes are skipped per ``_client_for``'s rules.
+        Skipped when ``_client_for`` returns None.
         """
         client = self._client_for(principal)
         if client is None:

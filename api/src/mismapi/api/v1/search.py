@@ -3,6 +3,7 @@ import logging
 from fastapi import APIRouter
 from mism_registry.search import FieldFilter, SearchQuery
 
+from mismapi.auth.base import OptionalPrincipalDep
 from mismapi.core.deps import RegistryServiceDep
 from mismapi.schemas.registry import (
     author_to_dto,
@@ -28,6 +29,7 @@ router = APIRouter()
 async def search_resources(
     body: SearchRequest,
     service: RegistryServiceDep,
+    principal: OptionalPrincipalDep,
 ) -> SearchResponse:
     """Full-text search across models and datasets with filters and aggregations."""
 
@@ -41,7 +43,7 @@ async def search_resources(
         offset=body.offset,
     )
 
-    result = service.search(query)
+    result = service.search(query, principal=principal)
 
     items = [
         SearchResultItem(
@@ -79,6 +81,15 @@ async def search_resources(
         )
         for i, r in enumerate(result.resources)
     ]
+
+    # Populate can_execute for executable models in one FGA round trip.
+    # Non-executable items (datasets, non-runnable models) keep the default False.
+    executable_ids = [item.id for item in items if item.execution_type]
+    if executable_ids:
+        can_execute_map = await service.batch_check_can_execute(principal, model_ids=executable_ids)
+        for item in items:
+            if item.execution_type:
+                item.can_execute = can_execute_map.get(item.id, False)
 
     aggs = {
         field_name: AggResultDTO(

@@ -346,21 +346,37 @@ def test_write_from_rejected_returns_to_pending_review_and_clears_reason(
     assert stored.metadata_reviewed_by == "erin"
 
 
-def test_write_from_approved_leaves_status_unchanged(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """An already-APPROVED model's raw package can still be edited by its
-    owner (ownership-gated only, same as other model edits) — but doing so
-    does not change registration_status at all."""
+def test_write_from_approved_raises_409(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Editing an APPROVED model is blocked — the model is publicly visible
+    and editing post-approval is not permitted."""
     _make_package(tmp_path)
     service = _make_service(tmp_path, monkeypatch)
     resource = service._registry.get_resource("m-1")
     resource.registration_status = ResourceRegistrationStatus.APPROVED
     service._registry.update_resource(resource)
 
-    service.write_metadata_package_raw(
-        _principal(), model_id="m-1", files=[("metadata.yaml", _META_NEW)]
-    )
+    with pytest.raises(APIError) as exc:
+        service.write_metadata_package_raw(
+            _principal(), model_id="m-1", files=[("metadata.yaml", _META_NEW)]
+        )
 
-    stored = service._registry.get_resource("m-1")
-    assert stored.registration_status == ResourceRegistrationStatus.APPROVED
+    assert exc.value.status_code == 409
+    assert exc.value.code == "model_already_approved"
+
+
+def test_write_from_approved_does_not_touch_disk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The 409 guard must fire before any file write."""
+    pkg = _make_package(tmp_path)
+    service = _make_service(tmp_path, monkeypatch)
+    resource = service._registry.get_resource("m-1")
+    resource.registration_status = ResourceRegistrationStatus.APPROVED
+    service._registry.update_resource(resource)
+
+    with pytest.raises(APIError):
+        service.write_metadata_package_raw(
+            _principal(), model_id="m-1", files=[("metadata.yaml", _META_NEW)]
+        )
+
+    assert (pkg / "metadata.yaml").read_text(encoding="utf-8") == _META

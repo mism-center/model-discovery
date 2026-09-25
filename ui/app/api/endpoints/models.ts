@@ -21,21 +21,30 @@ export type TestSpecDTO = components['schemas']['TestSpecDTO'];
 export type IODetailDTO = components['schemas']['IODetailDTO'];
 export type ContactDTO = components['schemas']['ContactDTO'];
 export type RelatedResourceDTO = components['schemas']['RelatedResourceDTO'];
+export type ReviewMetadataPackageRequest =
+  components['schemas']['ReviewMetadataPackageRequest'];
+export type SubmitContainerImageRequest =
+  components['schemas']['SubmitContainerImageRequest'];
+export type ReviewContainerImageRequest =
+  components['schemas']['ReviewContainerImageRequest'];
 
 export async function listModels(
   options: {
     registration_status?: string;
     owner?: string;
+    image_review_status?: string;
     client?: ApiClientType;
     signal?: AbortSignal;
   } = {}
 ): Promise<ModelListResponse> {
-  const { registration_status, owner, client, signal } = options;
+  const { registration_status, owner, image_review_status, client, signal } =
+    options;
   const { data } = await (client ?? apiClient).GET('/api/v1/models', {
     params: {
       query: {
         ...(registration_status ? { registration_status } : {}),
         ...(owner ? { owner } : {}),
+        ...(image_review_status ? { image_review_status } : {}),
         limit: 100,
       },
     },
@@ -90,4 +99,59 @@ export async function getModelAnnotationPackage(
     }
   );
   return data as MetadataPackageRawResponse;
+}
+
+/**
+ * An UPLOAD_REVIEWER's approve/reject decision on a PENDING_REVIEW model
+ * (`POST /models/{id}/review`, MISM-291).
+ */
+export async function reviewModelMetadata(
+  modelId: string,
+  body: ReviewMetadataPackageRequest,
+  options: { signal?: AbortSignal } = {}
+): Promise<RegisterModelResponse> {
+  const { data } = await apiClient.POST('/api/v1/models/{model_id}/review', {
+    params: { path: { model_id: modelId } },
+    body,
+    signal: options.signal,
+  });
+  return data as RegisterModelResponse;
+}
+
+/**
+ * Submit (or resubmit after rejection) a built Dockerfile/image for
+ * IMAGE_CHECK review (`POST /models/{id}/image`, MISM-291). Requires the
+ * model's metadata registration to already be `APPROVED`.
+ */
+export async function submitModelContainerImage(
+  modelId: string,
+  body: SubmitContainerImageRequest,
+  options: { signal?: AbortSignal } = {}
+): Promise<RegisterModelResponse> {
+  const { data } = await apiClient.POST('/api/v1/models/{model_id}/image', {
+    params: { path: { model_id: modelId } },
+    body,
+    signal: options.signal,
+  });
+  return data as RegisterModelResponse;
+}
+
+/**
+ * An IMAGE_CHECK holder's approve/reject decision on a PENDING_IMAGE_CHECK
+ * model's Dockerfile/image (`POST /models/{id}/image-review`, MISM-291).
+ */
+export async function reviewModelContainerImage(
+  modelId: string,
+  body: ReviewContainerImageRequest,
+  options: { signal?: AbortSignal } = {}
+): Promise<RegisterModelResponse> {
+  const { data } = await apiClient.POST(
+    '/api/v1/models/{model_id}/image-review',
+    {
+      params: { path: { model_id: modelId } },
+      body,
+      signal: options.signal,
+    }
+  );
+  return data as RegisterModelResponse;
 }

@@ -72,6 +72,7 @@ def test_list_models_returns_results() -> None:
         organisms=None,
         scales=None,
         registration_status=None,
+        image_review_status=None,
     )
 
 
@@ -105,6 +106,7 @@ def test_list_models_passes_filters() -> None:
         organisms=None,
         scales=None,
         registration_status=None,
+        image_review_status=None,
     )
     service.list_models.assert_called_once_with(**filter_kwargs)
 
@@ -133,6 +135,7 @@ def test_list_models_pagination() -> None:
         organisms=None,
         scales=None,
         registration_status=None,
+        image_review_status=None,
     )
 
 
@@ -167,6 +170,7 @@ def test_search_result_includes_all_new_fields() -> None:
     """POST /search result items expose all Resource fields."""
     service = MagicMock(spec=RegistryService)
     service.search.return_value = _make_search_result([_make_resource()])
+    service.batch_check_can_execute.return_value = {}
 
     client = _make_app_with_service(service)
     response = client.post("/api/v1/search", json={})
@@ -201,6 +205,7 @@ def test_search_result_new_fields_default_correctly() -> None:
     """New fields default to empty/None when not set on Resource."""
     service = MagicMock(spec=RegistryService)
     service.search.return_value = _make_search_result([_make_resource()])
+    service.batch_check_can_execute.return_value = {}
 
     client = _make_app_with_service(service)
     response = client.post("/api/v1/search", json={})
@@ -263,6 +268,7 @@ def test_search_result_with_rich_resource() -> None:
     )
     service = MagicMock(spec=RegistryService)
     service.search.return_value = _make_search_result([resource])
+    service.batch_check_can_execute.return_value = {}
 
     client = _make_app_with_service(service)
     response = client.post("/api/v1/search", json={})
@@ -358,6 +364,7 @@ def test_list_models_hides_unapproved_from_anonymous_callers() -> None:
         organisms=None,
         scales=None,
         registration_status=None,
+        image_review_status=None,
     )
 
 
@@ -388,6 +395,7 @@ def test_list_models_shows_owner_their_own_unapproved_models() -> None:
         organisms=None,
         scales=None,
         registration_status=None,
+        image_review_status=None,
     )
 
 

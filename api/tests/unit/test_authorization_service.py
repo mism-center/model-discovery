@@ -221,6 +221,52 @@ async def test_assert_image_checker_passes_for_local_issuer() -> None:
     mock.check.assert_not_awaited()
 
 
+# ── assert_can_review_metadata ───────────────────────────────────────
+
+
+async def test_assert_can_review_metadata_owner_bypasses_fga() -> None:
+    """Owner of the resource may review without an upload_reviewer FGA check."""
+    mock = _client(False)  # would deny if consulted
+    resource = _resource(owner="alice")
+    await _authz(mock).assert_can_review_metadata(_principal("alice"), resource=resource)
+    mock.check.assert_not_awaited()
+
+
+async def test_assert_can_review_metadata_non_owner_allowed_by_fga() -> None:
+    """Non-owner with upload_reviewer role → FGA check passes."""
+    mock = _client(True)
+    resource = _resource(owner="alice")
+    await _authz(mock).assert_can_review_metadata(_principal("bob"), resource=resource)
+    mock.check.assert_awaited_once_with(
+        user="user:bob", relation="upload_reviewer", object_="platform:main"
+    )
+
+
+async def test_assert_can_review_metadata_non_owner_denied_by_fga() -> None:
+    """Non-owner without upload_reviewer role → 403."""
+    resource = _resource(owner="alice")
+    with pytest.raises(APIError) as exc:
+        await _authz(_client(False)).assert_can_review_metadata(
+            _principal("bob"), resource=resource
+        )
+    assert exc.value.status_code == 403
+    assert exc.value.code == "not_authorized"
+
+
+async def test_assert_can_review_metadata_no_client_passes() -> None:
+    """No FGA client (local dev / unconfigured) → non-owner is still allowed."""
+    resource = _resource(owner="alice")
+    await _authz(None).assert_can_review_metadata(_principal("bob"), resource=resource)
+
+
+async def test_assert_can_review_metadata_local_issuer_owner_bypasses() -> None:
+    """local issuer + owner → owner bypass fires before _client_for check."""
+    mock = _client(False)
+    resource = _resource(owner="local-user")
+    await _authz(mock).assert_can_review_metadata(_local_principal("local-user"), resource=resource)
+    mock.check.assert_not_awaited()
+
+
 # ── assert_can_execute ────────────────────────────────────────────────
 
 
@@ -313,11 +359,20 @@ async def test_assert_can_view_model_passes_with_fga_allowed() -> None:
     mock.check.assert_awaited_once_with(user="user:jack", relation="can_view", object_="model:m-2")
 
 
-async def test_assert_can_view_model_raises_404_with_fga_denied() -> None:
+async def test_assert_can_view_model_raises_404_with_fga_denied_non_owner() -> None:
+    """FGA denies and the principal is not the DB owner → 404."""
+    resource = _resource(owner="alice")
     with pytest.raises(APIError) as exc:
-        await _authz(_client(False)).assert_can_view_model(_principal(), resource=_resource())
+        await _authz(_client(False)).assert_can_view_model(_principal("bob"), resource=resource)
     assert exc.value.status_code == 404
     assert exc.value.code == "not_found"
+
+
+async def test_assert_can_view_model_fga_denied_owner_fallback_passes() -> None:
+    """FGA denies but the principal is the DB owner (pre-migration model without
+    an FGA tuple) → allowed via owner fallback."""
+    resource = _resource(owner="alice")
+    await _authz(_client(False)).assert_can_view_model(_principal("alice"), resource=resource)
 
 
 async def test_assert_can_view_model_fallback_passes_for_owner() -> None:
