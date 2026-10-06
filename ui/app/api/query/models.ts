@@ -1,6 +1,7 @@
 import { queryOptions } from '@tanstack/react-query';
 import type { Client } from 'openapi-fetch';
 
+import { ApiError } from '~/api/client/errors';
 import type { paths } from '~/api/generated/schema';
 import {
   getModel,
@@ -37,6 +38,19 @@ export function modelDetailQueryOptions(
   });
 }
 
+/**
+ * Retries for a package that 404s. The annotation job writes it from another
+ * pod, so it can reach the API's mount a few seconds after the model flips to
+ * `pending_review`, and the API 404s rather than waiting for it.
+ */
+const PACKAGE_NOT_FOUND_RETRIES = 4;
+
+/**
+ * A model's raw annotation YAML (`GET /models/{id}/metadata-package/raw`).
+ *
+ * SSR loaders should pass `retry: false`: a 404 is expected while annotation
+ * is running, and the retries would hold the navigation open.
+ */
 export function modelAnnotationPackageQueryOptions(
   modelId: string,
   client?: ApiClientType
@@ -45,6 +59,11 @@ export function modelAnnotationPackageQueryOptions(
     queryKey: modelKeys.annotationPackage(modelId),
     queryFn: ({ signal }) =>
       getModelAnnotationPackage(modelId, { client, signal }),
+    retry: (failureCount, error) =>
+      failureCount <
+      (error instanceof ApiError && error.status === 404
+        ? PACKAGE_NOT_FOUND_RETRIES
+        : 1),
   });
 }
 

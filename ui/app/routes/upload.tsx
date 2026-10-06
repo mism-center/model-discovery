@@ -10,11 +10,13 @@ import {
 import Uppy, { type Body, type Meta, type UppyFile } from '@uppy/core';
 import Dashboard from '@uppy/react/dashboard';
 import Tus from '@uppy/tus';
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { requireUser } from '~/api/auth/require-user';
 import type { components } from '~/api/generated/schema';
+import { modelAnnotationPackageQueryOptions } from '~/api/query/models';
 import { MetadataFormViewer } from '~/components/sections/upload/metadata-form-viewer';
 import { browserApiBaseUrl, resolveTusdPlaceholderUrl } from '~/utils/env';
 import type { Route } from './+types/upload';
@@ -189,28 +191,6 @@ async function fetchModelStatus(modelId: string): Promise<string | null> {
   if (!res.ok) return null;
   const data = (await res.json()) as { registration_status?: string };
   return data.registration_status ?? null;
-}
-
-async function fetchAnnotationPackage(modelId: string): Promise<{
-  files: { filename: string; content: string }[];
-  registryId: string;
-}> {
-  const res = await fetch(
-    `${apiOrigin()}/api/v1/models/${encodeURIComponent(modelId)}/metadata-package/raw`,
-    { credentials: 'include' }
-  );
-  if (!res.ok) {
-    throw new Error(
-      await readApiErrorDetail(
-        res,
-        'Loading the annotation metadata package failed'
-      )
-    );
-  }
-  const data = (await res.json()) as {
-    files?: { filename: string; content: string }[];
-  };
-  return { files: data.files ?? [], registryId: modelId };
 }
 
 type ResourceFileItem = components['schemas']['ResourceFileItem'];
@@ -431,6 +411,7 @@ function stepChipColor(
 
 export default function TusTest() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [modelName, setModelName] = useState('');
   const modelNameRef = useRef('');
   modelNameRef.current = modelName;
@@ -537,17 +518,17 @@ export default function TusTest() {
   // Loads the review form's raw metadata YAML + output file list for a model
   // whose annotation has reached a reviewable state. Extracted so both the
   // monitoring poll and the debug jump-to-complete path share the same
-  // error handling: on failure (e.g. a transient 404 while the annotation
-  // job's files are still propagating to this pod's mount) the error is
-  // surfaced via metadataLoadError instead of being silently swallowed.
+  // error handling: on failure (e.g. the package still 404ing once the query's
+  // retries run out) the error is surfaced via metadataLoadError instead of
+  // being silently swallowed.
   async function loadAnnotationReviewData(modelId: string) {
     try {
-      const [metaResult, files] = await Promise.all([
-        fetchAnnotationPackage(modelId),
-        fetchAnnotationOutputFiles(modelId),
-      ]);
-      setRawFiles(metaResult.files);
-      setMetadataRegistryId(metaResult.registryId);
+      const metaResult = await queryClient.fetchQuery(
+        modelAnnotationPackageQueryOptions(modelId)
+      );
+      const files = await fetchAnnotationOutputFiles(modelId);
+      setRawFiles(metaResult.files ?? []);
+      setMetadataRegistryId(modelId);
       setMetadataSaveState('idle');
       setOutputFiles(files);
       setMetadataLoadError('');
