@@ -292,6 +292,18 @@ networkPolicy:
     enabled: true
     podSelectorLabels:
       app.kubernetes.io/name: tusd
+  # Allow the Gateway to reach Keycloak's ClusterIP (OIDC_DISCOVERY_URL /
+  # OIDC_SERVICE_URL) when Keycloak runs as a separate release in this namespace
+  # and is already isolated by other NetworkPolicies. If nothing else selects
+  # Keycloak's pods, enabling this isolates them to Gateway-only ingress and cuts
+  # off the ingress controller.
+  keycloak:
+    enabled: false
+    port: 8080
+    podSelectorLabels:
+      app.kubernetes.io/name: keycloak
+      app.kubernetes.io/instance: keycloak
+      app.kubernetes.io/component: keycloak
 
 # ────────────────────────────────────────────────────────────
 # HorizontalPodAutoscalers
