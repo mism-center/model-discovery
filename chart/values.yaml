@@ -74,8 +74,7 @@ gateway:
     # CAIRNS recommendation API (currently unauthenticated), empty disables it.
     CAIRNS_API_URL: ""
     CAIRNS_TIMEOUT_SECONDS: "180"
-    # Resolves biomodels-sourced CAIRNS evidence against the public BioModels
-    # API. Empty disables that enrichment step.
+    # Public BioModels API, used to import models. Empty disables imports.
     BIOMODELS_API_URL: "https://www.biomodels.org"
     BIOMODELS_TIMEOUT_SECONDS: "15"
     BIOMODELS_MAX_CONCURRENCY: "8"

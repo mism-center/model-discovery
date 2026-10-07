@@ -1,9 +1,9 @@
-from pydantic import BaseModel, Field
+from typing import Any
 
-from mismapi.schemas.biomodels import BioModelsRecordDTO, normalize_model_id
+from pydantic import AliasGenerator, BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
 
-BIOMODELS_SOURCE = "biomodels"
-_BIOMODELS_TOOL_ID_PREFIX = "biomodels_"
+MISM_SOURCE = "MISM_models"
 
 
 class CairnsRecommendRequest(BaseModel):
@@ -18,42 +18,84 @@ class CairnsRecommendRequest(BaseModel):
     thread_id: str | None = Field(default=None, description="Optional conversation id.")
 
 
+class _SchemaOrgDTO(BaseModel):
+    # CAIRNS serves schema.org's camelCase; emitted snake_case like every other
+    # schema in this package.
+    model_config = ConfigDict(
+        alias_generator=AliasGenerator(validation_alias=to_camel),
+        populate_by_name=True,
+        extra="ignore",
+    )
+
+
+class CairnsTermDTO(_SchemaOrgDTO):
+    """A schema.org DefinedTerm, e.g. an EDAM topic, operation or format."""
+
+    name: str = ""
+    identifier: str = ""
+    url: str = ""
+    in_defined_term_set: str = ""
+
+
+class CairnsDataTermDTO(CairnsTermDTO):
+    """An EDAM data type a tool consumes or produces, with its formats."""
+
+    encoding_format: list[CairnsTermDTO] = Field(default_factory=list)
+
+
+class CairnsCitationDTO(_SchemaOrgDTO):
+    name: str = ""
+    doi: str = ""
+    pmid: str = ""
+    abstract: str = ""
+
+
+class CairnsToolMetadataDTO(_SchemaOrgDTO):
+    """CAIRNS' schema.org ComputationalTool record for an evidence card."""
+
+    identifier: str = Field(default="", description="The source's own id for the record.")
+    name: str = ""
+    description: str = ""
+    url: str = ""
+    version: str = ""
+    license: str = ""
+    application_category: list[str] = Field(default_factory=list)
+    programming_language: list[str] = Field(default_factory=list)
+    operating_system: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+    topic_category: list[CairnsTermDTO] = Field(default_factory=list)
+    feature_list: list[CairnsTermDTO] = Field(default_factory=list)
+    input: list[CairnsDataTermDTO] = Field(default_factory=list)
+    output: list[CairnsDataTermDTO] = Field(default_factory=list)
+    citation: list[CairnsCitationDTO] = Field(default_factory=list)
+    raw_metadata: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "The source's own record, verbatim, so its shape varies by source. "
+            "Absent for sources that provide none, such as ToolDB."
+        ),
+    )
+
+
 class CairnsEvidenceCardDTO(BaseModel):
     tool_id: str
     name: str
-    # "tooldb" or "biomodels" today; left open because CAIRNS owns the vocabulary.
+    # "tooldb", "biomodels" or "MISM_models" today; left open because CAIRNS owns
+    # the vocabulary.
     source: str
     score: float = 0.0
     snippet: str = ""
     why_matched: list[str] = Field(default_factory=list)
     url: str = ""
-    # Populated iff `source == "biomodels"`
-    biomodels: BioModelsRecordDTO | None = Field(
-        default=None,
-        description="Metadata resolved from the BioModels repository.",
-    )
+    metadata: CairnsToolMetadataDTO = Field(default_factory=CairnsToolMetadataDTO)
     mism_model_id: str | None = Field(
         default=None,
         description=(
-            "This registry's model imported from the same source, or null if there "
-            "is none the caller may see."
+            "This registry's model behind the card, or null if there is none the "
+            "caller may see: for a MISM card the model it names, for any other an "
+            "import of the same record."
         ),
     )
-
-    @property
-    def biomodels_model_id(self) -> str | None:
-        """BioModels model id this card refers to, or None if it isn't one.
-
-        CAIRNS embeds the id in `tool_id`, prefixed by its source
-        ("biomodels_biomd0000000732" -> "BIOMD0000000732").
-        """
-        if self.source.strip().lower() != BIOMODELS_SOURCE:
-            return None
-
-        raw = self.tool_id.strip()
-        if raw.lower().startswith(_BIOMODELS_TOOL_ID_PREFIX):
-            raw = raw[len(_BIOMODELS_TOOL_ID_PREFIX) :]
-        return normalize_model_id(raw)
 
 
 class CairnsRecommendResponse(BaseModel):

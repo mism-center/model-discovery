@@ -4,14 +4,25 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from mismapi.clients.biomodels_client import BioModelsClient
 from mismapi.clients.cairns_client import CairnsClient
-from mismapi.core.deps import _get_biomodels_client, _get_cairns_client, _get_registry_service
+from mismapi.core.deps import _get_cairns_client, _get_registry_service
 from mismapi.core.errors import APIError
 from mismapi.main import create_app
 from mismapi.schemas.cairns import CairnsRecommendRequest
 from mismapi.services.registry_service import RegistryService
 from tests.conftest import minimal_oidc_settings, override_anonymous
+
+_BIOMODELS_METADATA = {
+    "@type": "ComputationalTool",
+    "_id": "biomodels_biomd0000000732",
+    "identifier": "BIOMD0000000732",
+    "url": "https://www.ebi.ac.uk/biomodels/BIOMD0000000732",
+    "applicationCategory": ["Systems biology model"],
+    "raw_metadata": {
+        "curationStatus": "CURATED",
+        "format": {"name": "SBML", "version": "L2V4"},
+    },
+}
 
 _UPSTREAM_PAYLOAD = {
     "answer": "Here are 2 evidence-backed options.",
@@ -24,6 +35,7 @@ _UPSTREAM_PAYLOAD = {
             "snippet": "identifier: BIOMD0000000732",
             "why_matched": ["immune"],
             "url": "",
+            "metadata": _BIOMODELS_METADATA,
         },
         {"tool_id": "biotools_vcell", "name": "VCell", "source": "tooldb", "score": 0.44},
     ],
@@ -37,20 +49,14 @@ def _client_with_transport(handler: httpx.MockTransport) -> CairnsClient:
     return client
 
 
-def _make_app(
-    cairns_client: CairnsClient,
-    biomodels_client: BioModelsClient | None = None,
-) -> TestClient:
-    # Default to an unconfigured BioModels client and an empty registry so both
-    # enrichment steps are no-ops and these tests assert the proxy alone.
+def _make_app(cairns_client: CairnsClient) -> TestClient:
+    # An empty registry links no card, so these tests assert the proxy alone.
     # See test_cairns_enrichment.py.
-    biomodels = biomodels_client or BioModelsClient(base_url="")
     registry = MagicMock(spec=RegistryService)
     registry.find_by_source.return_value = []
 
     app = create_app(settings=minimal_oidc_settings())
     app.dependency_overrides[_get_cairns_client] = lambda: cairns_client
-    app.dependency_overrides[_get_biomodels_client] = lambda: biomodels
     app.dependency_overrides[_get_registry_service] = lambda: registry
     override_anonymous(app)
     return TestClient(app)
@@ -89,9 +95,14 @@ def test_recommend_proxies_upstream_payload() -> None:
         "biotools_vcell",
     ]
     assert payload["evidence"][0]["source"] == "biomodels"
+    metadata = payload["evidence"][0]["metadata"]
+    assert metadata["identifier"] == "BIOMD0000000732"
+    assert metadata["application_category"] == ["Systems biology model"]
+    assert metadata["raw_metadata"] == _BIOMODELS_METADATA["raw_metadata"]
     # Fields omitted upstream fall back to the schema defaults.
     assert payload["evidence"][1]["why_matched"] == []
     assert payload["evidence"][1]["snippet"] == ""
+    assert payload["evidence"][1]["metadata"]["identifier"] == ""
 
 
 def test_recommend_forwards_chat_history() -> None:
@@ -169,6 +180,28 @@ def test_recommend_rejects_unparseable_upstream_body() -> None:
 
     assert response.status_code == 502
     assert response.json()["error"]["code"] == "cairns_invalid_response"
+
+
+def test_recommend_passes_through_an_unknown_source() -> None:
+    handler = httpx.MockTransport(
+        lambda _: httpx.Response(
+            200,
+            json={
+                "answer": "a",
+                "evidence": [
+                    {"tool_id": "x", "name": "x", "source": "new", "metadata": {"name": "x"}}
+                ],
+            },
+        )
+    )
+    client = _make_app(_client_with_transport(handler))
+    response = client.post("/api/v1/cairns/recommend", json={"question": "anything"})
+
+    assert response.status_code == 200
+    card = response.json()["evidence"][0]
+    assert card["source"] == "new"
+    assert card["metadata"]["name"] == "x"
+    assert card["mism_model_id"] is None
 
 
 def test_recommend_rejects_upstream_body_missing_answer() -> None:

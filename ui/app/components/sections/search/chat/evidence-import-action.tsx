@@ -24,12 +24,12 @@ export const ACTION_LINK = `${ACTION_LINK_BASE} text-primary`;
 const MUTED_ACTION_LINK = `${ACTION_LINK_BASE} text-default-800`;
 
 /**
- * Bring a BioModels record into this registry, or link to it if it is already
- * here.
+ * Link a card to its model in this registry: the model itself for a MISM card,
+ * an import for a BioModels card, or failing that, import the BioModels record.
  *
  * `mism_model_id` is populated server-side under the same visibility rule as
- * the model pages: an approved import resolves for everyone, an unapproved one
- * only for whoever started it. So a signed-out visitor is offered sign-in
+ * the model pages: an approved model resolves for everyone, an unapproved one
+ * only for its owner. So a signed-out visitor is offered sign-in
  * rather than an import that would 401, and a link only ever points somewhere
  * the caller can actually open.
  */
@@ -38,7 +38,8 @@ export function EvidenceImportAction({ card }: { card: CairnsEvidenceCard }) {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const accession = card.biomodels?.identifier;
+  const accession =
+    card.source === 'biomodels' ? card.metadata?.identifier : undefined;
 
   const mutation = useMutation({
     mutationFn: () => importBioModelsModel(accession ?? ''),
@@ -54,9 +55,7 @@ export function EvidenceImportAction({ card }: { card: CairnsEvidenceCard }) {
     );
   }
 
-  // No accession means the BioModels lookup failed, and the import re-fetches
-  // the same record — so there is nothing to offer yet.
-  if (card.source !== 'biomodels' || !accession) return;
+  if (!accession) return;
 
   if (!user) {
     return (

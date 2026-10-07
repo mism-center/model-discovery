@@ -125,7 +125,6 @@ class AppContainer:
             timeout_seconds=settings.biomodels_timeout_seconds,
             max_archive_bytes=settings.biomodels_max_archive_bytes,
             stub_upstream=settings.stub_upstream_services,
-            max_concurrency=settings.biomodels_max_concurrency,
         )
 
         redis_client: Redis = Redis.from_url(  # pyright: ignore[reportUnknownMemberType]

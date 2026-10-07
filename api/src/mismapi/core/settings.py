@@ -102,7 +102,7 @@ class Settings(BaseSettings):
         default="https://www.biomodels.org", alias="BIOMODELS_API_URL"
     )
     biomodels_timeout_seconds: float = Field(default=15.0, alias="BIOMODELS_TIMEOUT_SECONDS", gt=0)
-    # There is no bulk endpoint, so max concurrent requests per CAIRNS request.
+    # Max concurrent per-file refetches while importing one model.
     biomodels_max_concurrency: int = Field(default=8, alias="BIOMODELS_MAX_CONCURRENCY", gt=0)
     # An imported OMEX archive is buffered in memory before extraction, so this
     # is deliberately lower than UPLOAD_MAX_BYTES, which streams to disk.

@@ -1,4 +1,3 @@
-import asyncio
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -12,11 +11,10 @@ from mism_registry.resource import Resource
 from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.clients.biomodels_client import BioModelsClient
 from mismapi.clients.cairns_client import CairnsClient
-from mismapi.core.deps import _get_biomodels_client, _get_cairns_client, _get_registry_service
+from mismapi.core.deps import _get_cairns_client, _get_registry_service
 from mismapi.core.errors import APIError
 from mismapi.main import create_app
 from mismapi.schemas.biomodels import normalize_model_id
-from mismapi.schemas.cairns import CairnsEvidenceCardDTO
 from mismapi.services.registry_service import RegistryService
 from tests.conftest import minimal_oidc_settings, override_anonymous, override_principal
 
@@ -149,10 +147,6 @@ def _biomodels_client(
     return client
 
 
-def _card(tool_id: str, source: str, name: str = "n") -> CairnsEvidenceCardDTO:
-    return CairnsEvidenceCardDTO(tool_id=tool_id, name=name, source=source)
-
-
 # ── Accession parsing ──────────────────────────────────────────
 
 
@@ -175,23 +169,6 @@ def _card(tool_id: str, source: str, name: str = "n") -> CairnsEvidenceCardDTO:
 )
 def test_normalize_model_id(raw: str, expected: str | None) -> None:
     assert normalize_model_id(raw) == expected
-
-
-@pytest.mark.parametrize(
-    ("tool_id", "source", "expected"),
-    [
-        ("biomodels_biomd0000000732", "biomodels", "BIOMD0000000732"),
-        ("biomodels_model2002170001", "biomodels", "MODEL2002170001"),
-        ("BIOMD0000000732", "biomodels", "BIOMD0000000732"),
-        ("biomodels_biomd0000000732", "BioModels", "BIOMD0000000732"),
-        # tooldb cards are left alone, even if the id would parse.
-        ("biomodels_biomd0000000732", "tooldb", None),
-        ("biotools_vcell", "tooldb", None),
-        ("biomodels_", "biomodels", None),
-    ],
-)
-def test_card_biomodels_model_id(tool_id: str, source: str, expected: str | None) -> None:
-    assert _card(tool_id, source).biomodels_model_id == expected
 
 
 # ── Client ─────────────────────────────────────────────────────
@@ -352,58 +329,6 @@ async def test_get_model_unconfigured_is_unavailable() -> None:
     assert exc_info.value.code == "biomodels_not_configured"
 
 
-async def test_get_models_dedupes_and_skips_failures() -> None:
-    seen: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(request.url.path.strip("/"))
-        return _biomodels_handler(request)
-
-    records = await _biomodels_client(httpx.MockTransport(handler)).get_models(
-        [
-            "BIOMD0000000732",
-            "biomd0000000732",
-            "MODEL2002170001",
-            "BIOMD0000000404",
-            "not-a-model-id",
-        ]
-    )
-
-    assert sorted(records) == ["BIOMD0000000732", "MODEL2002170001"]
-    assert sorted(seen) == ["BIOMD0000000404", "BIOMD0000000732", "MODEL2002170001"]
-
-
-async def test_get_models_respects_concurrency_cap() -> None:
-    in_flight = 0
-    peak = 0
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal in_flight, peak
-        in_flight += 1
-        peak = max(peak, in_flight)
-        # Hold the request open so overlapping ones pile up if the cap is gone.
-        await asyncio.sleep(0.02)
-        in_flight -= 1
-        return httpx.Response(200, json=_NON_CURATED_RECORD)
-
-    client = BioModelsClient(
-        base_url="https://biomodels.test", timeout_seconds=5.0, max_concurrency=3
-    )
-    client._client = httpx.AsyncClient(
-        transport=httpx.MockTransport(handler), base_url="https://biomodels.test"
-    )
-
-    model_ids = [f"BIOMD{i:010d}" for i in range(12)]
-    records = await client.get_models(model_ids)
-
-    assert len(records) == 12
-    assert peak == 3
-
-
-async def test_get_models_returns_empty_when_unconfigured() -> None:
-    assert await BioModelsClient(base_url="").get_models(["BIOMD0000000732"]) == {}
-
-
 # ── Through the endpoint ───────────────────────────────────────
 
 
@@ -437,6 +362,19 @@ def _imported_resource(
     )
 
 
+def _native_resource(mism_id: str, *, owner: str, approved: bool = False) -> Resource:
+    return Resource(
+        id=mism_id,
+        name=f"Model {mism_id}",
+        resource_type=ResourceType.MODEL,
+        location_uri=f"irods:///{mism_id}/0.0.1",
+        registration_status=(
+            ResourceRegistrationStatus.APPROVED if approved else ResourceRegistrationStatus.DRAFT
+        ),
+        owner=owner,
+    )
+
+
 def _registry_holding(*resources: Resource) -> RegistryService:
     registry = InMemoryRegistry()
     for resource in resources:
@@ -446,7 +384,6 @@ def _registry_holding(*resources: Resource) -> RegistryService:
 
 def _recommend(
     evidence: list[dict[str, Any]],
-    biomodels: BioModelsClient | None = None,
     *,
     answer: str = "Here are your options.",
     registry: Any = None,
@@ -459,11 +396,9 @@ def _recommend(
     so the real dependency would fail on the missing container.
     """
     payload = {"answer": answer, "evidence": evidence, "elapsed_seconds": 12.47}
-    resolved = biomodels if biomodels is not None else _biomodels_client()
 
     app = create_app(settings=minimal_oidc_settings())
     app.dependency_overrides[_get_cairns_client] = lambda: _cairns_client_returning(payload)
-    app.dependency_overrides[_get_biomodels_client] = lambda: resolved
     app.dependency_overrides[_get_registry_service] = lambda: (
         registry if registry is not None else _registry_holding()
     )
@@ -478,118 +413,14 @@ def _recommend(
     return body
 
 
-def test_endpoint_resolves_full_record_onto_biomodels_card() -> None:
-    body = _recommend(
-        [
-            {
-                "tool_id": "biomodels_biomd0000000732",
-                "name": "Kirschner1998_Immunotherapy_Tumour",
-                "source": "biomodels",
-                "score": 0.46,
-                "snippet": "identifier: BIOMD0000000732",
-            }
-        ]
-    )
-
-    biomodels = body["evidence"][0]["biomodels"]
-    assert biomodels["identifier"] == "BIOMD0000000732"
-    assert biomodels["url"] == "https://biomodels.test/BIOMD0000000732"
-    assert biomodels["curation_status"] == "CURATED"
-    assert biomodels["publication"]["title"] == (
-        "Modeling immunotherapy of the tumor-immune interaction."
-    )
-    assert biomodels["modelling_approach"]["name"] == "ordinary differential equation model"
-    assert biomodels["annotations"][0]["name"] == "Homo sapiens"
-    assert biomodels["files"]["main"][0]["file_size"] == 43735
-    # Emitted snake_case, not upstream's camelCase.
-    assert "curationStatus" not in biomodels
-    assert "modelLevelAnnotations" not in biomodels
-
-
-def test_endpoint_resolves_biomodels_cards_only() -> None:
-    body = _recommend(
-        [
-            {
-                "tool_id": "biomodels_biomd0000000732",
-                "name": "Kirschner1998",
-                "source": "biomodels",
-            },
-            {"tool_id": "biotools_vcell", "name": "VCell", "source": "tooldb"},
-            {"tool_id": "biomodels_model2002170001", "name": "Cacace2020", "source": "biomodels"},
-        ]
-    )
-
-    first, second, third = body["evidence"]
-    assert first["biomodels"]["identifier"] == "BIOMD0000000732"
-    assert second["biomodels"] is None
-    assert third["biomodels"]["identifier"] == "MODEL2002170001"
-    # CAIRNS' own fields survive untouched.
-    assert [c["name"] for c in body["evidence"]] == ["Kirschner1998", "VCell", "Cacace2020"]
-
-
-def test_endpoint_leaves_unknown_model_id_null() -> None:
-    body = _recommend(
-        [{"tool_id": "biomodels_biomd0000000404", "name": "gone", "source": "biomodels"}]
-    )
-
-    assert body["evidence"][0]["biomodels"] is None
-
-
-def test_endpoint_skips_biomodels_when_no_card_needs_it() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
-        raise AssertionError(f"BioModels must not be called, got {request.url}")
-
-    body = _recommend(
-        [{"tool_id": "biotools_vcell", "name": "VCell", "source": "tooldb"}],
-        _biomodels_client(httpx.MockTransport(handler)),
-    )
-
-    assert body["evidence"][0]["biomodels"] is None
-
-
-def test_endpoint_still_answers_when_biomodels_is_down() -> None:
-    def down(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("down", request=request)
-
-    body = _recommend(
-        [
-            {
-                "tool_id": "biomodels_biomd0000000732",
-                "name": "Kirschner1998",
-                "source": "biomodels",
-            }
-        ],
-        _biomodels_client(httpx.MockTransport(down)),
-        answer="Here is 1 option.",
-    )
-
-    assert body["answer"] == "Here is 1 option."
-    assert body["evidence"][0]["name"] == "Kirschner1998"
-    assert body["evidence"][0]["biomodels"] is None
-
-
-def test_endpoint_still_answers_when_biomodels_is_unconfigured() -> None:
-    body = _recommend(
-        [
-            {
-                "tool_id": "biomodels_biomd0000000732",
-                "name": "Kirschner1998",
-                "source": "biomodels",
-            }
-        ],
-        BioModelsClient(base_url=""),
-    )
-
-    assert body["evidence"][0]["biomodels"] is None
-
-
-# ── Registry cross-reference ───────────────────────────────────
+# ── Registry cross-reference: BioModels cards ──────────────────
 
 
 _BIOMODELS_CARD = {
     "tool_id": "biomodels_biomd0000000732",
     "name": "Kirschner1998",
     "source": "biomodels",
+    "metadata": {"identifier": "BIOMD0000000732"},
 }
 
 
@@ -640,33 +471,98 @@ def test_uncatalogued_model_leaves_the_cross_reference_null() -> None:
     body = _recommend([_BIOMODELS_CARD])
 
     assert body["evidence"][0]["mism_model_id"] is None
-    # The BioModels block still resolved — the two lookups are independent.
-    assert body["evidence"][0]["biomodels"]["identifier"] == "BIOMD0000000732"
 
 
-def test_biomodels_outage_does_not_blank_the_cross_reference() -> None:
-    """The registry lookup keys off tool_id, so it owes BioModels nothing."""
+# ── Registry cross-reference: MISM cards ───────────────────────
 
-    def down(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("down", request=request)
 
+_MISM_ID = "d0d9a71d-d801-4232-b040-c7164fa7810b"
+
+_MISM_CARD = {
+    "tool_id": f"mism_{_MISM_ID}",
+    "name": "Kirschner1998_Immunotherapy_Tumour",
+    "source": "MISM_models",
+    "metadata": {
+        "identifier": _MISM_ID,
+        "url": f"https://mism-dev.renci.org/api/v1/models/{_MISM_ID}",
+        "raw_metadata": {
+            "id": _MISM_ID,
+            "name": "Kirschner1998_Immunotherapy_Tumour",
+            "resource_type": "model",
+            "location_uri": f"{_MISM_ID}/0.0.1",
+            "status": "active",
+            "registration_status": "approved",
+            "organisms": ["Homo sapiens"],
+            "created_at": "2026-09-10T16:50:41.756357Z",
+            "updated_at": "2026-09-10T16:54:50.807903Z",
+        },
+    },
+}
+
+
+def test_mism_card_links_to_the_approved_model_it_names() -> None:
+    registry = _registry_holding(_native_resource(_MISM_ID, owner="user-1", approved=True))
+
+    body = _recommend([_MISM_CARD], registry=registry)
+
+    assert body["evidence"][0]["mism_model_id"] == _MISM_ID
+
+
+def test_mism_card_for_a_model_this_registry_lacks_is_not_linked() -> None:
+    """CAIRNS may index another deployment's registry, or a stale snapshot of this one."""
+    body = _recommend([_MISM_CARD])
+
+    assert body["evidence"][0]["mism_model_id"] is None
+
+
+def test_mism_card_for_another_users_unapproved_model_is_not_linked() -> None:
+    registry = _registry_holding(_native_resource(_MISM_ID, owner="user-2"))
+
+    body = _recommend([_MISM_CARD], registry=registry, principal=_principal("user-1"))
+
+    assert body["evidence"][0]["mism_model_id"] is None
+
+
+def test_mism_card_for_own_unapproved_model_is_linked() -> None:
+    registry = _registry_holding(_native_resource(_MISM_ID, owner="user-1"))
+
+    body = _recommend([_MISM_CARD], registry=registry, principal=_principal("user-1"))
+
+    assert body["evidence"][0]["mism_model_id"] == _MISM_ID
+
+
+def test_cards_of_every_source_are_linked_side_by_side() -> None:
     registry = _registry_holding(
-        _imported_resource("BIOMD0000000732", mism_id="m-1", owner="user-1", approved=True)
+        _native_resource(_MISM_ID, owner="user-1", approved=True),
+        _imported_resource("BIOMD0000000732", mism_id="m-1", owner="user-1", approved=True),
     )
 
     body = _recommend(
-        [_BIOMODELS_CARD], _biomodels_client(httpx.MockTransport(down)), registry=registry
+        [
+            _MISM_CARD,
+            {"tool_id": "biotools_vcell", "name": "VCell", "source": "tooldb"},
+            _BIOMODELS_CARD,
+        ],
+        registry=registry,
     )
 
-    assert body["evidence"][0]["biomodels"] is None
-    assert body["evidence"][0]["mism_model_id"] == "m-1"
+    assert [c["mism_model_id"] for c in body["evidence"]] == [_MISM_ID, None, "m-1"]
+    raw = body["evidence"][0]["metadata"]["raw_metadata"]
+    assert raw["id"] == _MISM_ID
+    assert raw["organisms"] == ["Homo sapiens"]
+    assert [c["name"] for c in body["evidence"]] == [
+        "Kirschner1998_Immunotherapy_Tumour",
+        "VCell",
+        "Kirschner1998",
+    ]
 
 
-def test_registry_outage_does_not_blank_the_biomodels_block() -> None:
+def test_registry_outage_still_answers_without_links() -> None:
     registry = MagicMock(spec=RegistryService)
+    registry.get_model.side_effect = RuntimeError("registry down")
     registry.find_by_source.side_effect = RuntimeError("registry down")
 
-    body = _recommend([_BIOMODELS_CARD], registry=registry)
+    body = _recommend([_MISM_CARD, _BIOMODELS_CARD], registry=registry, answer="Here is 1 option.")
 
-    assert body["evidence"][0]["mism_model_id"] is None
-    assert body["evidence"][0]["biomodels"]["identifier"] == "BIOMD0000000732"
+    assert body["answer"] == "Here is 1 option."
+    assert [c["mism_model_id"] for c in body["evidence"]] == [None, None]

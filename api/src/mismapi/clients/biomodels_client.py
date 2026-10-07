@@ -1,4 +1,3 @@
-import asyncio
 import io
 import logging
 import re
@@ -35,9 +34,6 @@ class BioModelsClient:
     Contract:
       - GET /{modelId}?format=json -> model metadata
       - GET /model/download/{modelId} -> 302 -> the OMEX (zip) archive
-
-    There is no bulk endpoint, so `get_models` fans out one request per
-    model id under a concurrency cap.
     """
 
     def __init__(
@@ -45,12 +41,10 @@ class BioModelsClient:
         *,
         base_url: str,
         timeout_seconds: float = 15.0,
-        max_concurrency: int = 8,
         max_archive_bytes: int = 100 * 1024 * 1024,
         stub_upstream: bool = False,
     ) -> None:
         self._base_url = base_url
-        self._max_concurrency = max_concurrency
         self._max_archive_bytes = max_archive_bytes
         self._stub_upstream = stub_upstream
         self._client = httpx.AsyncClient(
@@ -266,40 +260,6 @@ class BioModelsClient:
             ) from exc
 
         return response.content
-
-    # ── Bulk best-effort ────────────────────────────────────────────
-
-    async def get_models(self, model_ids: list[str]) -> dict[str, BioModelsRecordDTO]:
-        """Fetch many models concurrently, keyed by model id.
-
-        Best-effort: an id BioModels cannot serve is logged and omitted
-        from the result rather than failing the batch. Callers treat this
-        metadata as additive, so a BioModels outage shouldn't break them.
-        """
-        if not self.configured or not model_ids:
-            return {}
-
-        wanted = sorted({normalized for a in model_ids if (normalized := normalize_model_id(a))})
-        if not wanted:
-            return {}
-
-        limit = asyncio.Semaphore(self._max_concurrency)
-
-        async def fetch(model_id: str) -> BioModelsRecordDTO | None:
-            async with limit:
-                try:
-                    return await self.get_model(model_id)
-                except APIError as exc:
-                    logger.info(
-                        "biomodels_fetch_skipped model_id=%s status=%s code=%s",
-                        model_id,
-                        exc.status_code,
-                        exc.code,
-                    )
-                    return None
-
-        records = await asyncio.gather(*(fetch(a) for a in wanted))
-        return {r.identifier: r for r in records if r is not None}
 
     # ── Lifecycle ───────────────────────────────────────────────────
 

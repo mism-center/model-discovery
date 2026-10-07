@@ -520,10 +520,9 @@ export interface paths {
      * Cairns Recommend
      * @description Ask CAIRNS for computational tools and models matching a question.
      *
-     *     Evidence cards sourced from BioModels carry a `biomodels` block resolved
-     *     from the BioModels repository, and `mism_model_id` when this registry holds
-     *     an import of the same model. Both key off ids parsed from `tool_id`, so
-     *     neither lookup feeds the other and either may fail on its own.
+     *     Each card's `mism_model_id` links it to this registry, under the same
+     *     visibility rule as the model pages. A MISM card names a registry model
+     *     directly; any other card links to an import of the same record.
      */
     post: operations['cairns_recommend_api_v1_cairns_recommend_post'];
     delete?: never;
@@ -626,142 +625,6 @@ export interface components {
        */
       role: string;
     };
-    /** BioModelsAnnotationDTO */
-    BioModelsAnnotationDTO: {
-      /**
-       * Accession
-       * @default
-       */
-      accession: string;
-      /**
-       * Name
-       * @default
-       */
-      name: string;
-      /**
-       * Resource
-       * @default
-       */
-      resource: string;
-      /**
-       * Uri
-       * @default
-       */
-      uri: string;
-      /**
-       * Qualifier
-       * @default
-       */
-      qualifier: string;
-    };
-    /** BioModelsAuthorDTO */
-    BioModelsAuthorDTO: {
-      /**
-       * Name
-       * @default
-       */
-      name: string;
-      /**
-       * Institution
-       * @default
-       */
-      institution: string;
-    };
-    /** BioModelsContributorDTO */
-    BioModelsContributorDTO: {
-      /**
-       * Name
-       * @default
-       */
-      name: string;
-      /**
-       * Email
-       * @default
-       */
-      email: string;
-      /**
-       * Orcid
-       * @default
-       */
-      orcid: string;
-      /**
-       * Affiliation
-       * @default
-       */
-      affiliation: string;
-      /** External */
-      external?: boolean | null;
-      /**
-       * Role
-       * @default
-       */
-      role: string;
-    };
-    /** BioModelsFileDTO */
-    BioModelsFileDTO: {
-      /**
-       * Name
-       * @default
-       */
-      name: string;
-      /**
-       * Description
-       * @default
-       */
-      description: string;
-      /** File Size */
-      file_size?: number | null;
-      /**
-       * Mime Type
-       * @default
-       */
-      mime_type: string;
-      /**
-       * Md5Sum
-       * @default
-       */
-      md5sum: string;
-      /**
-       * Sha1Sum
-       * @default
-       */
-      sha1sum: string;
-      /**
-       * Sha256Sum
-       * @default
-       */
-      sha256sum: string;
-    };
-    /** BioModelsFilesDTO */
-    BioModelsFilesDTO: {
-      /** Main */
-      main?: components['schemas']['BioModelsFileDTO'][];
-      /** Additional */
-      additional?: components['schemas']['BioModelsFileDTO'][];
-    };
-    /** BioModelsFormatDTO */
-    BioModelsFormatDTO: {
-      /**
-       * Name
-       * @default
-       */
-      name: string;
-      /**
-       * Identifier
-       * @default
-       */
-      identifier: string;
-      /**
-       * Version
-       * @default
-       */
-      version: string;
-    };
-    /** BioModelsHistoryDTO */
-    BioModelsHistoryDTO: {
-      /** Revisions */
-      revisions?: components['schemas']['BioModelsRevisionDTO'][];
-    };
     /** BioModelsImportRequest */
     BioModelsImportRequest: {
       /**
@@ -794,70 +657,44 @@ export interface components {
        */
       annotation_started: boolean;
     };
-    /** BioModelsPublicationDTO */
-    BioModelsPublicationDTO: {
-      /**
-       * Type
-       * @default
-       */
-      type: string;
-      /**
-       * Accession
-       * @default
-       */
-      accession: string;
-      /**
-       * Journal
-       * @default
-       */
-      journal: string;
-      /**
-       * Title
-       * @default
-       */
-      title: string;
-      /**
-       * Synopsis
-       * @default
-       */
-      synopsis: string;
-      /**
-       * Affiliation
-       * @default
-       */
-      affiliation: string;
-      /**
-       * Link
-       * @default
-       */
-      link: string;
-      /** Year */
-      year?: number | null;
-      /**
-       * Month
-       * @default
-       */
-      month: string;
-      /**
-       * Volume
-       * @default
-       */
-      volume: string;
-      /**
-       * Issue
-       * @default
-       */
-      issue: string;
-      /**
-       * Pages
-       * @default
-       */
-      pages: string;
-      /** Authors */
-      authors?: components['schemas']['BioModelsAuthorDTO'][];
+    /** Body_upload_resource_file_api_v1_resources__resource_id__files_post */
+    Body_upload_resource_file_api_v1_resources__resource_id__files_post: {
+      /** File */
+      file: string;
     };
-    /** BioModelsRecordDTO */
-    BioModelsRecordDTO: {
+    /** CairnsCitationDTO */
+    CairnsCitationDTO: {
+      /**
+       * Name
+       * @default
+       */
+      name: string;
+      /**
+       * Doi
+       * @default
+       */
+      doi: string;
+      /**
+       * Pmid
+       * @default
+       */
+      pmid: string;
+      /**
+       * Abstract
+       * @default
+       */
+      abstract: string;
+    };
+    /**
+     * CairnsDataTermDTO
+     * @description An EDAM data type a tool consumes or produces, with its formats.
+     */
+    CairnsDataTermDTO: {
+      /**
+       * Name
+       * @default
+       */
+      name: string;
       /**
        * Identifier
        * @default
@@ -869,94 +706,12 @@ export interface components {
        */
       url: string;
       /**
-       * Name
+       * In Defined Term Set
        * @default
        */
-      name: string;
-      /**
-       * Description
-       * @default
-       */
-      description: string;
-      /**
-       * Submission Id
-       * @default
-       */
-      submission_id: string;
-      /**
-       * Publication Id
-       * @default
-       */
-      publication_id: string;
-      /**
-       * Curation Status
-       * @default
-       */
-      curation_status: string;
-      /**
-       * Vcs Identifier
-       * @default
-       */
-      vcs_identifier: string;
-      /** First Published */
-      first_published?: string | null;
-      format?: components['schemas']['BioModelsFormatDTO'] | null;
-      modelling_approach?: components['schemas']['BioModelsTermDTO'] | null;
-      publication?: components['schemas']['BioModelsPublicationDTO'] | null;
-      /** Contributors */
-      contributors?: components['schemas']['BioModelsContributorDTO'][];
-      /** Annotations */
-      annotations?: components['schemas']['BioModelsAnnotationDTO'][];
-      files?: components['schemas']['BioModelsFilesDTO'] | null;
-      history?: components['schemas']['BioModelsHistoryDTO'] | null;
-    };
-    /** BioModelsRevisionDTO */
-    BioModelsRevisionDTO: {
-      /** Version */
-      version?: number | null;
-      /** Submitted */
-      submitted?: string | null;
-      /**
-       * Submitter
-       * @default
-       */
-      submitter: string;
-      /**
-       * Comment
-       * @default
-       */
-      comment: string;
-    };
-    /**
-     * BioModelsTermDTO
-     * @description An ontology term: BioModels' `modellingApproach` and annotation shape.
-     */
-    BioModelsTermDTO: {
-      /**
-       * Accession
-       * @default
-       */
-      accession: string;
-      /**
-       * Name
-       * @default
-       */
-      name: string;
-      /**
-       * Resource
-       * @default
-       */
-      resource: string;
-      /**
-       * Uri
-       * @default
-       */
-      uri: string;
-    };
-    /** Body_upload_resource_file_api_v1_resources__resource_id__files_post */
-    Body_upload_resource_file_api_v1_resources__resource_id__files_post: {
-      /** File */
-      file: string;
+      in_defined_term_set: string;
+      /** Encoding Format */
+      encoding_format?: components['schemas']['CairnsTermDTO'][];
     };
     /** CairnsEvidenceCardDTO */
     CairnsEvidenceCardDTO: {
@@ -983,11 +738,10 @@ export interface components {
        * @default
        */
       url: string;
-      /** @description Metadata resolved from the BioModels repository. */
-      biomodels?: components['schemas']['BioModelsRecordDTO'] | null;
+      metadata?: components['schemas']['CairnsToolMetadataDTO'];
       /**
        * Mism Model Id
-       * @description This registry's model imported from the same source, or null if there is none the caller may see.
+       * @description This registry's model behind the card, or null if there is none the caller may see: for a MISM card the model it names, for any other an import of the same record.
        */
       mism_model_id?: string | null;
     };
@@ -1020,6 +774,94 @@ export interface components {
        * @default 0
        */
       elapsed_seconds: number;
+    };
+    /**
+     * CairnsTermDTO
+     * @description A schema.org DefinedTerm, e.g. an EDAM topic, operation or format.
+     */
+    CairnsTermDTO: {
+      /**
+       * Name
+       * @default
+       */
+      name: string;
+      /**
+       * Identifier
+       * @default
+       */
+      identifier: string;
+      /**
+       * Url
+       * @default
+       */
+      url: string;
+      /**
+       * In Defined Term Set
+       * @default
+       */
+      in_defined_term_set: string;
+    };
+    /**
+     * CairnsToolMetadataDTO
+     * @description CAIRNS' schema.org ComputationalTool record for an evidence card.
+     */
+    CairnsToolMetadataDTO: {
+      /**
+       * Identifier
+       * @description The source's own id for the record.
+       * @default
+       */
+      identifier: string;
+      /**
+       * Name
+       * @default
+       */
+      name: string;
+      /**
+       * Description
+       * @default
+       */
+      description: string;
+      /**
+       * Url
+       * @default
+       */
+      url: string;
+      /**
+       * Version
+       * @default
+       */
+      version: string;
+      /**
+       * License
+       * @default
+       */
+      license: string;
+      /** Application Category */
+      application_category?: string[];
+      /** Programming Language */
+      programming_language?: string[];
+      /** Operating System */
+      operating_system?: string[];
+      /** Keywords */
+      keywords?: string[];
+      /** Topic Category */
+      topic_category?: components['schemas']['CairnsTermDTO'][];
+      /** Feature List */
+      feature_list?: components['schemas']['CairnsTermDTO'][];
+      /** Input */
+      input?: components['schemas']['CairnsDataTermDTO'][];
+      /** Output */
+      output?: components['schemas']['CairnsDataTermDTO'][];
+      /** Citation */
+      citation?: components['schemas']['CairnsCitationDTO'][];
+      /**
+       * Raw Metadata
+       * @description The source's own record, verbatim, so its shape varies by source. Absent for sources that provide none, such as ToolDB.
+       */
+      raw_metadata?: {
+        [key: string]: unknown;
+      } | null;
     };
     /** ComputeDTO */
     ComputeDTO: {
