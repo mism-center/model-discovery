@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from fastapi.encoders import jsonable_encoder
 
-from mismapi.services.metadata_package import build_resource_from_package
+from mismapi.services.metadata_package import _build_compute, _build_io, build_resource_from_package
 
 _EXAMPLE_PKG = Path(__file__).resolve().parent / "test-data" / "metadata-package"
 
@@ -21,7 +21,7 @@ _EXAMPLE_PKG = Path(__file__).resolve().parent / "test-data" / "metadata-package
     reason=f"example metadata-package not found: {_EXAMPLE_PKG}",
 )
 def test_build_resource_from_example_package() -> None:
-    r, _warnings = build_resource_from_package(_EXAMPLE_PKG)
+    r, warnings = build_resource_from_package(_EXAMPLE_PKG)
 
     # Section A: identity + biology unwrapped to plain values.
     assert r.name == "Vivarium-chemotaxis"
@@ -67,3 +67,49 @@ def test_build_resource_from_example_package() -> None:
 
     # The endpoint returns asdict(...) through FastAPI's encoder — must serialize.
     jsonable_encoder(dataclasses.asdict(r))
+
+    # Fixture's experiment_protocol.timestep/duration are deliberately prose
+    # strings (not single numbers) — confirm they're coerced to None with a
+    # localized warning, not silently stored or left to crash the API layer's
+    # ComputeDTO/ExperimentProtocolDTO later (see Docs/rangefix/Range-Value-Fix-Plan.md).
+    assert r.io.experiment_protocol is not None
+    assert r.io.experiment_protocol.timestep is None
+    assert r.io.experiment_protocol.duration is None
+    assert any("io.experiment_protocol.timestep" in w for w in warnings)
+    assert any("io.experiment_protocol.duration" in w for w in warnings)
+
+
+@pytest.mark.parametrize("field", ["cpu_cores", "memory_gb", "typical_runtime"])
+def test_build_compute_rejects_non_numeric_value(field: str) -> None:
+    warnings: list[str] = []
+    compute = _build_compute(
+        {field: {"value": "~30 minutes for the larger efficacy simulation"}}, warnings
+    )
+    assert getattr(compute, field) is None
+    assert any(f"execution.compute.{field}" in w for w in warnings)
+
+
+def test_build_compute_accepts_numeric_ish_string_for_cpu_cores() -> None:
+    warnings: list[str] = []
+    compute = _build_compute({"cpu_cores": {"value": "4.0"}}, warnings)
+    assert compute is not None
+    assert compute.cpu_cores == 4
+    assert warnings == []
+
+
+def test_build_compute_passes_through_none_and_clean_numbers() -> None:
+    warnings: list[str] = []
+    compute = _build_compute({"cpu_cores": {"value": None}, "memory_gb": {"value": 8}}, warnings)
+    assert compute is not None
+    assert compute.cpu_cores is None
+    assert compute.memory_gb == 8.0
+    assert warnings == []
+
+
+@pytest.mark.parametrize("field", ["timestep", "duration"])
+def test_build_io_experiment_protocol_rejects_range_string(field: str) -> None:
+    warnings: list[str] = []
+    io = _build_io({"experiment_protocol": {field: {"value": "10-20"}}}, warnings)
+    assert io is not None
+    assert getattr(io.experiment_protocol, field) is None
+    assert any(f"io.experiment_protocol.{field}" in w for w in warnings)

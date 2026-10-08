@@ -62,6 +62,28 @@ def _is_missing(value: Any) -> bool:
     return value is None or (isinstance(value, str) and not value.strip())
 
 
+def _num(raw: Any, path: str, warnings: list[str], cast: type) -> Any:
+    """Coerce an already-_val()-unwrapped leaf to cast (int/float).
+
+    None passes through. On failure, append a localized warning naming the
+    exact file+field and the offending value, and return None instead of the
+    bad value — mirrors the _is_missing skip pattern already used elsewhere
+    in this file. ``cast=int`` goes through float() first so a numeric-ish
+    string like "4.0" still coerces cleanly; it only rejects values that
+    aren't numeric at all (ranges, prose).
+    """
+    if raw is None:
+        return None
+    try:
+        return cast(float(raw)) if cast is int else cast(raw)
+    except (TypeError, ValueError):
+        warnings.append(
+            f"{EXECUTION_FILE}: '{path}' is not a single {cast.__name__} value "
+            f"(got {raw!r}); stored as null"
+        )
+        return None
+
+
 def _terms(items: Any) -> list[str]:
     """Ontology-mapped list ``[{value, iri, ...}]`` -> ``[value]`` (IRIs dropped)."""
     return [it["value"] for it in items or []]
@@ -182,7 +204,7 @@ def build_resource_from_package(pkg_dir: Path) -> tuple[Resource, list[str]]:
         Container(kind=c["kind"], file=_s(c.get("file")), image_name=_s(c.get("image_name")))
         for c in execu["execution"].get("containers", []) or []
     ]
-    compute = _build_compute(execu["execution"].get("compute"))
+    compute = _build_compute(execu["execution"].get("compute"), warnings)
     entry_points: list[EntryPoint] = []
     for i, e in enumerate(execu["execution"].get("entry_points", []) or []):
         command = e.get("command")
@@ -220,7 +242,7 @@ def build_resource_from_package(pkg_dir: Path) -> tuple[Resource, list[str]]:
     )
 
     # -- Section C: io ----------------------------------------------------
-    io = _build_io(execu.get("io"))
+    io = _build_io(execu.get("io"), warnings)
 
     resource = Resource(
         name=m["name"]["value"],
@@ -275,21 +297,23 @@ def _to_execution_type(kind: Any) -> ExecutionType | None:
         return ExecutionType.OTHER
 
 
-def _build_compute(c: Any) -> Compute | None:
+def _build_compute(c: Any, warnings: list[str]) -> Compute | None:
     if not c:
         return None
     tr = c.get("typical_runtime", {}) or {}
     return Compute(
-        cpu_cores=_val(c.get("cpu_cores")),
-        memory_gb=_val(c.get("memory_gb")),
+        cpu_cores=_num(_val(c.get("cpu_cores")), "execution.compute.cpu_cores", warnings, int),
+        memory_gb=_num(_val(c.get("memory_gb")), "execution.compute.memory_gb", warnings, float),
         gpu_required=_val(c.get("gpu_required")),
         parallelism=_s(c.get("parallelism")),
-        typical_runtime=_val(tr),
+        typical_runtime=_num(
+            _val(tr) if tr else None, "execution.compute.typical_runtime", warnings, float
+        ),
         typical_runtime_unit=_s(tr.get("unit") if isinstance(tr, dict) else None),
     )
 
 
-def _build_io(io: Any) -> IODetail | None:
+def _build_io(io: Any, warnings: list[str]) -> IODetail | None:
     if not io:
         return None
     inp = io.get("inputs", {}) or {}
@@ -299,9 +323,13 @@ def _build_io(io: Any) -> IODetail | None:
         ts, du = ep.get("timestep", {}) or {}, ep.get("duration", {}) or {}
         protocol = ExperimentProtocol(
             description=_s(ep.get("description")),
-            timestep=_val(ts),
+            timestep=_num(
+                _val(ts) if ts else None, "io.experiment_protocol.timestep", warnings, float
+            ),
             timestep_unit=_s(ts.get("unit") if isinstance(ts, dict) else None),
-            duration=_val(du),
+            duration=_num(
+                _val(du) if du else None, "io.experiment_protocol.duration", warnings, float
+            ),
             duration_unit=_s(du.get("unit") if isinstance(du, dict) else None),
             observables=tuple(ep.get("observables", []) or []),
         )
