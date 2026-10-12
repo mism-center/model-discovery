@@ -633,7 +633,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.116.1" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "itsdangerous", specifier = ">=2.2.0" },
-    { name = "mism-registry", extras = ["postgres"], git = "https://github.com/mism-center/metadata-schema.git?rev=develop" },
+    { name = "mism-registry", extras = ["postgres"], git = "https://github.com/mism-center/metadata-schema.git?rev=feature%2FMISM-296" },
     { name = "pathvalidate", specifier = ">=3.3.1" },
     { name = "pydantic-settings", specifier = ">=2.10.1" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10.1" },
@@ -657,7 +657,7 @@ dev = [
 [[package]]
 name = "mism-registry"
 version = "0.1.0"
-source = { git = "https://github.com/mism-center/metadata-schema.git?rev=develop#f0822daf5e359614530bec7b302f3affb9a9185c" }
+source = { git = "https://github.com/mism-center/metadata-schema.git?rev=feature%2FMISM-296#2cca7116895f36cf44643db6d32e4739d9125745" }
 
 [package.optional-dependencies]
 postgres = [

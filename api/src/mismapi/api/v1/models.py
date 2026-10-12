@@ -16,6 +16,7 @@ from mismapi.core.deps import (
     SettingsDep,
     UploadSessionStoreServiceDep,
 )
+from mismapi.core.errors import APIError
 from mismapi.schemas.registry import (
     ExecuteRunRequest,
     ExecuteRunResponse,
@@ -419,6 +420,8 @@ async def review_model_metadata_package(
     model_id: str,
     payload: ReviewMetadataPackageRequest,
     service: RegistryServiceDep,
+    execution_client: ExecutionClientDep,
+    settings: SettingsDep,
     principal: AuthenticatedPrincipalDep,
 ) -> RegisterModelResponse:
     """Approve/reject decision on a PENDING_REVIEW model (workflow steps e/f).
@@ -426,6 +429,9 @@ async def review_model_metadata_package(
     Gated on ownership OR the platform-wide ``upload_reviewer`` role. The
     model owner may approve/reject their own submission without holding the
     role; non-owners must hold ``upload_reviewer``.
+
+    On approval, ``set_registration_status`` moves ``env_build_status`` to
+    READY_FOR_BUILD and this handler then kicks off the env-build job.
     """
     resource = await service.review_metadata_package(
         principal,
@@ -433,6 +439,17 @@ async def review_model_metadata_package(
         approve=payload.approve,
         reason=payload.reason,
     )
+    if payload.approve:
+        # Approval is already committed; a failed build launch must not undo
+        # it. The model stays READY_FOR_BUILD so the build can be retried.
+        # ponytail: no retry/sweeper; add one if launch failures show up in logs.
+        try:
+            build = await execution_client.build(
+                resource_id=model_id, prompt=settings.build_job_prompt
+            )
+            logger.info("Env build launched for %s: %s", model_id, build)
+        except APIError:
+            logger.exception("Env build launch failed for %s", model_id)
     return _model_response(resource)
 
 

@@ -112,6 +112,8 @@ class Settings(BaseSettings):
 
     annotation_openai_base_url: str = Field(default="", alias="ANNOTATION_OPENAI_BASE_URL")
     annotation_model: str = Field(default="gpt-5.6-luna", alias="ANNOTATION_MODEL")
+    # Prompt forwarded to POST /api/v1/builds when a model's metadata is approved.
+    build_job_prompt: str = Field(default="", alias="BUILD_JOB_PROMPT")
 
     # CAIRNS service integration
     # Empty disables the integration, endpoints return 503 when disabled.

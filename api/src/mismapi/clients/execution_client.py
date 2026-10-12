@@ -93,6 +93,38 @@ class ExecutionClient:
             expected=200,
         )
 
+    # ── Environment build ───────────────────────────────────────────
+
+    async def build(
+        self,
+        resource_id: str,
+        prompt: str,
+        annotation_subpath: str = "metadata-package",
+    ) -> dict[str, Any]:
+        """POST /api/v1/builds  →  kick off an env-build job for an approved model.
+
+        Returns ``{resource_id, job_name, run_id, model_repo, status}``.
+        """
+        if self._stub_upstream:
+            logger.info("Execution service (stub) build resource_id=%s", resource_id)
+            return {
+                "resource_id": resource_id,
+                "job_name": f"stub-build-{resource_id[:8]}",
+                "run_id": f"stub-run-{resource_id[:8]}",
+                "model_repo": "",
+                "status": "stub",
+            }
+
+        return await self._post(
+            "/api/v1/builds",
+            json={
+                "resource_id": resource_id,
+                "annotation_subpath": annotation_subpath,
+                "prompt": prompt,
+            },
+            expected=200,
+        )
+
     # ── Status polling ──────────────────────────────────────────────
 
     async def get_status(self, run_id: str) -> dict[str, Any]:

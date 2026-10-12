@@ -322,3 +322,12 @@ async def test_approve_rolls_back_when_apply_fails(monkeypatch: pytest.MonkeyPat
     assert excinfo.value.code == "metadata_package_not_found"
     session.commit.assert_not_called()
     session.rollback.assert_called_once()
+
+
+async def test_approve_marks_env_build_ready() -> None:
+    """Approval queues the model for the env-build agent (schema sets READY_FOR_BUILD)."""
+    from mism_registry.enums import EnvBuildStatus
+
+    service = _make_service(_client(allowed=True))
+    resource = await service.review_metadata_package(_principal(), model_id="m-1", approve=True)
+    assert resource.env_build_status == EnvBuildStatus.READY_FOR_BUILD
