@@ -299,6 +299,15 @@ networkPolicy:
     enabled: true
     podSelectorLabels:
       app.kubernetes.io/name: tusd
+  # Allow Gateway → Keycloak (OIDC) when Keycloak runs in this namespace and is
+  # isolated by other policies. Labels must match the Keycloak server pod.
+  keycloak:
+    enabled: false
+    port: 8080
+    podSelectorLabels:
+      app.kubernetes.io/name: keycloak
+      app.kubernetes.io/component: keycloak
+      app.kubernetes.io/instance: keycloak
 
 # ────────────────────────────────────────────────────────────
 # HorizontalPodAutoscalers
