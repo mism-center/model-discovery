@@ -211,7 +211,7 @@ async def list_resource_files(
     oracle for resources the caller may not know exist).
     """
     resource, directory = service.find_resource_directory(resource_id)
-    await service.assert_can_view_model(principal, resource=resource)
+    await service.assert_can_view_resource(principal, resource=resource)
     files = [] if directory is None else _walk_files(directory)
     return ResourceFilesResponse(
         resource_id=resource.id,
@@ -254,7 +254,7 @@ async def download_resource(
     """
     if file is not None:
         resource, file_path = service.resolve_resource_file(resource_id, file)
-        await service.assert_can_view_model(principal, resource=resource)
+        await service.assert_can_view_resource(principal, resource=resource)
         logger.info("Serving file %s for resource %s (%s)", file, resource.id, disposition)
         if disposition == "inline":
             # Guess the type from the extension so browsers render images/text
@@ -274,7 +274,7 @@ async def download_resource(
         )
 
     resource, directory = service.get_resource_directory(resource_id)
-    await service.assert_can_view_model(principal, resource=resource)
+    await service.assert_can_view_resource(principal, resource=resource)
     logger.info("Streaming zip of %s for resource %s", directory, resource.id)
     return StreamingResponse(
         _zip_directory_stream(directory),

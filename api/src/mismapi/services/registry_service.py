@@ -85,6 +85,19 @@ class RegistryService:
         """Raise APIError(404) if ``principal`` cannot view ``resource``."""
         await self._authz.assert_can_view_model(principal, resource=resource)
 
+    async def assert_can_view_resource(
+        self,
+        principal: AuthenticatedPrincipal | None,
+        *,
+        resource: Resource,
+    ) -> None:
+        """``assert_can_view_model``, plus a patch to allow run owner to view output dataset."""
+        if resource.resource_type != ResourceType.MODEL and principal is not None:
+            producing_runs = self._registry.get_lineage(resource.id)
+            if any(run.triggered_by == principal.subject for run in producing_runs):
+                return
+        await self._authz.assert_can_view_model(principal, resource=resource)
+
     async def get_platform_capabilities(self, principal: AuthenticatedPrincipal) -> dict[str, bool]:
         """Report which platform-wide OpenFGA roles ``principal`` holds."""
         return await self._authz.get_platform_capabilities(principal)
