@@ -2,7 +2,7 @@ import dataclasses
 import logging
 import shutil
 import time
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +17,7 @@ from mism_registry import (
     prepare_run,
     register_dataset,
     register_model,
+    set_env_build_status,
     set_image_review_status,
     set_registration_status,
     submit_container_image,
@@ -25,7 +26,12 @@ from mism_registry import (
     ValidationError as RegistryValidationError,
 )
 from mism_registry.backends.postgres import PostgresRegistry
-from mism_registry.enums import ExecutionType, ImageReviewStatus, ResourceRegistrationStatus
+from mism_registry.enums import (
+    EnvBuildStatus,
+    ExecutionType,
+    ImageReviewStatus,
+    ResourceRegistrationStatus,
+)
 from mism_registry.protocol import Registry
 from mism_registry.resource import Resource
 from mism_registry.run import Run
@@ -37,13 +43,22 @@ from mism_registry.search import (
     SearchQuery,
     SearchResult,
 )
-from mism_registry.types import Author, Container, IOSpec, Publication
+from mism_registry.types import (
+    Author,
+    Container,
+    EntryPoint,
+    IODetail,
+    IOSpec,
+    Output,
+    Publication,
+)
 from sqlalchemy.orm import Session
 
 from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.core.errors import APIError
 from mismapi.core.file_storage import resolve_location_uri, safe_join
 from mismapi.core.settings import get_settings
+from mismapi.schemas.registry import BuildResultCallback
 from mismapi.services.authorization_service import AuthorizationService
 from mismapi.services.metadata_package import (
     EXECUTION_FILE,
@@ -919,6 +934,98 @@ class RegistryService:
         )
         return resource
 
+    # ── Env-build workflow (execution API callbacks) ────────────────
+
+    def mark_build_started(self, model_id: str) -> Resource:
+        """READY_FOR_BUILD -> BUILDING once the execution API accepted the build."""
+        try:
+            resource = set_env_build_status(
+                self._registry, resource_id=model_id, target=EnvBuildStatus.BUILDING
+            )
+            self._session.commit()
+        except ResourceNotFoundError as exc:
+            self._session.rollback()
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+        except InvalidStateTransitionError as exc:
+            self._session.rollback()
+            raise APIError(
+                status_code=409, code="invalid_state_transition", detail=str(exc)
+            ) from exc
+        return resource
+
+    def apply_build_result(self, result: BuildResultCallback) -> Resource:
+        """Apply an envagent build result reported by the execution API.
+
+        Service-to-service: no principal, and deliberately bypasses the
+        "approved models are read-only" guard in ``update_model`` because the
+        build agent is the one actor allowed to fill in the run recipe after
+        approval.
+
+        Success (see ``BuildResultCallback.succeeded``): containers[0] becomes
+        the digest-pinned image, the proven command becomes entry_points[0],
+        empty output destinations default to the mount's output_path, and
+        env_build_status goes RUNNABLE. Failure: only env_build_status /
+        env_build_error change.
+
+        Raises 404 (unknown model), 409 (model not in a build state),
+        400 (validation).
+        """
+        model_id = result.resource_id
+        try:
+            resource = self._registry.get_resource(model_id)
+            image_ref = result.image.ref if result.image else ""
+
+            # Replayed callback for a build already applied: no-op.
+            if (
+                resource.env_build_status == EnvBuildStatus.RUNNABLE
+                and resource.containers
+                and resource.containers[0].image_name == image_ref
+            ):
+                return resource
+
+            # The launch-side BUILDING mark is best-effort; catch up here.
+            if resource.env_build_status == EnvBuildStatus.READY_FOR_BUILD:
+                resource = set_env_build_status(
+                    self._registry, resource_id=model_id, target=EnvBuildStatus.BUILDING
+                )
+
+            if result.succeeded:
+                _apply_verified_build(resource, result)
+                self._registry.update_resource(resource)
+                resource = set_env_build_status(
+                    self._registry, resource_id=model_id, target=EnvBuildStatus.RUNNABLE
+                )
+            else:
+                error = f"{result.failure_class or result.outcome}: {result.reason}".strip()
+                resource = set_env_build_status(
+                    self._registry,
+                    resource_id=model_id,
+                    target=EnvBuildStatus.BUILD_FAILED,
+                    error=error,
+                )
+            self._session.commit()
+        except ResourceNotFoundError as exc:
+            self._session.rollback()
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+        except InvalidStateTransitionError as exc:
+            self._session.rollback()
+            raise APIError(
+                status_code=409, code="invalid_state_transition", detail=str(exc)
+            ) from exc
+        except RegistryValidationError as exc:
+            self._session.rollback()
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+
+        logger.info(
+            "Build result for model %s: outcome=%s ladder=%s failure_class=%s -> %s",
+            model_id,
+            result.outcome,
+            result.ladder_reached,
+            result.failure_class,
+            resource.env_build_status.value,
+        )
+        return resource
+
     async def review_container_image(
         self,
         principal: AuthenticatedPrincipal,
@@ -1477,3 +1584,37 @@ class RegistryService:
 
     def close(self) -> None:
         self._session.close()
+
+
+def _apply_verified_build(resource: Resource, result: BuildResultCallback) -> None:
+    """Write a verified build's image, entry point and output location onto
+    ``resource`` in place (caller persists)."""
+    assert result.image is not None  # guaranteed by result.succeeded
+    ref = result.image.ref
+    # "docker.io/org/img@sha256:..." -> registry "docker.io"; bare "org/img" has none.
+    head = ref.split("/", 1)[0]
+    registry = head if "/" in ref and ("." in head or ":" in head) else ""
+    resource.containers = [Container(kind="docker", image_name=ref, registry=registry)]
+    # ponytail: auto-approve L3 builds; route via set_image_review_status once
+    # the admin approval gate exists.
+    resource.image_review_status = ImageReviewStatus.IMAGE_APPROVED
+    resource.image_reviewed_by = "envbuild-agent"
+    resource.image_reviewed_at = datetime.now(UTC)
+    resource.image_rejection_reason = ""
+
+    # envagent proves exactly one command; keep the rest, proven one first.
+    cmd = result.entry_command
+    if cmd:
+        match = next((e for e in resource.entry_points if e.command == cmd), None)
+        proven = match or EntryPoint(command=cmd, purpose="verified by envbuild")
+        resource.entry_points = [proven, *(e for e in resource.entry_points if e is not match)]
+
+    # output_path is the default destination for outputs that don't name one.
+    mount = result.runtime.mount if result.runtime else None
+    if mount and mount.output_path:
+        io = resource.io or IODetail()
+        outputs = tuple(
+            o if o.destination else dataclasses.replace(o, destination=mount.output_path)
+            for o in io.outputs
+        ) or (Output(name="outputs", destination=mount.output_path),)
+        resource.io = dataclasses.replace(io, outputs=outputs)

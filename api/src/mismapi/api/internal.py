@@ -72,6 +72,7 @@ from pathlib import Path
 from fastapi import APIRouter
 from pathvalidate import sanitize_filename
 
+from mismapi.api.v1.models import _model_response
 from mismapi.auth.base import (
     AuthenticatedPrincipal,
 )
@@ -82,6 +83,7 @@ from mismapi.core.deps import (
 )
 from mismapi.core.errors import APIError
 from mismapi.schemas.auth import TusUploadRecord, UploadTokenClaims
+from mismapi.schemas.registry import BuildResultCallback, RegisterModelResponse
 from mismapi.schemas.tus import (
     FileInfoChanges,
     Storage,
@@ -515,3 +517,26 @@ async def tusd_hooks(
         payload.event.upload.id,
     )
     return TusHookResponse()
+
+
+@router.post("/builds", response_model=RegisterModelResponse)
+async def build_result_callback(
+    payload: BuildResultCallback,
+    service: RegistryServiceDep,
+) -> RegisterModelResponse:
+    """Env-build result callback from the execution API.
+
+    No app-level auth, same as the tusd hooks: public ingress blocks
+    ``/api/internal`` and a NetworkPolicy admits only the exec pods.
+    """
+    logger.info(
+        "build_result_callback resource_id=%s run_id=%s outcome=%s ladder=%s "
+        "failure_class=%s attempts=%d",
+        payload.resource_id,
+        payload.run_id,
+        payload.outcome,
+        payload.ladder_reached,
+        payload.failure_class,
+        len(payload.attempts),
+    )
+    return _model_response(service.apply_build_result(payload))

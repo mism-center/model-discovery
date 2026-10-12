@@ -308,6 +308,13 @@ networkPolicy:
       app.kubernetes.io/name: keycloak
       app.kubernetes.io/component: keycloak
       app.kubernetes.io/instance: keycloak
+  # Allow the execution API (mism-exec, same namespace) to POST env-build
+  # results to the Gateway's /api/internal/builds callback. Labels must match
+  # the exec pod template.
+  exec:
+    enabled: true
+    podSelectorLabels:
+      app: mism-exec
 
 # ────────────────────────────────────────────────────────────
 # HorizontalPodAutoscalers

@@ -448,6 +448,7 @@ async def review_model_metadata_package(
                 resource_id=model_id, prompt=settings.build_job_prompt
             )
             logger.info("Env build launched for %s: %s", model_id, build)
+            service.mark_build_started(model_id)
         except APIError:
             logger.exception("Env build launch failed for %s", model_id)
     return _model_response(resource)
