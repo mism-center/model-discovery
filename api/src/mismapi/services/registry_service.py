@@ -177,19 +177,6 @@ class RegistryService:
         self._registry.delete_resource(model_id)
         self._session.commit()
 
-    def list_annotating_models(self) -> list[Resource]:
-        """Return all MODEL resources currently in ANNOTATING state.
-
-        Used by the background poller to log status transitions.
-        The postgres backend has no registration_status filter on find_resources,
-        so we fetch all models and filter in-memory — safe because the
-        ANNOTATING set is always small (O(1-10) in practice).
-        """
-        resources = find_resources(self._registry, resource_type=ResourceType.MODEL)
-        return [
-            r for r in resources if r.registration_status == ResourceRegistrationStatus.ANNOTATING
-        ]
-
     def find_by_source(
         self,
         *,

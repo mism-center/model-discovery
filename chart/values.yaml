@@ -28,6 +28,7 @@ gateway:
       cpu: 1000m
       memory: 1Gi
   env:
+    UVICORN_WORKERS: "2"
     LOG_LEVEL: "INFO"
     AUTH_MODE: "oidc"
     DISABLE_AUTH: "false"

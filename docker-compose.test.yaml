@@ -57,6 +57,7 @@ services:
     environment:
       DATABASE_URL: "postgresql+psycopg://postgres:postgres@db:5432/mism_test"
       REDIS_URL: "redis://redis:6379/0"
+      UVICORN_WORKERS: "2"
       # Browser-reachable tusd URL returned by POST /api/v1/models/{id}/upload.
       TUSD_BASE_URL: "http://localhost:1080/files/"
       DISABLE_AUTH: "true"

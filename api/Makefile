@@ -37,9 +37,9 @@ install:
 lock:
 	$(UV) lock
 
-## Run the API with uvicorn (no reload)
+## Run the API with uvicorn (no reload); UVICORN_WORKERS sets the worker count
 run:
-	$(UV) run uvicorn --app-dir src $(APP) --host 0.0.0.0 --port $(PORT)
+	$(UV) run $(if $(wildcard .env),--env-file .env) uvicorn --app-dir src $(APP) --host 0.0.0.0 --port $(PORT)
 
 ## Run the API with uvicorn and --reload
 dev:
