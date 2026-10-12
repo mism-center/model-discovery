@@ -1,3 +1,4 @@
+import shlex
 from datetime import date, datetime
 from typing import Any, Literal
 
@@ -872,3 +873,67 @@ class ReviewContainerImageRequest(BaseModel):
         if not self.approve and not self.reason.strip():
             raise ValueError("reason is required when approve is false")
         return self
+
+
+# ── Env-build callback (execution API → discovery) ──────────────────
+# Shape is owned by the execution API. Only the fields discovery acts on are
+# declared; everything else (artifacts, attempts, routes_to, env_vars, ...)
+# is ignored by pydantic's default extra="ignore".
+
+
+class BuildImage(BaseModel):
+    """The image envagent built and pushed; ``ref`` is digest-pinned."""
+
+    ref: str = ""
+    digest: str = ""
+
+
+class BuildMount(BaseModel):
+    """Container mount layout; only ``output_path`` is persisted (as the
+    default output destination)."""
+
+    output_path: str = ""
+
+
+class BuildRuntime(BaseModel):
+    """How the verified environment runs the model."""
+
+    # Only filled when the agent changed the command (SET_ENTRYPOINT); the
+    # command actually run is verdict.entrypoint_used.
+    entrypoint: list[str] = Field(default_factory=list)
+    mount: BuildMount | None = None
+
+
+class BuildResultCallback(BaseModel):
+    """Result of an envagent build, POSTed by the execution API."""
+
+    resource_id: str
+    outcome: str
+    run_id: str = ""
+    ladder_reached: str = ""
+    failure_class: str | None = None
+    reason: str = ""
+    image: BuildImage | None = None
+    runtime: BuildRuntime | None = None
+    # Full envagent verdict row; only ``entrypoint_used`` is read.
+    verdict: dict[str, Any] = Field(default_factory=dict)
+    attempts: list[dict[str, Any]] = Field(default_factory=list)
+
+    @property
+    def succeeded(self) -> bool:
+        """Loose acceptance rule until an admin approval step exists:
+        a verified L3 run with no failure class and a pushed image."""
+        return (
+            self.outcome == "verified"
+            and self.ladder_reached == "L3"
+            and not self.failure_class
+            and bool(self.image and self.image.ref)
+        )
+
+    @property
+    def entry_command(self) -> str:
+        """The single command envagent proved at L3."""
+        used = self.verdict.get("entrypoint_used")
+        if isinstance(used, str) and used.strip():
+            return used.strip()
+        return shlex.join(self.runtime.entrypoint) if self.runtime else ""
