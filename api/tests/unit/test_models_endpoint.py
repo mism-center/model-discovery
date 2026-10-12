@@ -1039,20 +1039,6 @@ def test_review_approve_launches_env_build() -> None:
     assert build.call_args.kwargs["resource_id"] == "m-1"
 
 
-def test_review_approve_marks_build_started_only_on_launch() -> None:
-    """BUILDING is set after exec accepts the build, never when the launch fails."""
-    client, _ = _review_client_with_exec(ResourceRegistrationStatus.APPROVED)
-    service = client.app.dependency_overrides[_get_registry_service]()  # type: ignore[attr-defined]
-    client.post("/api/v1/models/m-1/review", json={"approve": True})
-    service.mark_build_started.assert_called_once_with("m-1")
-
-    client, build = _review_client_with_exec(ResourceRegistrationStatus.APPROVED)
-    service = client.app.dependency_overrides[_get_registry_service]()  # type: ignore[attr-defined]
-    build.side_effect = APIError(status_code=502, code="execution_builds_failed", detail="down")
-    client.post("/api/v1/models/m-1/review", json={"approve": True})
-    service.mark_build_started.assert_not_called()
-
-
 def test_review_reject_skips_env_build() -> None:
     client, build = _review_client_with_exec(ResourceRegistrationStatus.REJECTED)
     response = client.post("/api/v1/models/m-1/review", json={"approve": False, "reason": "x"})

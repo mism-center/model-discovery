@@ -1000,23 +1000,6 @@ class RegistryService:
 
     # ── Env-build workflow (execution API callbacks) ────────────────
 
-    def mark_build_started(self, model_id: str) -> Resource:
-        """READY_FOR_BUILD -> BUILDING once the execution API accepted the build."""
-        try:
-            resource = set_env_build_status(
-                self._registry, resource_id=model_id, target=EnvBuildStatus.BUILDING
-            )
-            self._session.commit()
-        except ResourceNotFoundError as exc:
-            self._session.rollback()
-            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
-        except InvalidStateTransitionError as exc:
-            self._session.rollback()
-            raise APIError(
-                status_code=409, code="invalid_state_transition", detail=str(exc)
-            ) from exc
-        return resource
-
     def apply_build_result(self, result: BuildResultCallback) -> Resource:
         """Apply an envagent build result reported by the execution API.
 
@@ -1047,7 +1030,8 @@ class RegistryService:
             ):
                 return resource
 
-            # The launch-side BUILDING mark is best-effort; catch up here.
+            # BUILDING is set by the execution API when its job starts; if the
+            # result lands first, step through it so the result isn't lost.
             if resource.env_build_status == EnvBuildStatus.READY_FOR_BUILD:
                 resource = set_env_build_status(
                     self._registry, resource_id=model_id, target=EnvBuildStatus.BUILDING

@@ -1,4 +1,4 @@
-"""Unit tests for RegistryService.apply_build_result / mark_build_started.
+"""Unit tests for RegistryService.apply_build_result.
 
 The execution API reports an envagent build back to discovery; a verified L3
 build makes the model runnable with the built image, anything else marks the
@@ -167,8 +167,3 @@ def test_unknown_model_is_404() -> None:
     with pytest.raises(APIError) as excinfo:
         service.apply_build_result(_result(resource_id="nope"))
     assert excinfo.value.status_code == 404
-
-
-def test_mark_build_started() -> None:
-    service, _ = _service(env_build_status=EnvBuildStatus.READY_FOR_BUILD)
-    assert service.mark_build_started("m-1").env_build_status == EnvBuildStatus.BUILDING

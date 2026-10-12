@@ -18,6 +18,7 @@
     tusd                → Gateway     (HTTP hooks via ClusterIP service;
                                        public ingress blocks /api/internal and
                                        the source pod selector is configured via values.)
+    Execution API       → Gateway     (env-build result callback, /api/internal/builds)
   ─────────────────────────────────────────────────────────────────────────────
 */}}
 
@@ -135,6 +136,35 @@ spec:
         - podSelector:
             matchLabels:
               {{- toYaml .Values.networkPolicy.tusd.podSelectorLabels | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.gateway.service.port }}
+{{- end }}
+
+---
+# ── 1c-bis. Discovery Gateway – accepts env-build callbacks from exec ─────────
+# The execution API POSTs envagent build results to /api/internal/builds on the
+# Gateway's ClusterIP service. Like the tusd hooks there is no app-level auth:
+# public ingress blocks /api/internal and only these pods may reach the port.
+{{- if and .Values.gateway.enabled .Values.networkPolicy.exec .Values.networkPolicy.exec.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-exec-to-gateway-callbacks
+  labels:
+    {{- include "model-discovery.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: gateway
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.exec.podSelectorLabels | nindent 14 }}
       ports:
         - protocol: TCP
           port: {{ .Values.gateway.service.port }}
