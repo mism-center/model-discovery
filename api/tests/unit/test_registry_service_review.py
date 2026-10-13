@@ -1,0 +1,398 @@
+"""Unit tests for RegistryService.review_metadata_package (MISM-291).
+
+Covers:
+- Ownership gate via `_assert_model_owner` (OpenFGA ``owner`` relation on
+  ``model:{id}``)
+- Delegation to `mism_registry.set_registration_status` (state machine +
+  reviewer-identity stamping)
+- Error mapping (InvalidStateTransitionError -> 400)
+- Auto-apply of the annotation package on approval: ``_apply_metadata_package``
+  is called (and only called) when ``approve=True``, and a failure there
+  blocks approval and rolls back the transaction.
+
+The autouse ``_stub_apply_metadata_package`` fixture replaces the real
+disk-access call with a no-op for the auth / state-machine / OpenFGA tests.
+The auto-apply section at the bottom overrides it with controlled spies.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import cast
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from mism_registry.enums import (
+    ExecutionType,
+    ResourceRegistrationStatus,
+    ResourceType,
+    ResourceVersionStatus,
+)
+from mism_registry.in_memory import InMemoryRegistry
+from mism_registry.resource import Resource
+from sqlalchemy.exc import IntegrityError
+
+from mismapi.auth.principal import AuthenticatedPrincipal
+from mismapi.clients.openfga_client import OpenFGAClient
+from mismapi.core.errors import APIError
+from mismapi.services.authorization_service import AuthorizationService
+from mismapi.services.registry_service import RegistryService
+
+
+def _principal(subject: str = "dana") -> AuthenticatedPrincipal:
+    return AuthenticatedPrincipal(subject=subject, issuer="test", audience="mism-api", scopes=set())
+
+
+def _client(allowed: bool) -> MagicMock:
+    client = MagicMock(spec=OpenFGAClient)
+    client.check = AsyncMock(return_value=allowed)
+    client.write_tuple = AsyncMock()
+    return client
+
+
+def _make_service(
+    openfga_client: OpenFGAClient | None,
+    *,
+    registration_status: ResourceRegistrationStatus = ResourceRegistrationStatus.PENDING_REVIEW,
+    owner: str = "dana",
+) -> RegistryService:
+    registry = InMemoryRegistry()
+    registry.register_resource(
+        Resource(
+            id="m-1",
+            name="Example Model",
+            resource_type=ResourceType.MODEL,
+            location_uri="irods:///m-1/0.1.0",
+            execution_type=ExecutionType.PYTHON,
+            version="0.1.0",
+            version_status=ResourceVersionStatus.ACTIVE,
+            owner=owner,
+            registration_status=registration_status,
+            created_at=datetime(2025, 1, 1, tzinfo=UTC),
+        )
+    )
+    session = MagicMock()
+    return RegistryService(
+        registry=registry, session=session, authz=AuthorizationService(client=openfga_client)
+    )
+
+
+@pytest.fixture(autouse=True)
+def _stub_apply_metadata_package(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub out disk I/O for all tests in this module.
+
+    Auth / state-machine / OpenFGA tests don't care about the annotation
+    package contents — they just need approval not to fail on a missing
+    file.  The auto-apply section below overrides this stub per-test with
+    its own controlled spy or error-raising mock.
+    """
+    monkeypatch.setattr(
+        RegistryService,
+        "_apply_metadata_package",
+        lambda self, model_id, resource: [],
+    )
+
+
+# ── Ownership gate (OpenFGA path) ─────────────────────────────────────────
+
+
+async def test_review_denied_when_openfga_check_fails() -> None:
+    # Non-owner ("erin") + FGA denies → 403.  Owner ("dana") would bypass FGA
+    # entirely; use a different principal to exercise the denial path.
+    service = _make_service(_client(allowed=False), owner="dana")
+
+    with pytest.raises(APIError) as excinfo:
+        await service.review_metadata_package(_principal("erin"), model_id="m-1", approve=True)
+
+    assert excinfo.value.status_code == 403
+    assert excinfo.value.code == "not_authorized"
+
+
+async def test_owner_can_self_review_without_upload_reviewer_role() -> None:
+    """Model owner may approve their own submission even if FGA would deny upload_reviewer."""
+    service = _make_service(_client(allowed=False), owner="dana")
+
+    resource = await service.review_metadata_package(
+        _principal("dana"), model_id="m-1", approve=True
+    )
+
+    assert resource.registration_status == ResourceRegistrationStatus.APPROVED
+    assert resource.metadata_reviewed_by == "dana"
+
+
+async def test_review_local_issuer_bypasses_all_auth_checks() -> None:
+    # issuer=="local" → OpenFGA skipped; get_resource_and_assert_ownership also
+    # skips its ownership check for local principals (dev/disable_auth mode).
+    # Both auth layers are fully bypassed — the action succeeds regardless of
+    # whether the principal owns the model.
+    client = _client(allowed=False)  # would deny if consulted, but it won't be
+    service = _make_service(client, owner="dana")
+    local_principal = AuthenticatedPrincipal(
+        subject="erin", issuer="local", audience="local", scopes=set()
+    )
+
+    resource = await service.review_metadata_package(local_principal, model_id="m-1", approve=True)
+
+    client.check.assert_not_awaited()
+    assert resource.registration_status == ResourceRegistrationStatus.APPROVED
+
+
+# ── Approve ──────────────────────────────────────────────────────────────
+
+
+async def test_approve_transitions_to_approved_and_stamps_reviewer() -> None:
+    service = _make_service(_client(allowed=True))
+
+    resource = await service.review_metadata_package(
+        _principal("dana"), model_id="m-1", approve=True
+    )
+
+    assert resource.registration_status == ResourceRegistrationStatus.APPROVED
+    assert resource.metadata_reviewed_by == "dana"
+    assert resource.metadata_reviewed_at is not None
+    assert resource.metadata_rejection_reason == ""
+
+
+# ── Reject ───────────────────────────────────────────────────────────────
+
+
+async def test_reject_transitions_to_rejected_and_records_reason() -> None:
+    service = _make_service(_client(allowed=True))
+
+    resource = await service.review_metadata_package(
+        _principal("dana"), model_id="m-1", approve=False, reason="Missing license info."
+    )
+
+    assert resource.registration_status == ResourceRegistrationStatus.REJECTED
+    assert resource.metadata_reviewed_by == "dana"
+    assert resource.metadata_rejection_reason == "Missing license info."
+
+
+# ── Error mapping ────────────────────────────────────────────────────────
+
+
+async def test_review_illegal_transition_raises_400() -> None:
+    # APPROVED is a terminal state — no transition out of it is legal.
+    service = _make_service(
+        _client(allowed=True), registration_status=ResourceRegistrationStatus.APPROVED
+    )
+
+    with pytest.raises(APIError) as excinfo:
+        await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
+
+    assert excinfo.value.status_code == 400
+    assert excinfo.value.code == "invalid_state_transition"
+
+
+async def test_review_illegal_transition_does_not_commit() -> None:
+    service = _make_service(
+        _client(allowed=True), registration_status=ResourceRegistrationStatus.APPROVED
+    )
+    session = cast(MagicMock, service._session)
+
+    with pytest.raises(APIError):
+        await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
+
+    session.commit.assert_not_called()
+    session.rollback.assert_called_once()
+
+
+def _collide_on_approve(
+    service: RegistryService, monkeypatch: pytest.MonkeyPatch, constraint: str
+) -> None:
+    update = service._registry.update_resource
+
+    def _update(resource: Resource) -> Resource:
+        if resource.registration_status == ResourceRegistrationStatus.APPROVED:
+            raise IntegrityError(constraint, None, Exception())
+        return update(resource)
+
+    monkeypatch.setattr(service._registry, "update_resource", _update)
+
+
+async def test_approving_a_second_import_of_one_upstream_model_409s_naming_the_winner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """uq_resources_source covers approved rows only, so the collision lands here.
+
+    The winner's id must reach the caller: it is the model that displaced theirs,
+    and the UI links straight to it rather than searching for it.
+    """
+    client = _client(allowed=True)
+    service = _make_service(client)
+    loser = service._registry.get_resource("m-1")
+    loser.source_repository = "biomodels"
+    loser.source_identifier = "BIOMD0000000732"
+    service._registry.update_resource(loser)
+    service._registry.register_resource(
+        Resource(
+            id="m-2",
+            name="Winner",
+            resource_type=ResourceType.MODEL,
+            location_uri="irods:///m-2/0.1.0",
+            execution_type=ExecutionType.PYTHON,
+            version="0.1.0",
+            version_status=ResourceVersionStatus.ACTIVE,
+            registration_status=ResourceRegistrationStatus.APPROVED,
+            owner="erin",
+            source_repository="biomodels",
+            source_identifier="BIOMD0000000732",
+            created_at=datetime(2025, 1, 1, tzinfo=UTC),
+        )
+    )
+    _collide_on_approve(service, monkeypatch, "uq_resources_source")
+    session = cast(MagicMock, service._session)
+
+    with pytest.raises(APIError) as excinfo:
+        await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
+
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.code == "source_already_approved"
+    assert excinfo.value.meta is not None
+    assert excinfo.value.meta["model_id"] == "m-2"
+    assert excinfo.value.meta["source_identifier"] == "BIOMD0000000732"
+    session.commit.assert_not_called()
+    session.rollback.assert_called_once()
+    client.write_tuple.assert_not_awaited()
+
+
+async def test_a_non_source_integrity_error_stays_a_generic_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An upload carries no provenance, so there is no winner to name."""
+    service = _make_service(_client(allowed=True))
+    _collide_on_approve(service, monkeypatch, "some other constraint")
+
+    with pytest.raises(APIError) as excinfo:
+        await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
+
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.code == "resource_conflict"
+
+
+# ── OpenFGA viewer-tuple writes (Phase 1a) ───────────────────────────────
+
+
+async def test_approve_writes_viewer_wildcard_tuple() -> None:
+    """Approving a model writes viewer@user:* so anonymous can_view checks succeed."""
+    client = _client(allowed=True)
+    service = _make_service(client)
+
+    await service.review_metadata_package(_principal("erin"), model_id="m-1", approve=True)
+
+    client.write_tuple.assert_awaited_once_with(
+        user="user:*", relation="viewer", object_="model:m-1"
+    )
+
+
+async def test_reject_does_not_write_viewer_tuple() -> None:
+    """Rejecting must not write a viewer tuple — the model stays private."""
+    client = _client(allowed=True)
+    service = _make_service(client)
+
+    await service.review_metadata_package(
+        _principal("erin"), model_id="m-1", approve=False, reason="Needs fixes."
+    )
+
+    client.write_tuple.assert_not_awaited()
+
+
+async def test_approve_rolls_back_when_viewer_tuple_write_fails() -> None:
+    """A FGA failure on approve rolls back the DB so the two stores stay in sync."""
+    client = _client(allowed=True)
+    client.write_tuple = AsyncMock(
+        side_effect=APIError(status_code=502, code="openfga_write_failed", detail="boom")
+    )
+    service = _make_service(client)
+    session = cast(MagicMock, service._session)
+
+    with pytest.raises(APIError) as excinfo:
+        await service.review_metadata_package(_principal("erin"), model_id="m-1", approve=True)
+
+    assert excinfo.value.code == "openfga_write_failed"
+    session.commit.assert_not_called()
+    session.rollback.assert_called_once()
+
+
+async def test_approve_without_openfga_client_skips_viewer_tuple() -> None:
+    """No client configured — state still transitions, no crash, no tuple write."""
+    # No FGA client → all checks are permissive; state transitions normally.
+    service = _make_service(None, owner="dana")
+    session = cast(MagicMock, service._session)
+
+    resource = await service.review_metadata_package(
+        _principal("dana"), model_id="m-1", approve=True
+    )
+
+    assert resource.registration_status == ResourceRegistrationStatus.APPROVED
+    session.commit.assert_called_once()
+
+
+async def test_approve_local_issuer_skips_viewer_tuple() -> None:
+    """disable_auth dev mode skips all OpenFGA, including the viewer tuple write."""
+    client = _client(allowed=True)
+    service = _make_service(client)
+    local_principal = AuthenticatedPrincipal(
+        subject="erin", issuer="local", audience="local", scopes=set()
+    )
+
+    resource = await service.review_metadata_package(local_principal, model_id="m-1", approve=True)
+
+    assert resource.registration_status == ResourceRegistrationStatus.APPROVED
+    client.write_tuple.assert_not_awaited()
+
+
+# ── Auto-apply on approval ────────────────────────────────────────────────
+
+
+async def test_approve_calls_apply_metadata_package(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Approval auto-applies the annotation package so search fields are populated."""
+    service = _make_service(_client(allowed=True))
+    calls: list[str] = []
+
+    def _spy(self: RegistryService, model_id: str, resource: Resource) -> list[str]:
+        calls.append(model_id)
+        return []
+
+    monkeypatch.setattr(RegistryService, "_apply_metadata_package", _spy)
+
+    await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
+
+    assert calls == ["m-1"]
+
+
+async def test_reject_skips_apply_metadata_package(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rejection skips the auto-apply — the package may be incomplete."""
+    service = _make_service(_client(allowed=True))
+    calls: list[str] = []
+
+    def _spy(self: RegistryService, model_id: str, resource: Resource) -> list[str]:
+        calls.append(model_id)
+        return []
+
+    monkeypatch.setattr(RegistryService, "_apply_metadata_package", _spy)
+
+    await service.review_metadata_package(
+        _principal("dana"), model_id="m-1", approve=False, reason="Needs work."
+    )
+
+    assert calls == []
+
+
+async def test_approve_rolls_back_when_apply_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A missing/broken annotation package blocks approval and rolls back the DB."""
+    service = _make_service(_client(allowed=True))
+    session = cast(MagicMock, service._session)
+
+    def _raise(self: RegistryService, model_id: str, resource: Resource) -> list[str]:
+        raise APIError(status_code=404, code="metadata_package_not_found", detail="no pkg")
+
+    monkeypatch.setattr(RegistryService, "_apply_metadata_package", _raise)
+
+    with pytest.raises(APIError) as excinfo:
+        await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
+
+    assert excinfo.value.status_code == 404
+    assert excinfo.value.code == "metadata_package_not_found"
+    session.commit.assert_not_called()
+    session.rollback.assert_called_once()

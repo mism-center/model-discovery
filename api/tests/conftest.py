@@ -32,6 +32,7 @@ TEST_SETTINGS_DEFAULTS: dict[str, Any] = {
     "OIDC_CLIENT_SECRET": "x",
     "OIDC_REDIRECT_URI": "https://gateway.example.com/api/auth/callback",
     "OIDC_COOKIE_SIGNING_SECRET": "test-cookie-signing-secret-please-change",
+    "OPENFGA_STORE_ID": "test-store",
 }
 
 for _key, _value in TEST_SETTINGS_DEFAULTS.items():

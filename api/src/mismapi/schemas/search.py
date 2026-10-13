@@ -53,6 +53,7 @@ class ModelListItem(BaseModel):
     containers: list[ContainerDTO] = Field(default_factory=list)
     # Registration workflow
     registration_status: str = ""
+    image_review_status: str = "not_applicable"
     # System
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
@@ -132,6 +133,10 @@ class SearchResultItem(BaseModel):
     created_at: datetime
     updated_at: datetime
     score: float | None = None
+    # Permission hint: whether the requesting principal may execute this model.
+    # Populated server-side via OpenFGA; False for anonymous callers and
+    # non-executable resources.
+    can_execute: bool = False
 
 
 class AggBucketDTO(BaseModel):

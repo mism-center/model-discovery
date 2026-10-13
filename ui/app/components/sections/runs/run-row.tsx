@@ -486,10 +486,13 @@ export function RunRow({
         </div>
       )}
 
-      {/* Mount only while open so each rerun re-seeds from this run's values. */}
+      {/* Mount only while open so each rerun re-seeds from this run's values.
+          can_execute defaults to true: the user triggered this run, so we
+          optimistically assume they still have permission. The server's
+          assert_can_execute gate on POST /runs remains authoritative. */}
       {rerunModal.isOpen && (
         <RunModelModal
-          model={item.model}
+          model={{ ...item.model, can_execute: true }}
           isOpen
           onClose={rerunModal.onClose}
           initialInputResourceIds={run.input_resource_ids}

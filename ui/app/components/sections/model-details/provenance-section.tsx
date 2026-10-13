@@ -3,13 +3,14 @@ import cn from 'classnames';
 import { ClipboardDocumentIcon, CheckIcon } from '@heroicons/react/16/solid';
 
 import type { ModelDetailResponse } from '~/api/endpoints/models';
-import { formatBytes } from '~/utils/format';
+import { formatMonthYear, formatBytes } from '~/utils/format';
 import {
   Field,
   LINK,
   SectionAbsence,
   SectionCard,
   hasItems,
+  hasValue,
 } from './primitives';
 
 /**
@@ -19,7 +20,9 @@ import {
  *
  * Does not show `status` / `registration_status`. Imports made those states
  * common enough to be worth surfacing, but as a badge beside the title where a
- * reader looks first — see `model-pills.tsx` — not as a field down here.
+ * reader looks first — see `model-pills.tsx` — not as a field down here. It does
+ * show the metadata review decision below, once there is one: who made it, when,
+ * and a rejection's reason, none of which fits in a badge.
  *
  * Styled like every other section — a rule, a heading, fields. Sitting last on
  * the page is the de-emphasis; it needs no container of its own, and giving it
@@ -38,11 +41,24 @@ export function ProvenanceSection({ model }: { model: ModelDetailResponse }) {
   // Only imported models carry provenance; an upload leaves these empty.
   const hasSource = Boolean(model.source_repository && model.source_identifier);
 
+  // Gated on `registration_status` itself, not just on `metadata_reviewed_by`
+  // being set: after a rejected package is resubmitted, status bounces back to
+  // `pending_review` while `metadata_reviewed_by`/`_at` are left as history of
+  // the *previous* decision (see the backend's resubmit convention) — showing
+  // "Approved"/"Rejected" while a fresh review is pending would misrepresent an
+  // old verdict as the current one. Pre-MISM-291 resources have an empty
+  // `metadata_reviewed_by`, so `hasValue` alone already excludes them.
+  const hasMetadataReview =
+    (model.registration_status === 'approved' ||
+      model.registration_status === 'rejected') &&
+    hasValue(model.metadata_reviewed_by);
+
   const hasScalars =
     hasSource ||
     Boolean(model.contact_email) ||
     typeof model.size_bytes === 'number' ||
-    Boolean(model.digest_sha256);
+    Boolean(model.digest_sha256) ||
+    hasMetadataReview;
 
   const hasLongForm =
     hasItems(model.contacts) ||
@@ -97,6 +113,12 @@ export function ProvenanceSection({ model }: { model: ModelDetailResponse }) {
               {model.digest_sha256 && (
                 <Field label="SHA-256">
                   <ChecksumValue value={model.digest_sha256} />
+                </Field>
+              )}
+
+              {hasMetadataReview && (
+                <Field label="Metadata review">
+                  <MetadataReviewValue model={model} />
                 </Field>
               )}
             </dl>
@@ -209,6 +231,34 @@ export function ProvenanceSection({ model }: { model: ModelDetailResponse }) {
         </SectionAbsence>
       )}
     </SectionCard>
+  );
+}
+
+/**
+ * The UPLOAD_REVIEWER's decision on this model's metadata package (MISM-291).
+ * Only rendered by the caller once `registration_status` is `approved` or
+ * `rejected` with a real `metadata_reviewed_by` — see `hasMetadataReview`'s
+ * comment above for why the gate checks status rather than reviewer presence.
+ */
+function MetadataReviewValue({ model }: { model: ModelDetailResponse }) {
+  const rejected = model.registration_status === 'rejected';
+  return (
+    <>
+      <span className={cn('font-semibold', rejected && 'text-danger-600')}>
+        {rejected ? 'Rejected' : 'Approved'}
+      </span>
+      <span className="text-default-800">
+        {' '}
+        · {model.metadata_reviewed_by}
+        {model.metadata_reviewed_at &&
+          ` · ${formatMonthYear(model.metadata_reviewed_at)}`}
+      </span>
+      {rejected && hasValue(model.metadata_rejection_reason) && (
+        <div className="mt-1 text-default-800">
+          {model.metadata_rejection_reason}
+        </div>
+      )}
+    </>
   );
 }
 

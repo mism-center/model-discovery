@@ -34,6 +34,8 @@ ROUTE_PATHS: dict[str, str] = {
     # `return_to_query` rather than being part of the path, so this stays a
     # static key.
     "annotation-review": "/annotation-review",
+    "pending-reviews": "/pending-reviews",
+    "image-review": "/image-review",
 }
 
 #: Route keys whose path needs one caller-supplied id. Values are `str.format`

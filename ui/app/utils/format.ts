@@ -28,6 +28,23 @@ function parseLoose(value: string): Date | undefined {
 }
 
 /**
+ * Format an ISO timestamp as a short date+time string
+ * (e.g. `Jan 5, 2024, 2:30 PM`). Falls back to the raw input for
+ * unparseable values.
+ */
+export function formatDateTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.valueOf())) return iso;
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
+}
+
+/**
  * Decimal, so the labels below are honest: a KB is 1000 bytes, not 1024.
  *
  * This used to divide by 1024 while labelling the result KB/MB, which named

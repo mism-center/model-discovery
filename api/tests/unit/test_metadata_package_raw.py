@@ -21,7 +21,6 @@ from mism_registry.enums import (
 )
 from mism_registry.in_memory import InMemoryRegistry
 from mism_registry.resource import Resource
-from sqlalchemy.exc import IntegrityError
 
 import mismapi.services.registry_service as reg_svc
 from mismapi.auth.principal import AuthenticatedPrincipal
@@ -226,7 +225,7 @@ def test_write_skips_publication_with_null_title_and_warns(
 ) -> None:
     """Reproduces the originally reported crash: a publication entry with a
     null title (annotator couldn't confidently extract one). This must not
-    block approval or raise — the incomplete publication is skipped, every
+    block the save or raise — the incomplete publication is skipped, every
     other field is still applied, and a warning names the exact file+field.
     """
     _make_package(tmp_path)
@@ -248,8 +247,10 @@ def test_write_skips_publication_with_null_title_and_warns(
 
     assert dict(out)["metadata.yaml"] == meta_with_null_title
     stored = service._registry.get_resource("m-1")
-    # Approved and other fields applied — the null-title entry didn't block anything.
-    assert stored.registration_status == ResourceRegistrationStatus.APPROVED
+    # registration_status is left untouched (DRAFT, the fixture's starting
+    # state) — this endpoint no longer approves; other fields still applied,
+    # so the null-title entry didn't block anything.
+    assert stored.registration_status == ResourceRegistrationStatus.DRAFT
     assert stored.name == "New Model"
     # The incomplete publication is skipped, not stored with a fabricated title.
     assert stored.publications == []
@@ -258,72 +259,83 @@ def test_write_skips_publication_with_null_title_and_warns(
     ]
 
 
-def test_approving_a_second_import_of_one_upstream_model_409s_naming_the_winner(
+def test_write_from_pending_review_leaves_status_unchanged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """uq_resources_source covers approved rows only, so the collision lands here.
-
-    The winner's id must reach the caller: it is the model that displaced theirs,
-    and the UI links straight to it rather than searching for it.
-    """
-    service = _make_service(tmp_path, monkeypatch)
+    """Editing while PENDING_REVIEW (the normal pre-review-decision case)
+    doesn't move the status at all — approval/rejection is decided solely by
+    RegistryService.review_metadata_package now."""
     _make_package(tmp_path)
+    service = _make_service(tmp_path, monkeypatch)
+    resource = service._registry.get_resource("m-1")
+    resource.registration_status = ResourceRegistrationStatus.PENDING_REVIEW
+    service._registry.update_resource(resource)
 
-    loser = service._registry.get_resource("m-1")
-    loser.source_repository = "biomodels"
-    loser.source_identifier = "BIOMD0000000732"
-    service._registry.update_resource(loser)
-
-    service._registry.register_resource(
-        Resource(
-            id="m-2",
-            name="Winner",
-            resource_type=ResourceType.MODEL,
-            location_uri="irods:///m-2/0.1.0",
-            execution_type=ExecutionType.PYTHON,
-            version="0.1.0",
-            version_status=ResourceVersionStatus.ACTIVE,
-            registration_status=ResourceRegistrationStatus.APPROVED,
-            owner="user-2",
-            source_repository="biomodels",
-            source_identifier="BIOMD0000000732",
-            created_at=datetime(2025, 1, 1, tzinfo=UTC),
-        )
+    service.write_metadata_package_raw(
+        _principal(), model_id="m-1", files=[("metadata.yaml", _META_NEW)]
     )
 
-    def _collide(_resource: Resource) -> Resource:
-        raise IntegrityError("uq_resources_source", None, Exception())
-
-    monkeypatch.setattr(service._registry, "update_resource", _collide)
-
-    with pytest.raises(APIError) as excinfo:
-        service.write_metadata_package_raw(
-            _principal(), model_id="m-1", files=[("metadata.yaml", _META_NEW)]
-        )
-
-    assert excinfo.value.status_code == 409
-    assert excinfo.value.code == "source_already_approved"
-    assert excinfo.value.meta is not None
-    assert excinfo.value.meta["model_id"] == "m-2"
-    assert excinfo.value.meta["source_identifier"] == "BIOMD0000000732"
+    stored = service._registry.get_resource("m-1")
+    assert stored.registration_status == ResourceRegistrationStatus.PENDING_REVIEW
 
 
-def test_a_non_source_integrity_error_stays_a_generic_conflict(
+def test_write_from_rejected_returns_to_pending_review_and_clears_reason(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An upload carries no provenance, so there is no winner to name."""
-    service = _make_service(tmp_path, monkeypatch)
+    """Resubmitting a manually-fixed REJECTED package re-enters the reviewer
+    queue automatically (the state machine's REJECTED -> PENDING_REVIEW
+    transition), and the stale rejection reason is cleared since it no
+    longer applies. metadata_reviewed_by is left alone — it records who
+    last reviewed it, not touched again until the next review action."""
     _make_package(tmp_path)
+    service = _make_service(tmp_path, monkeypatch)
+    resource = service._registry.get_resource("m-1")
+    resource.registration_status = ResourceRegistrationStatus.REJECTED
+    resource.metadata_rejection_reason = "Missing license info."
+    resource.metadata_reviewed_by = "erin"
+    service._registry.update_resource(resource)
 
-    def _collide(_resource: Resource) -> Resource:
-        raise IntegrityError("some other constraint", None, Exception())
+    service.write_metadata_package_raw(
+        _principal(), model_id="m-1", files=[("metadata.yaml", _META_NEW)]
+    )
 
-    monkeypatch.setattr(service._registry, "update_resource", _collide)
+    stored = service._registry.get_resource("m-1")
+    assert stored.registration_status == ResourceRegistrationStatus.PENDING_REVIEW
+    assert stored.metadata_rejection_reason == ""
+    assert stored.metadata_reviewed_by == "erin"
 
-    with pytest.raises(APIError) as excinfo:
+
+def test_write_from_approved_raises_409(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Editing an APPROVED model is blocked — the model is publicly visible
+    and editing post-approval is not permitted."""
+    _make_package(tmp_path)
+    service = _make_service(tmp_path, monkeypatch)
+    resource = service._registry.get_resource("m-1")
+    resource.registration_status = ResourceRegistrationStatus.APPROVED
+    service._registry.update_resource(resource)
+
+    with pytest.raises(APIError) as exc:
         service.write_metadata_package_raw(
             _principal(), model_id="m-1", files=[("metadata.yaml", _META_NEW)]
         )
 
-    assert excinfo.value.status_code == 409
-    assert excinfo.value.code == "resource_conflict"
+    assert exc.value.status_code == 409
+    assert exc.value.code == "model_already_approved"
+
+
+def test_write_from_approved_does_not_touch_disk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The 409 guard must fire before any file write."""
+    pkg = _make_package(tmp_path)
+    service = _make_service(tmp_path, monkeypatch)
+    resource = service._registry.get_resource("m-1")
+    resource.registration_status = ResourceRegistrationStatus.APPROVED
+    service._registry.update_resource(resource)
+
+    with pytest.raises(APIError):
+        service.write_metadata_package_raw(
+            _principal(), model_id="m-1", files=[("metadata.yaml", _META_NEW)]
+        )
+
+    assert (pkg / "metadata.yaml").read_text(encoding="utf-8") == _META

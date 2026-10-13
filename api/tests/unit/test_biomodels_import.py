@@ -387,8 +387,8 @@ class TestFailureHandling:
         created: list[str] = []
         real_create = registry.create_model
 
-        def capture(*args: Any, **kwargs: Any) -> Any:
-            resource = real_create(*args, **kwargs)
+        async def capture(*args: Any, **kwargs: Any) -> Any:
+            resource = await real_create(*args, **kwargs)
             created.append(resource.id)
             # A sibling version, as a re-import or a second upload would leave.
             sibling = tmp_path / resource.id / "0.0.2"

@@ -5,7 +5,6 @@ from fastapi import APIRouter
 from mism_registry.enums import ResourceRegistrationStatus
 from mism_registry.resource import Resource
 
-from mismapi.api.v1._authz import model_visible_to
 from mismapi.auth.base import OptionalPrincipalDep
 from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.core.deps import CairnsClientDep, RegistryServiceDep
@@ -38,10 +37,12 @@ async def cairns_recommend(
     """
     response = await client.recommend(body)
     cards = response.evidence
-    models = _visible_models(
+    models = await _visible_models(
         {c.metadata.identifier for c in cards if c.source == MISM_SOURCE}, registry, principal
     )
-    imports = _visible_imports([c for c in cards if c.source != MISM_SOURCE], registry, principal)
+    imports = await _visible_imports(
+        [c for c in cards if c.source != MISM_SOURCE], registry, principal
+    )
 
     def registry_model_id(card: CairnsEvidenceCardDTO) -> str | None:
         identifier = card.metadata.identifier
@@ -55,7 +56,7 @@ async def cairns_recommend(
     return response.model_copy(update={"evidence": evidence})
 
 
-def _visible_models(
+async def _visible_models(
     model_ids: set[str],
     registry: RegistryService,
     principal: AuthenticatedPrincipal | None,
@@ -70,7 +71,7 @@ def _visible_models(
                 if exc.status_code == 404:
                     continue
                 raise
-            if model_visible_to(model, principal):
+            if await registry.can_view_model(principal, resource=model):
                 visible.add(model_id)
     except Exception:
         # Linking into the registry is a bonus. A broken registry must not cost
@@ -80,7 +81,7 @@ def _visible_models(
     return visible
 
 
-def _visible_imports(
+async def _visible_imports(
     cards: list[CairnsEvidenceCardDTO],
     registry: RegistryService,
     principal: AuthenticatedPrincipal | None,
@@ -95,15 +96,16 @@ def _visible_imports(
         if card.metadata.identifier:
             wanted[card.source].add(card.metadata.identifier)
 
-    imports: list[Resource] = []
+    visible: list[Resource] = []
     try:
         for source, identifiers in wanted.items():
-            imports += registry.find_by_source(repository=source, identifiers=list(identifiers))
+            for r in registry.find_by_source(repository=source, identifiers=list(identifiers)):
+                if await registry.can_view_model(principal, resource=r):
+                    visible.append(r)
     except Exception:
         logger.exception("registry_crossref_failed sources=%d", len(wanted))
         return {}
 
-    visible = [r for r in imports if model_visible_to(r, principal)]
     # Approved sorts last so it wins the dict: uq_resources_source lets a caller
     # see both an approved copy and their own unapproved import of one model.
     visible.sort(key=lambda r: r.registration_status == ResourceRegistrationStatus.APPROVED)

@@ -14,7 +14,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 
-import { requireUser } from '~/api/auth/require-user';
+import { requireCapability } from '~/api/auth/require-capability';
 import type { components } from '~/api/generated/schema';
 import { modelAnnotationPackageQueryOptions } from '~/api/query/models';
 import { MetadataFormViewer } from '~/components/sections/upload/metadata-form-viewer';
@@ -248,17 +248,23 @@ export function meta() {
 }
 
 /**
- * Auth-gated route, mirroring `runs.tsx` and `annotation-review.tsx`.
+ * Capability-gated route (MISM-291, UI-Phase 8-A), mirroring
+ * `pending-reviews.tsx`/`image-review.tsx`'s `requireCapability` shape.
  *
- * Uploading requires a session — the initiate-upload and GitHub-import endpoints
- * both reject anonymous callers — so the gate belongs at the boundary rather than
- * letting someone fill in the whole form and only discover that on submit.
- *
- * Nothing is prefetched: this page has no server-fetched queries, and the root
- * loader already hydrates the user for `useUser()`.
+ * Previously only `requireUser`-gated (any signed-in caller), matching
+ * `runs.tsx`/`annotation-review.tsx`'s shape — but unlike those two,
+ * uploading is also gated server-side on the platform-wide `uploader`
+ * role (`RegistryService._assert_uploader`, called by both `create_model`
+ * and `create_dataset`), which `requireUser` alone doesn't reflect: a
+ * signed-in non-uploader could fill in the whole form and only discover
+ * they're blocked on submit. Found during UI-Phase 8-A's full role audit
+ * — the other three roles (`upload_reviewer`, `image_checker`, and
+ * `can_execute`/`executor`) already had an equivalent front-door gate
+ * (`/pending-reviews`, `/image-review`, `RunControls` respectively); this
+ * one had been missed. Hidden is not locked.
  */
 export async function loader({ request }: Route.LoaderArgs) {
-  await requireUser(request, { returnToKey: 'upload' });
+  await requireCapability(request, 'uploader', { returnToKey: 'upload' });
   return null;
 }
 
@@ -636,7 +642,7 @@ export default function TusTest() {
     workflowStep === 'monitoring';
 
   return (
-    <main className="container mx-auto p-6 flex flex-col gap-6 max-w-4xl">
+    <main className="container mx-auto p-6 flex flex-col gap-6 max-w-4xl min-h-dvh">
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold">Model Upload</h1>
         <p className="text-sm text-foreground">

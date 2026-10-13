@@ -1,10 +1,11 @@
 from datetime import UTC, datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 from mism_registry.enums import (
     ExecutionType,
+    ImageReviewStatus,
     ResourceRegistrationStatus,
     ResourceType,
     ResourceVersionStatus,
@@ -12,6 +13,7 @@ from mism_registry.enums import (
 from mism_registry.resource import Resource
 
 from mismapi.core.deps import _get_registry_service
+from mismapi.core.errors import APIError
 from mismapi.main import create_app
 from mismapi.services.registry_service import RegistryService
 from tests.conftest import minimal_oidc_settings, override_anonymous, override_principal
@@ -27,6 +29,7 @@ def _make_model(
     execution_ref: str = "",
     version: str = "0.1.0",
     registration_status: ResourceRegistrationStatus = ResourceRegistrationStatus.APPROVED,
+    image_review_status: ImageReviewStatus = ImageReviewStatus.NOT_APPLICABLE,
 ) -> Resource:
     return Resource(
         id=id,
@@ -39,6 +42,7 @@ def _make_model(
         version=version,
         version_status=ResourceVersionStatus.ACTIVE,
         registration_status=registration_status,
+        image_review_status=image_review_status,
         owner=owner,
         created_at=datetime(2025, 1, 1, tzinfo=UTC),
     )
@@ -617,6 +621,9 @@ def test_get_model_detail_unapproved_model_404s_for_anonymous_caller(
     service.get_model.return_value = _make_model(
         owner="user-1", registration_status=registration_status
     )
+    service.assert_can_view_model = AsyncMock(
+        side_effect=APIError(status_code=404, code="not_found", detail="Not found.")
+    )
 
     client = _make_app_with_service(service, authenticated=False)
     response = client.get("/api/v1/models/m-1")
@@ -639,6 +646,9 @@ def test_get_model_detail_unapproved_model_404s_for_non_owner(
     service = MagicMock(spec=RegistryService)
     service.get_model.return_value = _make_model(
         owner="someone-else", registration_status=registration_status
+    )
+    service.assert_can_view_model = AsyncMock(
+        side_effect=APIError(status_code=404, code="not_found", detail="Not found.")
     )
 
     # override_principal defaults to subject "user-1" — not the owner above.
@@ -731,6 +741,181 @@ def test_update_metadata_package_raw_requires_files() -> None:
 
     assert response.status_code == 400  # app maps request validation errors to 400
     service.write_metadata_package_raw.assert_not_called()
+
+
+# ── POST /models/{model_id}/review ──────────────────────────────
+
+
+def test_review_model_approve_forwards_decision() -> None:
+    service = MagicMock(spec=RegistryService)
+    service.review_metadata_package.return_value = _make_model(
+        registration_status=ResourceRegistrationStatus.APPROVED
+    )
+
+    client = _make_app_with_service(service)
+    response = client.post("/api/v1/models/m-1/review", json={"approve": True})
+
+    assert response.status_code == 200
+    assert response.json()["registration_status"] == "approved"
+    kwargs = service.review_metadata_package.call_args.kwargs
+    assert kwargs["model_id"] == "m-1"
+    assert kwargs["approve"] is True
+    assert kwargs["reason"] == ""
+
+
+def test_review_model_reject_forwards_reason() -> None:
+    service = MagicMock(spec=RegistryService)
+    service.review_metadata_package.return_value = _make_model(
+        registration_status=ResourceRegistrationStatus.REJECTED
+    )
+
+    client = _make_app_with_service(service)
+    response = client.post(
+        "/api/v1/models/m-1/review",
+        json={"approve": False, "reason": "Missing license info."},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["registration_status"] == "rejected"
+    kwargs = service.review_metadata_package.call_args.kwargs
+    assert kwargs["approve"] is False
+    assert kwargs["reason"] == "Missing license info."
+
+
+def test_review_model_reject_requires_reason() -> None:
+    service = MagicMock(spec=RegistryService)
+    client = _make_app_with_service(service)
+
+    response = client.post("/api/v1/models/m-1/review", json={"approve": False})
+
+    assert response.status_code == 400  # app maps request validation errors to 400
+    service.review_metadata_package.assert_not_called()
+
+
+def test_review_model_reject_requires_non_blank_reason() -> None:
+    service = MagicMock(spec=RegistryService)
+    client = _make_app_with_service(service)
+
+    response = client.post("/api/v1/models/m-1/review", json={"approve": False, "reason": "   "})
+
+    assert response.status_code == 400
+    service.review_metadata_package.assert_not_called()
+
+
+# ── POST /models/{model_id}/image ───────────────────────────────
+
+
+def test_submit_container_image_forwards_payload() -> None:
+    service = MagicMock(spec=RegistryService)
+    service.submit_container_image.return_value = _make_model(
+        registration_status=ResourceRegistrationStatus.APPROVED
+    )
+
+    client = _make_app_with_service(service)
+    response = client.post(
+        "/api/v1/models/m-1/image",
+        json={
+            "kind": "docker",
+            "file": "Dockerfile",
+            "image_name": "my-image:v1",
+            "registry": "ghcr.io/mism-center",
+        },
+    )
+
+    assert response.status_code == 200
+    kwargs = service.submit_container_image.call_args.kwargs
+    assert kwargs["model_id"] == "m-1"
+    container = kwargs["container"]
+    assert container.kind == "docker"
+    assert container.file == "Dockerfile"
+    assert container.image_name == "my-image:v1"
+    assert container.registry == "ghcr.io/mism-center"
+
+
+def test_submit_container_image_defaults_optional_fields() -> None:
+    service = MagicMock(spec=RegistryService)
+    service.submit_container_image.return_value = _make_model()
+
+    client = _make_app_with_service(service)
+    response = client.post("/api/v1/models/m-1/image", json={"kind": "docker"})
+
+    assert response.status_code == 200
+    container = service.submit_container_image.call_args.kwargs["container"]
+    assert container.kind == "docker"
+    assert container.file == ""
+    assert container.image_name == ""
+    assert container.registry == ""
+
+
+def test_submit_container_image_requires_kind() -> None:
+    service = MagicMock(spec=RegistryService)
+    client = _make_app_with_service(service)
+
+    response = client.post("/api/v1/models/m-1/image", json={})
+
+    assert response.status_code == 400  # app maps request validation errors to 400
+    service.submit_container_image.assert_not_called()
+
+
+# ── POST /models/{model_id}/image-review ────────────────────────
+
+
+def test_review_container_image_approve_forwards_decision() -> None:
+    service = MagicMock(spec=RegistryService)
+    service.review_container_image.return_value = _make_model(
+        image_review_status=ImageReviewStatus.IMAGE_APPROVED
+    )
+
+    client = _make_app_with_service(service)
+    response = client.post("/api/v1/models/m-1/image-review", json={"approve": True})
+
+    assert response.status_code == 200
+    assert response.json()["image_review_status"] == "image_approved"
+    kwargs = service.review_container_image.call_args.kwargs
+    assert kwargs["model_id"] == "m-1"
+    assert kwargs["approve"] is True
+    assert kwargs["reason"] == ""
+
+
+def test_review_container_image_reject_forwards_reason() -> None:
+    service = MagicMock(spec=RegistryService)
+    service.review_container_image.return_value = _make_model(
+        image_review_status=ImageReviewStatus.IMAGE_REJECTED
+    )
+
+    client = _make_app_with_service(service)
+    response = client.post(
+        "/api/v1/models/m-1/image-review",
+        json={"approve": False, "reason": "Image fails to build."},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["image_review_status"] == "image_rejected"
+    kwargs = service.review_container_image.call_args.kwargs
+    assert kwargs["approve"] is False
+    assert kwargs["reason"] == "Image fails to build."
+
+
+def test_review_container_image_reject_requires_reason() -> None:
+    service = MagicMock(spec=RegistryService)
+    client = _make_app_with_service(service)
+
+    response = client.post("/api/v1/models/m-1/image-review", json={"approve": False})
+
+    assert response.status_code == 400  # app maps request validation errors to 400
+    service.review_container_image.assert_not_called()
+
+
+def test_review_container_image_reject_requires_non_blank_reason() -> None:
+    service = MagicMock(spec=RegistryService)
+    client = _make_app_with_service(service)
+
+    response = client.post(
+        "/api/v1/models/m-1/image-review", json={"approve": False, "reason": "   "}
+    )
+
+    assert response.status_code == 400
+    service.review_container_image.assert_not_called()
 
 
 # ── location_uri validation ────────────────────────────────────

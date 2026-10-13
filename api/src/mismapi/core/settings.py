@@ -78,6 +78,17 @@ class Settings(BaseSettings):
     )
     execution_timeout_seconds: float = Field(default=120.0, alias="EXECUTION_TIMEOUT_SECONDS")
 
+    # OpenFGA (authorization) — platform role checks and per-model access control
+    openfga_api_url: str = Field(default="http://localhost:8080", alias="OPENFGA_API_URL")
+    openfga_store_id: str = Field(default="", alias="OPENFGA_STORE_ID")
+    # Pins a specific authorization-model version rather than "whatever's
+    # latest" — the load-model-job writes a new immutable model version on
+    # every helm upgrade, so an unset value here means "always use the
+    # store's latest model," which OpenFGA's Check/Write APIs already do by
+    # default when the field is omitted.
+    openfga_authorization_model_id: str = Field(default="", alias="OPENFGA_AUTHORIZATION_MODEL_ID")
+    openfga_timeout_seconds: float = Field(default=10.0, alias="OPENFGA_TIMEOUT_SECONDS")
+
     # Annotation job defaults — used to build the execution payload for batch runs.
     annotation_job_image: str = Field(
         default="helxplatform/bio-pi-agent-runner:latest",

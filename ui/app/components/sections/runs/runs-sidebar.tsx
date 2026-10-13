@@ -69,7 +69,7 @@ export function RunsSidebar({
   const toValue = filters.to ? parseDate(filters.to) : null;
 
   return (
-    <div className="flex flex-col h-full min-w-[320px]">
+    <div className="flex flex-col h-full min-w-[320px] pb-8">
       <div className="mb-4 p-6 pb-0">
         <h2 className="text-black font-headline font-bold text-[14px] uppercase tracking-widest mb-1">
           Filters

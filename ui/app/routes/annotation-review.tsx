@@ -94,7 +94,6 @@ const NO_PACKAGE_MESSAGES: Partial<
 function AnnotationReviewContent({ modelId }: { modelId: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [savedStatus, setSavedStatus] = useState<string | null>(null);
   const [saveError, setSaveError] = useState('');
 
   const { data: model, isPending: modelPending } = useQuery({
@@ -105,7 +104,14 @@ function AnnotationReviewContent({ modelId }: { modelId: string }) {
         ? ANNOTATION_POLL_MS
         : false,
   });
-  const annotationStatus = savedStatus ?? model?.registration_status ?? '';
+  // Always the real, server-reported status — never a client-invented one.
+  // `write_metadata_package_raw` (this page's save endpoint) no longer
+  // decides `registration_status` (MISM-291); only `POST .../review`
+  // (UI-Phase 4-B, reviewer-only) does. Saving here re-invalidates the
+  // model-detail query below, so this reflects the one exception that
+  // *can* change on save: a resubmitted REJECTED package auto-transitioning
+  // back to PENDING_REVIEW.
+  const annotationStatus = model?.registration_status ?? '';
   const annotating = annotationStatus === 'annotating';
   const noPackage = NO_PACKAGE_MESSAGES[annotationStatus];
 
@@ -243,8 +249,14 @@ function AnnotationReviewContent({ modelId }: { modelId: string }) {
                   modelId={modelId}
                   rawFiles={rawFiles}
                   onSaved={() => {
-                    setSavedStatus('approved');
                     setSaveError('');
+                    // Re-fetch this model's real status (covers the one case
+                    // save can actually change it: REJECTED -> PENDING_REVIEW
+                    // on resubmit) and the pending-review list, in case this
+                    // save was that resubmit.
+                    queryClient.invalidateQueries({
+                      queryKey: modelKeys.detail(modelId),
+                    });
                     queryClient.invalidateQueries({
                       queryKey: modelKeys.pendingReview(),
                     });

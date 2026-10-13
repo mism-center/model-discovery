@@ -30,7 +30,6 @@ from pathlib import Path
 
 from mism_registry.resource import Resource
 
-from mismapi.api.v1._authz import model_visible_to
 from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.clients.biomodels_client import BioModelsClient
 from mismapi.clients.execution_client import ExecutionClient
@@ -90,12 +89,12 @@ async def import_biomodels_model(
             detail=f"'{model_id}' is not a BioModels model id.",
         )
 
-    _reject_duplicate(registry, principal, normalized)
+    await _reject_duplicate(registry, principal, normalized)
 
     record = await biomodels.get_model(normalized)
     archive = await biomodels.download_archive(normalized)
 
-    resource = registry.create_model(
+    resource = await registry.create_model(
         principal,
         name=(record.name or normalized)[:_NAME_MAX_LENGTH],
         location_uri=PENDING_LOCATION_URI,
@@ -160,7 +159,7 @@ async def import_biomodels_model(
     )
 
 
-def _reject_duplicate(
+async def _reject_duplicate(
     registry: RegistryService,
     principal: AuthenticatedPrincipal,
     normalized: str,
@@ -179,7 +178,7 @@ def _reject_duplicate(
             repository=SOURCE_REPOSITORY,
             identifiers=[normalized],
         )
-        if model_visible_to(r, principal)
+        if await registry.can_view_model(principal, resource=r)
     ]
     if not existing:
         return

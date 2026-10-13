@@ -60,11 +60,14 @@ functional-down:
 	$(COMPOSE_TEST) down -v
 
 ## Run the functional tests (checking if the services are already running)
+## Excludes live_openfga: those need a real OpenFGA instance (see
+## infra/helm-charts/OpenFGA) that CI doesn't provision yet; run them
+## manually per tests/functional/test_openfga_live.py's docstring.
 test-functional:
 	@if [ -z "$$($(COMPOSE_TEST) ps --status running -q api 2>/dev/null)" ]; then \
 		$(MAKE) functional-up; \
 	fi
-	$(UV) run pytest tests/functional/*.py -m integration -v
+	$(UV) run pytest tests/functional/*.py -m "integration and not live_openfga" -v
 	$(MAKE) functional-down
 
 ## Run the test suite (including functional tests)

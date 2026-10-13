@@ -2,7 +2,6 @@ import { Accordion, AccordionItem, DatePicker, Skeleton } from '@heroui/react';
 import { parseDate } from '@internationalized/date';
 import { useMemo } from 'react';
 import cn from 'classnames';
-import { useQuery } from '@tanstack/react-query';
 
 import type { AggResult } from '~/api';
 import {
@@ -11,8 +10,6 @@ import {
   TermsCheckboxGroup,
 } from '~/components/common/facets';
 import { useSearch } from '~/search/context/search-context';
-import { useUser } from '~/api/auth/user';
-import { pendingReviewModelsQueryOptions } from '~/api/query/models';
 import {
   NATIVE_SOURCE_KEY,
   SOURCE_FACET_FIELD,
@@ -23,15 +20,10 @@ import type { FacetValue } from '~/search/state/types';
 
 export function SearchSidebar() {
   const { state, data, setFacet, clearFacet } = useSearch();
-  const { user } = useUser();
-
-  const { data: pendingReviewData } = useQuery({
-    ...pendingReviewModelsQueryOptions(),
-    enabled: !!user,
-  });
 
   const facets = useMemo(
-    () => facetsForResourceType(state.resourceType),
+    () =>
+      facetsForResourceType(state.resourceType).filter((f) => !f.sidebarHidden),
     [state.resourceType]
   );
 
@@ -39,22 +31,6 @@ export function SearchSidebar() {
     () => facets.filter((f) => f.widget !== 'toggle').map((f) => f.id),
     [facets]
   );
-
-  // Pre-compute the model_status aggregation from available data so the
-  // TermsFacet can render counts without a real API aggregation field.
-  const modelStatusAgg: AggResult | undefined = useMemo(() => {
-    if (!data) return;
-    const executableCount = (
-      data.aggs?.['execution_type']?.buckets ?? []
-    ).reduce((sum, b) => sum + b.count, 0);
-    const pendingCount = pendingReviewData?.total ?? 0;
-    return {
-      buckets: [
-        { key: 'executable', count: executableCount },
-        { key: 'pending_review', count: pendingCount },
-      ],
-    };
-  }, [data, pendingReviewData]);
 
   // `source_repository` is '' for an upload, and the API drops empty-keyed
   // buckets, so the count for models authored here is the remainder once every
@@ -72,15 +48,8 @@ export function SearchSidebar() {
     };
   }, [data]);
 
-  // Facets the API cannot supply buckets for, keyed by facet id (both of these
-  // have `id === field`). Falls through to the real aggregation for the rest.
-  const synthesizedAggs: Record<string, AggResult | undefined> = {
-    model_status: modelStatusAgg,
-    [SOURCE_FACET_FIELD]: sourceAgg,
-  };
-
   return (
-    <div className="flex flex-col h-full min-w-[320px]">
+    <div className="flex flex-col h-full min-w-[320px] pb-8">
       <div className="mb-4 p-6 pb-0">
         <h2 className="text-black font-headline font-bold text-[14px] uppercase tracking-widest mb-1">
           Filters
@@ -108,7 +77,9 @@ export function SearchSidebar() {
       >
         {facets.map((facet, index) => {
           const agg: AggResult | undefined =
-            synthesizedAggs[facet.id] ?? data?.aggs?.[facet.field];
+            facet.field === SOURCE_FACET_FIELD
+              ? sourceAgg
+              : data?.aggs?.[facet.field];
           const value = state.facets[facet.id];
 
           if (facet.widget === 'toggle') {

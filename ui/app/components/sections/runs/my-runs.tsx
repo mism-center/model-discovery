@@ -289,7 +289,7 @@ export default function MyRunsSection() {
   const filtered = activeCount > 0;
 
   return (
-    <main className="flex flex-col grow">
+    <main className="flex flex-col grow min-h-dvh">
       <div className="grid grid-cols-[auto_minmax(0,1fr)] grow items-stretch bg-default-50">
         {/* Filter sidebar (hidden on small screens; facets still reachable via the top row) */}
         <aside className="hidden lg:block self-start col-start-1">

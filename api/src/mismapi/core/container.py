@@ -30,9 +30,11 @@ from mismapi.clients.biomodels_client import BioModelsClient
 from mismapi.clients.cairns_client import CairnsClient
 from mismapi.clients.execution_client import ExecutionClient
 from mismapi.clients.local_upload_client import LocalFileUploadClient
+from mismapi.clients.openfga_client import OpenFGAClient
 from mismapi.clients.upload_client import UploadServiceClient
 from mismapi.core.config_validation import ensure_startup_config
 from mismapi.core.settings import Settings
+from mismapi.services.authorization_service import AuthorizationService
 from mismapi.services.upload_session_store_service import UploadSessionStoreService
 
 if TYPE_CHECKING:
@@ -59,6 +61,8 @@ class AppContainer:
     execution_client: ExecutionClient
     cairns_client: CairnsClient
     biomodels_client: BioModelsClient
+    openfga_client: OpenFGAClient
+    authz: AuthorizationService
     auth_validator: AuthValidator
     oidc_client: StarletteOAuth2App
     oidc_service: OIDCService
@@ -93,9 +97,9 @@ class AppContainer:
             future=True,
         )
 
-        # Upload backend: filesystem PVC (default while no upload service
-        # exists) or remote HTTP upload service. Both expose the same async
-        # protocol so the upload endpoint is backend-agnostic.
+        # Upload backend: filesystem PVC (UPLOAD_BACKEND=local, the default)
+        # or remote HTTP upload service (UPLOAD_BACKEND=http). Both expose
+        # the same async protocol so the upload endpoint is backend-agnostic.
         upload_client: UploadServiceClient | LocalFileUploadClient
         if settings.upload_backend == "local":
             upload_client = LocalFileUploadClient(
@@ -126,6 +130,14 @@ class AppContainer:
             max_archive_bytes=settings.biomodels_max_archive_bytes,
             stub_upstream=settings.stub_upstream_services,
         )
+
+        openfga_client = OpenFGAClient(
+            base_url=settings.openfga_api_url,
+            store_id=settings.openfga_store_id,
+            authorization_model_id=settings.openfga_authorization_model_id,
+            timeout_seconds=settings.openfga_timeout_seconds,
+        )
+        authz = AuthorizationService(client=openfga_client)
 
         redis_client: Redis = Redis.from_url(  # pyright: ignore[reportUnknownMemberType]
             settings.redis_url,
@@ -163,6 +175,8 @@ class AppContainer:
             execution_client=execution_client,
             cairns_client=cairns_client,
             biomodels_client=biomodels_client,
+            openfga_client=openfga_client,
+            authz=authz,
             auth_validator=auth_validator,
             oidc_client=oidc_client,
             oidc_service=oidc_service,
@@ -190,6 +204,7 @@ class AppContainer:
             ("execution_client", self.execution_client.close),
             ("cairns_client", self.cairns_client.close),
             ("biomodels_client", self.biomodels_client.close),
+            ("openfga_client", self.openfga_client.close),
             ("redis", self.redis.aclose),
         ):
             try:
