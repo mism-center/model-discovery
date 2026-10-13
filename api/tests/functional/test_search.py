@@ -377,6 +377,7 @@ def test_search_response_shape(api: httpx.Client) -> None:
         "source_revision",
         # Execution
         "execution_type",
+        "env_build_status",
         "execution_ref",
         "io_spec",
         "entry_points",
