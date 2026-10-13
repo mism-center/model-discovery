@@ -1,12 +1,13 @@
 import { Button, Tooltip, useDisclosure } from '@heroui/react';
 import { PlayIcon } from '@heroicons/react/24/solid';
 
+import type { SearchResultItem } from '~/api';
 import type { RunnableModel } from '~/api/endpoints/runs';
 import { useUser } from '~/api/auth/user';
 import { RunModelModal } from './run-model-modal';
 
 interface RunControlsProps {
-  model: RunnableModel;
+  model: RunnableModel & Pick<SearchResultItem, 'env_build_status'>;
   /**
    * Visual scale of the launch button.
    *
@@ -38,7 +39,7 @@ interface RunControlsProps {
  * server-side regardless of what this component renders.
  */
 export function RunControls({ model, scale = 'card' }: RunControlsProps) {
-  const isExecutable = Boolean(model.execution_type);
+  const isExecutable = model.env_build_status === 'runnable';
   const launchModal = useDisclosure();
   const { user, isLoading: isUserLoading } = useUser();
   const canExecute = model.can_execute ?? false;
