@@ -80,7 +80,7 @@ class LocalFileUploadClient:
         safe_filename = self._sanitize_filename(filename)
 
         target_dir = (self._mount_root / resource_id).resolve()
-        if not _is_relative_to(target_dir, self._mount_root):
+        if not target_dir.is_relative_to(self._mount_root):
             raise APIError(
                 status_code=400,
                 code="invalid_resource_id",
@@ -244,15 +244,6 @@ class LocalFileUploadClient:
                 ),
             )
         return base
-
-
-def _is_relative_to(child: Path, parent: Path) -> bool:
-    """Backport-shaped helper for ``Path.is_relative_to`` semantics."""
-    try:
-        child.relative_to(parent)
-        return True
-    except ValueError:
-        return False
 
 
 def _safe_unlink(path: Path) -> None:

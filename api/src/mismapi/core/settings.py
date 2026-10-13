@@ -57,18 +57,6 @@ class Settings(BaseSettings):
     # "irods:///<rel>" or "/irods/<rel>" resolve to "{irods_mount_path}/<rel>".
     irods_mount_path: str = Field(default="/irods", alias="IRODS_MOUNT_PATH")
 
-    # The annotation job pod and this API pod mount the same iRODS PVC from
-    # different pods; there's a brief window after the job is reported
-    # "succeeded" where the written metadata-package files aren't yet visible
-    # through this pod's mount. Bounded retry absorbs that propagation lag
-    # before surfacing a 404 — see RegistryService._metadata_package_dir.
-    metadata_package_retry_max_attempts: int = Field(
-        default=4, alias="METADATA_PACKAGE_RETRY_MAX_ATTEMPTS"
-    )
-    metadata_package_retry_backoff_seconds: float = Field(
-        default=2.0, alias="METADATA_PACKAGE_RETRY_BACKOFF_SECONDS"
-    )
-
     # Upload service
     upload_service_url: BaseUrl = Field(default="http://localhost:8200", alias="UPLOAD_SERVICE_URL")
     upload_timeout_seconds: float = Field(default=60.0, alias="UPLOAD_TIMEOUT_SECONDS")
@@ -125,8 +113,13 @@ class Settings(BaseSettings):
         default="https://www.biomodels.org", alias="BIOMODELS_API_URL"
     )
     biomodels_timeout_seconds: float = Field(default=15.0, alias="BIOMODELS_TIMEOUT_SECONDS", gt=0)
-    # There is no bulk endpoint, so max concurrent requests per CAIRNS request.
+    # Max concurrent per-file refetches while importing one model.
     biomodels_max_concurrency: int = Field(default=8, alias="BIOMODELS_MAX_CONCURRENCY", gt=0)
+    # An imported OMEX archive is buffered in memory before extraction, so this
+    # is deliberately lower than UPLOAD_MAX_BYTES, which streams to disk.
+    biomodels_max_archive_bytes: int = Field(
+        default=100 * 1024 * 1024, alias="BIOMODELS_MAX_ARCHIVE_BYTES", gt=0
+    )
 
     # Authentication
     auth_mode: Literal["oidc"] = Field(default="oidc", alias="AUTH_MODE")

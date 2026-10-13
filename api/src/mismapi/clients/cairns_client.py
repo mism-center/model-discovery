@@ -64,7 +64,7 @@ class CairnsClient:
         try:
             return CairnsRecommendResponse.model_validate(response.json())
         except (ValueError, ValidationError) as exc:
-            logger.warning("cairns_invalid_response status=%s", response.status_code)
+            logger.warning("cairns_invalid_response status=%s error=%s", response.status_code, exc)
             raise APIError(
                 status_code=502,
                 code="cairns_invalid_response",

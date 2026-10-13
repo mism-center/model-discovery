@@ -1,25 +1,13 @@
 import { ArrowTopRightOnSquareIcon } from '@heroicons/react/16/solid';
 import { QuotationMarkIcon } from '@sidekickicons/react/16/solid';
-import { Button } from '@heroui/react';
 import cn from 'classnames';
 
 import type { CairnsEvidenceCard } from '~/api/endpoints/cairns';
-import {
-  type EvidenceFields,
-  evidenceFields,
-} from '~/chat/state/evidence-fields';
+import { evidenceFields } from '~/chat/state/evidence-fields';
+import { ACTION_LINK, EvidenceImportAction } from './evidence-import-action';
 
 const TAG =
   'px-2 py-0.5 rounded-xs text-[10px] font-bold uppercase tracking-tighter';
-
-/**
- * Curation is a property of the record's presence in BioModels, so it reads as
- * a qualifier on the source rather than a badge competing with it.
- */
-function sourceLabel(fields: EvidenceFields): string {
-  if (fields.curationStatus === 'CURATED') return `${fields.source} (curated)`;
-  return fields.source;
-}
 
 function Attribute({ label, value }: { label: string; value: string }) {
   return (
@@ -42,14 +30,10 @@ export function EvidenceCard({
   const fields = evidenceFields(card);
 
   const attributes = [
-    fields.organisms.length > 0
-      ? { label: 'Organism', value: fields.organisms.join(', ') }
-      : undefined,
-    fields.modellingApproach
-      ? { label: 'Approach', value: fields.modellingApproach }
-      : undefined,
-    fields.format ? { label: 'Format', value: fields.format } : undefined,
-  ].filter((entry) => entry !== undefined);
+    { label: 'Category', values: fields.categories },
+    { label: 'Topics', values: fields.topics },
+    { label: 'Language', values: fields.languages },
+  ].filter((attribute) => attribute.values.length > 0);
 
   return (
     <li
@@ -64,14 +48,14 @@ export function EvidenceCard({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-stretch lg:justify-between lg:gap-6">
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex min-h-8 flex-wrap items-center gap-2">
-            <span className={cn(TAG, 'bg-primary-100 text-primary/80')}>
-              {sourceLabel(fields)}
+            <span className={cn(TAG, 'bg-secondary text-white')}>
+              {fields.sourceLabel}
             </span>
-            {fields.accession ? (
+            {/* {fields.accession ? (
               <span className={cn(TAG, 'bg-default-200 text-default-900/90')}>
                 {fields.accession}
               </span>
-            ) : undefined}
+            ) : undefined} */}
           </div>
 
           <h3 className="font-headline text-xl font-bold text-primary">
@@ -84,18 +68,10 @@ export function EvidenceCard({
             </p>
           ) : undefined}
 
-          {fields.publicationTitle ? (
+          {fields.citation ? (
             <div className="mt-3 flex items-start gap-1.5 text-[11px] uppercase tracking-tight text-default-800">
               <QuotationMarkIcon className="size-3.5 shrink-0" />
-              <span>
-                {fields.publicationTitle}
-                {fields.publicationJournal ? (
-                  <span className="text-default-800/80">
-                    {' '}
-                    · {fields.publicationJournal}
-                  </span>
-                ) : undefined}
-              </span>
+              <span>{fields.citation}</span>
             </div>
           ) : undefined}
         </div>
@@ -105,28 +81,27 @@ export function EvidenceCard({
             <Attribute
               key={attribute.label}
               label={attribute.label}
-              value={attribute.value}
+              value={attribute.values.join(', ')}
             />
           ))}
-          <div className="mt-auto">
+          <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1.5">
             {fields.url ? (
-              <Button
-                as="a"
-                className="text-primary"
-                endContent={<ArrowTopRightOnSquareIcon className="size-3.5" />}
+              <a
+                className={ACTION_LINK}
                 href={fields.url}
                 rel="noreferrer noopener"
-                size="sm"
                 target="_blank"
-                variant="flat"
               >
                 View details
-              </Button>
-            ) : (
+                <ArrowTopRightOnSquareIcon className="size-3.5" />
+              </a>
+            ) : undefined}
+            {fields.url || card.mism_model_id ? undefined : (
               <span className="text-xs text-default-800">
                 No link available
               </span>
             )}
+            <EvidenceImportAction card={card} />
           </div>
         </div>
       </div>

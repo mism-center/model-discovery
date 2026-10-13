@@ -1,5 +1,9 @@
-"""The BioModels model-id format, and DTOs for the subset of a record the
-gateway re-publishes.
+"""The BioModels model-id format, and DTOs for a record the gateway re-publishes.
+
+These aim to carry every field BioModels returns: the record is written verbatim
+to the annotation agent's manifest, so a field omitted here is data the agent
+never sees. `extra="ignore"` means that loss is silent — adding a field upstream
+requires adding it below.
 
 Note that `accession` on the DTOs below is BioModels' own field name for the id
 of a *referenced* entity — a PubMed id, a taxonomy or ontology term. A model's
@@ -8,17 +12,12 @@ own id is a `modelId`, not an accession.
 BioModels serves camelCase JSON; these DTOs accept that and emit snake_case
 like every other schema in this package.
 
-Two upstream fields are deliberately dropped:
-
-* ``description`` — usually the raw SBML ``<notes>`` XHTML blob rather than
-  prose, carrying author-supplied ``<a href>`` markup. BioModels documents the
-  field only as "string", so whether any given model returns markup or plain
-  text cannot be relied on either way. ``publication.synopsis`` is documented
-  plain text and is used instead; it is the source paper's abstract, so it is
-  present only for models that cite one.
-* contributor e-mail addresses — ``AuthorDTO`` in `schemas.registry` models
-  authorship without them, and this endpoint is not a route for republishing
-  harvested addresses.
+``description`` is usually the raw SBML ``<notes>`` XHTML blob rather than
+prose, carrying author-supplied markup — ``<a href>``, ``<div>``, ``<strong>``.
+BioModels documents the field only as "string", so whether any given model
+returns markup or plain text cannot be relied on either way. It is upstream
+content this gateway does not control: consumers must not render it as HTML.
+``publication.synopsis`` is documented plain text where a citing paper exists.
 """
 
 import re
@@ -69,18 +68,34 @@ class BioModelsAnnotationDTO(BioModelsTermDTO):
     qualifier: str = ""
 
 
+class BioModelsAuthorDTO(_BioModelsDTO):
+    name: str = ""
+    institution: str = ""
+
+
 class BioModelsPublicationDTO(_BioModelsDTO):
     type: str = ""
     accession: str = ""
     journal: str = ""
     title: str = ""
     synopsis: str = ""
+    affiliation: str = ""
+    link: str = ""
+    # `year` is a bare number upstream; `month` is quoted, as are the rest.
+    year: int | None = None
+    month: str = ""
+    volume: str = ""
+    issue: str = ""
+    pages: str = ""
+    authors: list[BioModelsAuthorDTO] = Field(default_factory=list)
 
 
 class BioModelsContributorDTO(_BioModelsDTO):
     name: str = ""
+    email: str = ""
     orcid: str = ""
     affiliation: str = ""
+    external: bool | None = None
     # Upstream keys `contributors` by role ("Curator", "Modeller"); the
     # flattening in BioModelsRecordDTO moves that key here.
     role: str = ""
@@ -91,11 +106,25 @@ class BioModelsFileDTO(_BioModelsDTO):
     description: str = ""
     file_size: int | None = None
     mime_type: str = ""
+    md5sum: str = ""
+    sha1sum: str = ""
+    sha256sum: str = ""
 
 
 class BioModelsFilesDTO(_BioModelsDTO):
     main: list[BioModelsFileDTO] = Field(default_factory=list)
     additional: list[BioModelsFileDTO] = Field(default_factory=list)
+
+
+class BioModelsRevisionDTO(_BioModelsDTO):
+    version: int | None = None
+    submitted: datetime | None = None
+    submitter: str = ""
+    comment: str = ""
+
+
+class BioModelsHistoryDTO(_BioModelsDTO):
+    revisions: list[BioModelsRevisionDTO] = Field(default_factory=list)
 
 
 class BioModelsRecordDTO(_BioModelsDTO):
@@ -106,9 +135,12 @@ class BioModelsRecordDTO(_BioModelsDTO):
     url: str = ""
 
     name: str = ""
+    # Upstream XHTML, not prose — see the module docstring before rendering it.
+    description: str = ""
     submission_id: str = ""
     publication_id: str = ""
     curation_status: str = ""
+    vcs_identifier: str = ""
     first_published: datetime | None = None
     format: BioModelsFormatDTO | None = None
     modelling_approach: BioModelsTermDTO | None = None
@@ -119,6 +151,7 @@ class BioModelsRecordDTO(_BioModelsDTO):
         validation_alias="modelLevelAnnotations",
     )
     files: BioModelsFilesDTO | None = None
+    history: BioModelsHistoryDTO | None = None
 
     @model_validator(mode="before")
     @classmethod

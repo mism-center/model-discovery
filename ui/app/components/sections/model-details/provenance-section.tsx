@@ -18,13 +18,11 @@ import {
  * reader asks up front (authors, citation, license, version, date) move into the
  * title byline. See `model-byline.tsx`.
  *
- * Does not show bare `status` / `registration_status` as a pill — every
- * *catalogued* (publicly visible) model reads "active"/"approved", so the pill
- * would cost a field and answer nothing. It does show the metadata review
- * decision below, once there is one to show: a rejection reason is exactly the
- * kind of information the pill's absence-of-variance argument does not cover,
- * since only the model's owner (or a reviewer) ever sees a non-approved model
- * at all.
+ * Does not show `status` / `registration_status`. Imports made those states
+ * common enough to be worth surfacing, but as a badge beside the title where a
+ * reader looks first — see `model-pills.tsx` — not as a field down here. It does
+ * show the metadata review decision below, once there is one: who made it, when,
+ * and a rejection's reason, none of which fits in a badge.
  *
  * Styled like every other section — a rule, a heading, fields. Sitting last on
  * the page is the de-emphasis; it needs no container of its own, and giving it
@@ -40,6 +38,9 @@ export function ProvenanceSection({ model }: { model: ModelDetailResponse }) {
   // place.
   const showPublications = (model.publications?.length ?? 0) > 1;
 
+  // Only imported models carry provenance; an upload leaves these empty.
+  const hasSource = Boolean(model.source_repository && model.source_identifier);
+
   // Gated on `registration_status` itself, not just on `metadata_reviewed_by`
   // being set: after a rejected package is resubmitted, status bounces back to
   // `pending_review` while `metadata_reviewed_by`/`_at` are left as history of
@@ -53,6 +54,7 @@ export function ProvenanceSection({ model }: { model: ModelDetailResponse }) {
     hasValue(model.metadata_reviewed_by);
 
   const hasScalars =
+    hasSource ||
     Boolean(model.contact_email) ||
     typeof model.size_bytes === 'number' ||
     Boolean(model.digest_sha256) ||
@@ -71,6 +73,31 @@ export function ProvenanceSection({ model }: { model: ModelDetailResponse }) {
         <>
           {hasScalars && (
             <dl className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {/* First: for an imported model this is the answer to "where did
+                  this come from", which outranks the integrity fields beside it. */}
+              {hasSource && (
+                <Field label="Source">
+                  {model.source_url ? (
+                    <a
+                      className={LINK}
+                      href={model.source_url}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      {model.source_identifier}
+                    </a>
+                  ) : (
+                    <span>{model.source_identifier}</span>
+                  )}
+                  {model.source_revision && (
+                    <span className="text-default-800">
+                      {' '}
+                      · revision {model.source_revision}
+                    </span>
+                  )}
+                </Field>
+              )}
+
               {model.contact_email && (
                 <Field label="Contact">
                   <a href={`mailto:${model.contact_email}`} className={LINK}>
@@ -107,12 +134,9 @@ export function ProvenanceSection({ model }: { model: ModelDetailResponse }) {
                     {model.contacts.map((c) => (
                       <li key={`${c.name}-${c.email}`}>
                         <span className="font-semibold">{c.name}</span>
-                        {c.role && (
-                          <span className="text-default-800"> · {c.role}</span>
-                        )}
                         {c.email && (
                           <>
-                            {' '}
+                            {' · '}
                             <a href={`mailto:${c.email}`} className={LINK}>
                               {c.email}
                             </a>
@@ -120,7 +144,7 @@ export function ProvenanceSection({ model }: { model: ModelDetailResponse }) {
                         )}
                         {c.affiliation && (
                           <div className="text-default-800">
-                            {c.affiliation}
+                            {c.role} · {c.affiliation}
                           </div>
                         )}
                       </li>
@@ -158,10 +182,10 @@ export function ProvenanceSection({ model }: { model: ModelDetailResponse }) {
               )}
 
               {/*
-               * The registry's only provenance link — `qualifier` carries the
-               * relationship (bqmodel:isDerivedFrom, bqbiol:isVersionOf, …),
-               * which is the only thing on the page answering "where did this
-               * come from".
+               * Curated relationships, distinct from the Source field above:
+               * `qualifier` carries how this model relates to another record
+               * (bqmodel:isDerivedFrom, bqbiol:isVersionOf, …), where Source
+               * names the one it was imported from.
                */}
               {hasItems(model.related_resources) && (
                 <Field label="Related">

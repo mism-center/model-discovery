@@ -1,7 +1,6 @@
 import dataclasses
 import logging
 import shutil
-import time
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -38,6 +37,7 @@ from mism_registry.search import (
     SearchResult,
 )
 from mism_registry.types import Author, Container, IOSpec, Publication
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from mismapi.auth.principal import AuthenticatedPrincipal
@@ -84,6 +84,21 @@ class RegistryService:
     ) -> None:
         """Raise APIError(404) if ``principal`` cannot view ``resource``."""
         await self._authz.assert_can_view_model(principal, resource=resource)
+
+    async def can_view_model(
+        self,
+        principal: AuthenticatedPrincipal | None,
+        *,
+        resource: Resource,
+    ) -> bool:
+        """Non-asserting ``assert_can_view_model``."""
+        try:
+            await self._authz.assert_can_view_model(principal, resource=resource)
+        except APIError as exc:
+            if exc.status_code == 404:
+                return False
+            raise
+        return True
 
     async def assert_can_view_resource(
         self,
@@ -149,7 +164,7 @@ class RegistryService:
         *,
         name: str,
         location_uri: str,
-        execution_type: ExecutionType,
+        execution_type: ExecutionType | None,
         execution_ref: str = "",
         io_spec: IOSpec | None = None,
         description: str = "",
@@ -170,6 +185,10 @@ class RegistryService:
         organisms: list[str] | None = None,
         domains: list[str] | None = None,
         date_published: date | None = None,
+        source_repository: str = "",
+        source_identifier: str = "",
+        source_url: str = "",
+        source_revision: str = "",
     ) -> Resource:
         await self._authz.assert_uploader(principal)
         try:
@@ -198,6 +217,10 @@ class RegistryService:
                 organisms=organisms or [],
                 domains=domains or [],
                 date_published=date_published,
+                source_repository=source_repository,
+                source_identifier=source_identifier,
+                source_url=source_url,
+                source_revision=source_revision,
             )
             # MISM-291: grant ownership + the platform boilerplate tuple so
             # model#can_execute's tupleToUserset (owner OR platform executor)
@@ -207,6 +230,18 @@ class RegistryService:
         except RegistryValidationError as exc:
             self._session.rollback()
             raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+        except IntegrityError as exc:
+            # Rolling back is not optional: an aborted transaction poisons the
+            # session for the rest of the request. Not reachable via
+            # uq_resources_source — that index spans approved rows and every
+            # resource is created DRAFT — so this is a backstop that turns any
+            # remaining constraint violation into a 409 rather than a 500.
+            self._session.rollback()
+            raise APIError(
+                status_code=409,
+                code="resource_conflict",
+                detail="A conflicting resource already exists.",
+            ) from exc
         except APIError:
             self._session.rollback()
             raise
@@ -260,18 +295,21 @@ class RegistryService:
         self._registry.delete_resource(model_id)
         self._session.commit()
 
-    def list_annotating_models(self) -> list[Resource]:
-        """Return all MODEL resources currently in ANNOTATING state.
+    def find_by_source(
+        self,
+        *,
+        repository: str,
+        identifiers: list[str] | None = None,
+    ) -> list[Resource]:
+        """Look resources up by upstream provenance, across every owner and status.
 
-        Used by the background poller to log status transitions.
-        The postgres backend has no registration_status filter on find_resources,
-        so we fetch all models and filter in-memory — safe because the
-        ANNOTATING set is always small (O(1-10) in practice).
+        Goes to the registry's own ``find_resources`` rather than the operation
+        helper of the same name, which does not forward the source filters.
         """
-        resources = find_resources(self._registry, resource_type=ResourceType.MODEL)
-        return [
-            r for r in resources if r.registration_status == ResourceRegistrationStatus.ANNOTATING
-        ]
+        return self._registry.find_resources(
+            source_repository=repository,
+            source_identifiers=identifiers,
+        )
 
     def update_model(
         self,
@@ -541,12 +579,10 @@ class RegistryService:
         Raises 404 if the model, the package dir, or either required YAML file
         is missing; 400 for unsupported schemes / path traversal.
 
-        The annotation job pod and this API pod mount the same iRODS PVC from
-        different pods, so there's a brief window right after the annotation
-        job is marked "succeeded" where the just-written package/files aren't
-        yet visible through this pod's mount. Retry the existence check a
-        bounded number of times before giving up, to absorb that propagation
-        lag (settings.metadata_package_retry_max_attempts / _backoff_seconds).
+        The annotation job writes the package from another pod, so it can
+        briefly 404 after the job is reported "succeeded"; the UI retries those
+        404s. Don't wait for it here: the async routes call this on the event
+        loop.
         """
         try:
             model = self._registry.get_resource(model_id)
@@ -558,39 +594,20 @@ class RegistryService:
         model_dir = resolve_location_uri(model.location_uri, mount)
         pkg_dir = model_dir / "metadata-package"
 
-        settings = get_settings()
-        max_attempts = settings.metadata_package_retry_max_attempts
-        backoff_seconds = settings.metadata_package_retry_backoff_seconds
-        missing: list[str] = []
-        for attempt in range(1, max_attempts + 1):
-            if not pkg_dir.is_dir():
-                missing = ["metadata-package/"]
-            else:
-                missing = [
-                    f for f in (METADATA_FILE, EXECUTION_FILE) if not (pkg_dir / f).is_file()
-                ]
-            if not missing:
-                return pkg_dir
-            if attempt < max_attempts:
-                logger.warning(
-                    "metadata_package_not_ready model_id=%s attempt=%s missing=%s",
-                    model_id,
-                    attempt,
-                    missing,
-                )
-                time.sleep(backoff_seconds * attempt)
-
-        if missing == ["metadata-package/"]:
+        if not pkg_dir.is_dir():
             raise APIError(
                 status_code=404,
                 code="metadata_package_not_found",
                 detail=f"No metadata-package directory found for model {model_id}.",
             )
-        raise APIError(
-            status_code=404,
-            code="metadata_package_not_found",
-            detail=f"metadata-package for model {model_id} is missing {', '.join(missing)}.",
-        )
+        missing = [f for f in (METADATA_FILE, EXECUTION_FILE) if not (pkg_dir / f).is_file()]
+        if missing:
+            raise APIError(
+                status_code=404,
+                code="metadata_package_not_found",
+                detail=f"metadata-package for model {model_id} is missing {', '.join(missing)}.",
+            )
+        return pkg_dir
 
     def parse_metadata_package(self, model_id: str) -> tuple[Resource, list[str]]:
         """Parse the metadata-package for a model into a (transient) Resource.
@@ -825,7 +842,8 @@ class RegistryService:
         Rejection skips the auto-apply; the owner will fix and resubmit.
 
         Raises 403 (not the owner and not a reviewer), 404 (model or package
-        missing on approval), 400 (illegal transition or unparseable package).
+        missing on approval), 400 (illegal transition or unparseable package),
+        409 (another import of the same upstream model is already approved).
         """
         resource = self.get_model(model_id)
         await self._authz.assert_can_review_metadata(principal, resource=resource)
@@ -863,6 +881,39 @@ class RegistryService:
             self._session.rollback()
             raise APIError(
                 status_code=400, code="invalid_state_transition", detail=str(exc)
+            ) from exc
+        except IntegrityError as exc:
+            self._session.rollback()
+            if not resource.source_identifier:
+                raise APIError(
+                    status_code=409,
+                    code="resource_conflict",
+                    detail="A conflicting resource already exists.",
+                ) from exc
+            # uq_resources_source covers approved rows only, so two imports of one
+            # upstream model collide here rather than at create. The winner is the
+            # approved row that displaced this one; naming it lets the caller link
+            # straight there instead of re-deriving it from source_identifier.
+            approved = [
+                r
+                for r in self.find_by_source(
+                    repository=resource.source_repository,
+                    identifiers=[resource.source_identifier],
+                )
+                if r.registration_status == ResourceRegistrationStatus.APPROVED
+            ]
+            raise APIError(
+                status_code=409,
+                code="source_already_approved",
+                detail=(
+                    f"Another copy of {resource.source_identifier} was approved first, "
+                    "so this one cannot also be approved."
+                ),
+                meta={
+                    "model_id": approved[0].id if approved else None,
+                    "source_repository": resource.source_repository,
+                    "source_identifier": resource.source_identifier,
+                },
             ) from exc
         except APIError:
             self._session.rollback()

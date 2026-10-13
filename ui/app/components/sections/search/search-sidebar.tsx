@@ -11,6 +11,8 @@ import {
 } from '~/components/common/facets';
 import { useSearch } from '~/search/context/search-context';
 import {
+  NATIVE_SOURCE_KEY,
+  SOURCE_FACET_FIELD,
   facetsForResourceType,
   type FacetConfig,
 } from '~/search/state/facets.config';
@@ -29,6 +31,22 @@ export function SearchSidebar() {
     () => facets.filter((f) => f.widget !== 'toggle').map((f) => f.id),
     [facets]
   );
+
+  // `source_repository` is '' for an upload, and the API drops empty-keyed
+  // buckets, so the count for models authored here is the remainder once every
+  // reported repository is subtracted from the result total.
+  const sourceAgg: AggResult | undefined = useMemo(() => {
+    const buckets = data?.aggs?.[SOURCE_FACET_FIELD]?.buckets;
+    if (!data || !buckets) return;
+    const imported = buckets.reduce((sum, b) => sum + b.count, 0);
+    const native = data.total - imported;
+    return {
+      buckets:
+        native > 0
+          ? [...buckets, { key: NATIVE_SOURCE_KEY, count: native }]
+          : buckets,
+    };
+  }, [data]);
 
   return (
     <div className="flex flex-col h-full min-w-[320px] pb-8">
@@ -58,7 +76,10 @@ export function SearchSidebar() {
         className="p-0"
       >
         {facets.map((facet, index) => {
-          const agg: AggResult | undefined = data?.aggs?.[facet.field];
+          const agg: AggResult | undefined =
+            facet.field === SOURCE_FACET_FIELD
+              ? sourceAgg
+              : data?.aggs?.[facet.field];
           const value = state.facets[facet.id];
 
           if (facet.widget === 'toggle') {

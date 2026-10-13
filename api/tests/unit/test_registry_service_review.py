@@ -30,6 +30,7 @@ from mism_registry.enums import (
 )
 from mism_registry.in_memory import InMemoryRegistry
 from mism_registry.resource import Resource
+from sqlalchemy.exc import IntegrityError
 
 from mismapi.auth.principal import AuthenticatedPrincipal
 from mismapi.clients.openfga_client import OpenFGAClient
@@ -194,6 +195,79 @@ async def test_review_illegal_transition_does_not_commit() -> None:
 
     session.commit.assert_not_called()
     session.rollback.assert_called_once()
+
+
+def _collide_on_approve(
+    service: RegistryService, monkeypatch: pytest.MonkeyPatch, constraint: str
+) -> None:
+    update = service._registry.update_resource
+
+    def _update(resource: Resource) -> Resource:
+        if resource.registration_status == ResourceRegistrationStatus.APPROVED:
+            raise IntegrityError(constraint, None, Exception())
+        return update(resource)
+
+    monkeypatch.setattr(service._registry, "update_resource", _update)
+
+
+async def test_approving_a_second_import_of_one_upstream_model_409s_naming_the_winner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """uq_resources_source covers approved rows only, so the collision lands here.
+
+    The winner's id must reach the caller: it is the model that displaced theirs,
+    and the UI links straight to it rather than searching for it.
+    """
+    client = _client(allowed=True)
+    service = _make_service(client)
+    loser = service._registry.get_resource("m-1")
+    loser.source_repository = "biomodels"
+    loser.source_identifier = "BIOMD0000000732"
+    service._registry.update_resource(loser)
+    service._registry.register_resource(
+        Resource(
+            id="m-2",
+            name="Winner",
+            resource_type=ResourceType.MODEL,
+            location_uri="irods:///m-2/0.1.0",
+            execution_type=ExecutionType.PYTHON,
+            version="0.1.0",
+            version_status=ResourceVersionStatus.ACTIVE,
+            registration_status=ResourceRegistrationStatus.APPROVED,
+            owner="erin",
+            source_repository="biomodels",
+            source_identifier="BIOMD0000000732",
+            created_at=datetime(2025, 1, 1, tzinfo=UTC),
+        )
+    )
+    _collide_on_approve(service, monkeypatch, "uq_resources_source")
+    session = cast(MagicMock, service._session)
+
+    with pytest.raises(APIError) as excinfo:
+        await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
+
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.code == "source_already_approved"
+    assert excinfo.value.meta is not None
+    assert excinfo.value.meta["model_id"] == "m-2"
+    assert excinfo.value.meta["source_identifier"] == "BIOMD0000000732"
+    session.commit.assert_not_called()
+    session.rollback.assert_called_once()
+    client.write_tuple.assert_not_awaited()
+
+
+async def test_a_non_source_integrity_error_stays_a_generic_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An upload carries no provenance, so there is no winner to name."""
+    service = _make_service(_client(allowed=True))
+    _collide_on_approve(service, monkeypatch, "some other constraint")
+
+    with pytest.raises(APIError) as excinfo:
+        await service.review_metadata_package(_principal("dana"), model_id="m-1", approve=True)
+
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.code == "resource_conflict"
 
 
 # ── OpenFGA viewer-tuple writes (Phase 1a) ───────────────────────────────
