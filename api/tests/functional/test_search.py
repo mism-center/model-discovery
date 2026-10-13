@@ -370,6 +370,11 @@ def test_search_response_shape(api: httpx.Client) -> None:
         "size_bytes",
         "external_ids",
         "license",
+        # Upstream provenance
+        "source_repository",
+        "source_identifier",
+        "source_url",
+        "source_revision",
         # Execution
         "execution_type",
         "execution_ref",
