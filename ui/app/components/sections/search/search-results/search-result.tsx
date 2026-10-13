@@ -29,7 +29,7 @@ export function SearchResult({ result }: SearchResultProps) {
   const formatTags = result.format_tags ?? [];
   const authors = result.authors ?? [];
   const publications = result.publications ?? [];
-  const executable = Boolean(result.execution_type);
+  const executable = result.env_build_status === 'runnable';
 
   // Prefer the dedicated publication date when available; fall back to the
   // row's created_at so we can at least render something otherwise.
@@ -53,7 +53,7 @@ export function SearchResult({ result }: SearchResultProps) {
         {isModel && (
           <div className="flex items-center flex-wrap gap-x-3 gap-y-3 min-h-8 mb-1">
             <div className="flex flex-wrap items-center gap-2">
-              <ExecutionPill executionType={result.execution_type} />
+              <ExecutionPill executable={executable} />
               <SourcePill repository={result.source_repository} />
             </div>
           </div>

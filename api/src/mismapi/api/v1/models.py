@@ -109,6 +109,7 @@ def _model_response(r: Resource) -> RegisterModelResponse:
         registration_status=r.registration_status.value,
         owner=r.owner,
         execution_type=r.execution_type.value if r.execution_type else None,
+        env_build_status=r.env_build_status.value,
         execution_ref=r.execution_ref,
         io_spec=io_spec_to_dto(r.io_spec) if r.io_spec else None,
         entry_points=[entry_point_to_dto(e) for e in r.entry_points],

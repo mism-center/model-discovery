@@ -259,6 +259,9 @@ export interface paths {
      *     Gated on ownership OR the platform-wide ``upload_reviewer`` role. The
      *     model owner may approve/reject their own submission without holding the
      *     role; non-owners must hold ``upload_reviewer``.
+     *
+     *     On approval, ``set_registration_status`` moves ``env_build_status`` to
+     *     READY_FOR_BUILD and this handler then kicks off the env-build job.
      */
     post: operations['review_model_metadata_package_api_v1_models__model_id__review_post'];
     delete?: never;
@@ -1414,6 +1417,8 @@ export interface components {
       owner: string;
       /** Execution Type */
       execution_type?: string | null;
+      /** Env Build Status */
+      env_build_status: string;
       /**
        * Execution Ref
        * @default
@@ -2087,6 +2092,8 @@ export interface components {
       owner: string;
       /** Execution Type */
       execution_type?: string | null;
+      /** Env Build Status */
+      env_build_status: string;
       /**
        * Execution Ref
        * @default
@@ -2551,6 +2558,8 @@ export interface components {
       owner: string;
       /** Execution Type */
       execution_type?: string | null;
+      /** Env Build Status */
+      env_build_status: string;
       /**
        * Execution Ref
        * @default

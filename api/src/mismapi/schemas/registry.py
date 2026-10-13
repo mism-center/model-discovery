@@ -392,6 +392,7 @@ class RegisterModelResponse(BaseModel):
     registration_status: str
     owner: str = ""
     execution_type: str | None = None
+    env_build_status: str
     execution_ref: str = ""
     io_spec: IOSpecDTO | None = None
     # Execution recipe (populated from the annotation metadata-package): the
