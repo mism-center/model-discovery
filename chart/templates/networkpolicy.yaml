@@ -141,8 +141,41 @@ spec:
 {{- end }}
 
 ---
-# ── 1d. Keycloak – accepts traffic from Gateway ───────────────────────────────
-# Selects pods of the separate Keycloak release; see `values.yaml` before enabling.
+# ── 1d. UI – accepts traffic from the Ingress controller only ────────────────
+# Without this, default-deny (#0) blocks ingress-nginx → ui and "/" times out.
+{{- if .Values.ui.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-ui
+  labels:
+    {{- include "model-discovery.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: ui
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressControllerNamespace | default "ingress-nginx" }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: {{ .Values.ui.service.port }}
+{{- end }}
+
+---
+# ── 1e. Keycloak – accepts OIDC calls from the Gateway ────────────────────────
+# Keycloak is a separate release in the same namespace. Namespace-wide
+# policies (podSelector: {}) isolate it, so the Gateway's server-side calls
+# (discovery, token exchange, JWKS) time out without this allow rule.
+
 {{- if and .Values.gateway.enabled .Values.networkPolicy.keycloak .Values.networkPolicy.keycloak.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -276,6 +309,10 @@ spec:
             matchLabels:
               app.kubernetes.io/component: migrate
               app.kubernetes.io/instance: {{ .Release.Name }}
+        {{- with .Values.metadataStore.extraIngressFrom }}
+        # Extra peers from values (e.g. mism-exec in the same namespace)
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       ports:
         - protocol: TCP
           port: {{ .Values.metadataStore.service.port }}

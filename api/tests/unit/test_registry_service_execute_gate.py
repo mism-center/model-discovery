@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from mism_registry.enums import (
+    EnvBuildStatus,
     ExecutionType,
     ResourceRegistrationStatus,
     ResourceType,
@@ -56,6 +57,7 @@ def _approved_model(
         version="0.1.0",
         version_status=ResourceVersionStatus.ACTIVE,
         registration_status=ResourceRegistrationStatus.APPROVED,
+        env_build_status=EnvBuildStatus.RUNNABLE,  # schema gates runs on a built env
         owner=owner,
         created_at=datetime(2025, 1, 1, tzinfo=UTC),
     )
