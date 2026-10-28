@@ -102,6 +102,7 @@ class SearchResultItem(BaseModel):
     status: str
     owner: str = ""
     execution_type: str | None = None
+    env_build_status: str
     execution_ref: str = ""
     io_spec: IOSpecDTO | None = None
     entry_points: list[EntryPointDTO] = Field(default_factory=list)

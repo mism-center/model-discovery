@@ -12,7 +12,7 @@ from mism_registry.enums import (
 )
 from mism_registry.resource import Resource
 
-from mismapi.core.deps import _get_registry_service
+from mismapi.core.deps import _get_execution_client, _get_registry_service, _get_settings
 from mismapi.core.errors import APIError
 from mismapi.main import create_app
 from mismapi.services.registry_service import RegistryService
@@ -48,13 +48,25 @@ def _make_model(
     )
 
 
-def _make_app_with_service(service: RegistryService, *, authenticated: bool = True) -> TestClient:
-    app = create_app(settings=minimal_oidc_settings())
+def _make_app_with_service(
+    service: RegistryService,
+    *,
+    authenticated: bool = True,
+    execution: MagicMock | None = None,
+) -> TestClient:
+    settings = minimal_oidc_settings()
+    app = create_app(settings=settings)
     if authenticated:
         override_principal(app)
     else:
         override_anonymous(app)
     app.dependency_overrides[_get_registry_service] = lambda: service
+    # Review approval launches an env build; default to a no-op execution client.
+    if execution is None:
+        execution = MagicMock()
+        execution.build = AsyncMock(return_value={})
+    app.dependency_overrides[_get_execution_client] = lambda: execution
+    app.dependency_overrides[_get_settings] = lambda: settings
     return TestClient(app)
 
 
@@ -1002,3 +1014,42 @@ def test_update_model_omitted_location_uri_is_no_op() -> None:
 
     assert response.status_code == 200
     assert service.update_model.call_args.kwargs["location_uri"] is None
+
+
+# ── POST /models/{model_id}/review — env build kickoff ──────────
+
+
+def _review_client_with_exec(
+    approve_status: ResourceRegistrationStatus,
+) -> tuple[TestClient, AsyncMock]:
+    """Review endpoint wired to a mock service plus a mock ExecutionClient.build."""
+    service = MagicMock(spec=RegistryService)
+    service.review_metadata_package.return_value = _make_model(registration_status=approve_status)
+    execution = MagicMock()
+    execution.build = AsyncMock(return_value={"resource_id": "m-1", "status": "submitted"})
+    client = _make_app_with_service(service, execution=execution)
+    return client, execution.build
+
+
+def test_review_approve_launches_env_build() -> None:
+    client, build = _review_client_with_exec(ResourceRegistrationStatus.APPROVED)
+    response = client.post("/api/v1/models/m-1/review", json={"approve": True})
+    assert response.status_code == 200
+    build.assert_awaited_once()
+    assert build.call_args.kwargs["resource_id"] == "m-1"
+
+
+def test_review_reject_skips_env_build() -> None:
+    client, build = _review_client_with_exec(ResourceRegistrationStatus.REJECTED)
+    response = client.post("/api/v1/models/m-1/review", json={"approve": False, "reason": "x"})
+    assert response.status_code == 200
+    build.assert_not_awaited()
+
+
+def test_review_approve_survives_env_build_failure() -> None:
+    """Approval is already committed; a build-launch failure must not turn into a 5xx."""
+    client, build = _review_client_with_exec(ResourceRegistrationStatus.APPROVED)
+    build.side_effect = APIError(status_code=502, code="execution_builds_failed", detail="down")
+    response = client.post("/api/v1/models/m-1/review", json={"approve": True})
+    assert response.status_code == 200
+    assert response.json()["registration_status"] == "approved"

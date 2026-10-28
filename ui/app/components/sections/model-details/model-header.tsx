@@ -80,7 +80,7 @@ function truncateBreadcrumb(name: string): string {
  */
 export function ModelHeader({ model }: { model: ModelDetailResponse }) {
   const { user } = useUser();
-  const executable = Boolean(model.execution_type);
+  const executable = model.env_build_status === 'runnable';
   const description = model.description || model.short_description;
   const shortName = truncateBreadcrumb(model.name);
 
@@ -118,7 +118,7 @@ export function ModelHeader({ model }: { model: ModelDetailResponse }) {
               scale="page"
               status={model.registration_status}
             />
-            <ExecutionPill executionType={model.execution_type} scale="page" />
+            <ExecutionPill executable={executable} scale="page" />
             <SourcePill repository={model.source_repository} scale="page" />
           </div>
           <h1 className="text-3xl font-headline font-extrabold text-primary tracking-tight">

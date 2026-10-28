@@ -24,22 +24,19 @@ function pillClass(scale: PillScale, tone: string): string {
 }
 
 /**
- * Whether a model can be launched.
+ * Whether a model can be launched: its `env_build_status` is `runnable`.
  *
- * A null `execution_type` is the encoding for "not executable" rather than
- * missing data: a BioModels import ships no run recipe and nothing has built an
- * image for it, so it stays non-executable until a builder pass exists. Stated
- * in grey rather than left blank, because an absent badge reads as an oversight
- * next to models that carry one.
+ * Stated in grey rather than left blank, because an absent badge reads as an
+ * oversight next to models that carry one.
  */
 export function ExecutionPill({
-  executionType,
+  executable,
   scale = 'card',
 }: {
-  executionType: string | null | undefined;
+  executable: boolean;
   scale?: PillScale;
 }) {
-  if (executionType) {
+  if (executable) {
     return (
       <span className={pillClass(scale, 'bg-primary text-white')}>
         Executable
