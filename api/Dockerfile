@@ -10,6 +10,10 @@ ENV PYTHONUNBUFFERED=1 \
 
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
+# Distrust eMudhra (emSign) roots
+RUN sed -i 's|^mozilla/emSign_|!mozilla/emSign_|' /etc/ca-certificates.conf && \
+    update-ca-certificates --fresh
+
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
