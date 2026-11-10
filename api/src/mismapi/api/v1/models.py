@@ -536,6 +536,7 @@ async def execute_run(
         input_resource_ids=payload.input_resource_ids,
         entrypoint_index=payload.entrypoint_index,
         arguments=payload.arguments,
+        parameters=payload.parameters,
         triggered_by=principal.subject,
         notes=payload.notes,
     )
