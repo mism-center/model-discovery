@@ -1,0 +1,26 @@
+# Git and editor
+.git
+.gitignore
+.cursor
+
+# Python caches
+__pycache__
+*.py[cod]
+*$py.class
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.python-version
+
+# Local env and secrets (configure via Kubernetes)
+.env
+.env.*
+!.env.example
+
+# Tests and dev-only (not needed in the image)
+tests
+Makefile
+
+# Docs not required at runtime
+LICENSE
+README.md

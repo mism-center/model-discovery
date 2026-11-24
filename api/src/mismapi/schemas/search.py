@@ -1,0 +1,155 @@
+from datetime import date, datetime
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+from mismapi.schemas.registry import (
+    AuthorDTO,
+    ContainerDTO,
+    EntryPointDTO,
+    IOSpecDTO,
+    PublicationDTO,
+)
+
+# ── Existing list schemas (backward compat) ──────────────────────────
+
+
+class ModelListItem(BaseModel):
+    id: str
+    name: str
+    resource_type: str
+    location_uri: str
+    description: str = ""
+    version: str = ""
+    status: str
+    owner: str = ""
+    execution_type: str | None = None
+    format_tags: list[str] = Field(default_factory=list)
+    # Authorship & attribution
+    authors: list[AuthorDTO] = Field(default_factory=list)
+    organization: str = ""
+    contact_email: str = ""
+    publications: list[PublicationDTO] = Field(default_factory=list)
+    funding: list[str] = Field(default_factory=list)
+    # Scientific context
+    model_scales: list[str] = Field(default_factory=list)
+    organisms: list[str] = Field(default_factory=list)
+    domains: list[str] = Field(default_factory=list)
+    date_published: date | None = None
+    # Integrity
+    digest_sha256: str = ""
+    size_bytes: int | None = None
+    external_ids: dict[str, str] = Field(default_factory=dict)
+    license: str = ""
+    # Source provenance — non-empty only for imported resources.
+    source_repository: str = ""
+    source_identifier: str = ""
+    source_url: str = ""
+    source_revision: str = ""
+    # Execution
+    execution_ref: str = ""
+    io_spec: IOSpecDTO | None = None
+    entry_points: list[EntryPointDTO] = Field(default_factory=list)
+    containers: list[ContainerDTO] = Field(default_factory=list)
+    # Registration workflow
+    registration_status: str = ""
+    image_review_status: str = "not_applicable"
+    # System
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
+class ModelListResponse(BaseModel):
+    total: int = Field(ge=0)
+    results: list[ModelListItem]
+
+
+# ── Full-text search schemas ─────────────────────────────────────────
+
+FilterOp = Literal["eq", "in", "overlap", "contains", "gte", "lte"]
+SortField = Literal["_score", "name", "created_at", "updated_at"]
+SortOrder = Literal["asc", "desc"]
+
+
+class SearchFilterDTO(BaseModel):
+    field: str
+    op: FilterOp
+    value: Any  # str, list[str], or datetime string
+
+
+class SearchSortDTO(BaseModel):
+    field: SortField = "_score"
+    order: SortOrder = "desc"
+
+
+class SearchRequest(BaseModel):
+    query: str | None = Field(default=None, description="Full-text search query")
+    filters: list[SearchFilterDTO] = Field(default_factory=list)
+    aggs: list[str] = Field(default_factory=list, description="Fields to aggregate")
+    sort: SearchSortDTO = Field(default_factory=SearchSortDTO)
+    limit: int = Field(default=25, ge=1, le=100)
+    offset: int = Field(default=0, ge=0)
+
+
+class SearchResultItem(BaseModel):
+    id: str
+    name: str
+    resource_type: str
+    location_uri: str
+    description: str = ""
+    version: str = ""
+    status: str
+    owner: str = ""
+    execution_type: str | None = None
+    env_build_status: str
+    execution_ref: str = ""
+    io_spec: IOSpecDTO | None = None
+    entry_points: list[EntryPointDTO] = Field(default_factory=list)
+    containers: list[ContainerDTO] = Field(default_factory=list)
+    format_tags: list[str] = Field(default_factory=list)
+    # Authorship & attribution
+    authors: list[AuthorDTO] = Field(default_factory=list)
+    organization: str = ""
+    contact_email: str = ""
+    publications: list[PublicationDTO] = Field(default_factory=list)
+    funding: list[str] = Field(default_factory=list)
+    # Scientific context
+    organisms: list[str] = Field(default_factory=list)
+    domains: list[str] = Field(default_factory=list)
+    model_scales: list[str] = Field(default_factory=list)
+    date_published: date | None = None
+    # Integrity
+    digest_sha256: str = ""
+    size_bytes: int | None = None
+    external_ids: dict[str, str] = Field(default_factory=dict)
+    license: str = ""
+    # Source provenance — non-empty only for imported resources.
+    source_repository: str = ""
+    source_identifier: str = ""
+    source_url: str = ""
+    source_revision: str = ""
+    # System
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+    score: float | None = None
+    # Permission hint: whether the requesting principal may execute this model.
+    # Populated server-side via OpenFGA; False for anonymous callers and
+    # non-executable resources.
+    can_execute: bool = False
+
+
+class AggBucketDTO(BaseModel):
+    key: str
+    count: int
+
+
+class AggResultDTO(BaseModel):
+    buckets: list[AggBucketDTO]
+
+
+class SearchResponse(BaseModel):
+    total: int = Field(ge=0)
+    results: list[SearchResultItem]
+    aggs: dict[str, AggResultDTO] = Field(default_factory=dict)

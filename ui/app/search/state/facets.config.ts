@@ -1,0 +1,225 @@
+import type { FacetWidget, ResourceType } from './types';
+
+export interface FacetConfig {
+  /** Stable identifier used in URL params and React keys. */
+  id: string;
+  /** API field name. Used verbatim in aggs + filters. */
+  field: string;
+  /** Human label shown in the sidebar. */
+  label: string;
+  /** Widget renderer + API operator family. */
+  widget: FacetWidget;
+  /** Which tabs expose this facet. */
+  resourceTypes: ResourceType[];
+  /**
+   * For `terms` widgets only: the operator to send to the API.
+   *   - `overlap` when the backend field is a `string[]` — tests whether any
+   *     selected value appears in the result's array.
+   *   - `in` when the backend field is a scalar `string` — tests whether the
+   *     result's single value is in the selected set.
+   * Defaults to `overlap` when omitted.
+   */
+  termsOp?: 'overlap' | 'in';
+  /**
+   * Optional placeholder / helper hint shown when the facet is empty.
+   */
+  placeholder?: string;
+  /**
+   * When true, this facet is a UI-only control that never compiles into an
+   * API filter or aggregation request. The value is still stored in URL
+   * params via the normal facet codec, but request-builder.ts skips it.
+   */
+  uiOnly?: boolean;
+  /**
+   * When true, this facet is sent to the API as a real filter/aggregation
+   * (not uiOnly) but is not rendered as an accordion section in the sidebar.
+   * Used for status fields (registration_status, image_review_status) that
+   * are set programmatically via URL params rather than sidebar interaction.
+   */
+  sidebarHidden?: boolean;
+}
+
+/** Backend field behind the Model Source facet. */
+export const SOURCE_FACET_FIELD = 'source_repository';
+
+/**
+ * Stand-in bucket key for models authored here rather than imported.
+ *
+ * `source_repository` is `''` on an upload, and `url-codec` drops empty facet
+ * values when reading params, so an empty key cannot survive a URL round-trip.
+ * `request-builder` translates this back to `''` when compiling the filter, and
+ * the sidebar synthesizes its bucket — the API omits empty-keyed buckets.
+ *
+ * Upper-case because `TermsFacet` labels a bucket by capitalizing its key's
+ * first letter, so this renders as "MISM" with no label table.
+ */
+export const NATIVE_SOURCE_KEY = 'MISM';
+
+export const FACETS: readonly FacetConfig[] = [
+  // registration_status and image_review_status are real API filter fields —
+  // they compile into search requests and are URL-codec-supported — but they
+  // are not exposed as sidebar accordion items. Callers reach them via URL
+  // (e.g. ?registration_status=pending_review) rather than sidebar interaction.
+  // The backend conditionally lifts the registration_status=approved gate for
+  // authenticated callers and adds an owner constraint automatically.
+  {
+    id: 'registration_status',
+    field: 'registration_status',
+    label: 'Registration Status',
+    widget: 'terms',
+    termsOp: 'in',
+    resourceTypes: ['model'],
+    sidebarHidden: true,
+  },
+  {
+    id: 'image_review_status',
+    field: 'image_review_status',
+    label: 'Image Review Status',
+    widget: 'terms',
+    termsOp: 'in',
+    resourceTypes: ['model'],
+    sidebarHidden: true,
+  },
+  {
+    id: 'source_repository',
+    field: SOURCE_FACET_FIELD,
+    label: 'Model Source',
+    widget: 'terms',
+    termsOp: 'in',
+    resourceTypes: ['model'],
+  },
+  {
+    id: 'model_scales',
+    field: 'model_scales',
+    label: 'Model Scales',
+    widget: 'terms',
+    termsOp: 'overlap',
+    resourceTypes: ['model', 'dataset'],
+  },
+  {
+    id: 'model_class',
+    field: 'model_class',
+    label: 'Model Class',
+    widget: 'terms',
+    termsOp: 'overlap',
+    resourceTypes: ['model'],
+  },
+  {
+    id: 'formalism',
+    field: 'formalism',
+    label: 'Formalism',
+    widget: 'terms',
+    termsOp: 'overlap',
+    resourceTypes: ['model'],
+  },
+  {
+    id: 'organisms',
+    field: 'organisms',
+    label: 'Organisms',
+    widget: 'terms',
+    termsOp: 'overlap',
+    resourceTypes: ['model', 'dataset'],
+  },
+  // Biology vocabularies (schema.md Section D). Array columns, so `overlap`.
+  // Several are unpopulated across the whole corpus today and will render as
+  // empty facets until ingestion fills them.
+  {
+    id: 'biological_processes',
+    field: 'biological_processes',
+    label: 'Biological Processes',
+    widget: 'terms',
+    termsOp: 'overlap',
+    resourceTypes: ['model', 'dataset'],
+  },
+  {
+    id: 'molecular_entities',
+    field: 'molecular_entities',
+    label: 'Molecular Entities',
+    widget: 'terms',
+    termsOp: 'overlap',
+    resourceTypes: ['model', 'dataset'],
+  },
+  {
+    id: 'infectious_agents',
+    field: 'infectious_agents',
+    label: 'Infectious Agents',
+    widget: 'terms',
+    termsOp: 'overlap',
+    resourceTypes: ['model', 'dataset'],
+  },
+  {
+    id: 'health_conditions',
+    field: 'health_conditions',
+    label: 'Health Conditions',
+    widget: 'terms',
+    termsOp: 'overlap',
+    resourceTypes: ['model', 'dataset'],
+  },
+  {
+    id: 'proteins_genes',
+    field: 'proteins_genes',
+    label: 'Proteins / Genes',
+    widget: 'terms',
+    termsOp: 'overlap',
+    resourceTypes: ['model', 'dataset'],
+  },
+  {
+    id: 'domains',
+    field: 'domains',
+    label: 'Domains',
+    widget: 'terms',
+    termsOp: 'overlap',
+    resourceTypes: ['model', 'dataset'],
+  },
+  {
+    id: 'format_tags',
+    field: 'format_tags',
+    label: 'Formats',
+    widget: 'terms',
+    termsOp: 'overlap',
+    resourceTypes: ['dataset'],
+  },
+  {
+    id: 'execution_type',
+    field: 'execution_type',
+    label: 'Execution Type',
+    widget: 'terms',
+    termsOp: 'in',
+    resourceTypes: ['model'],
+  },
+  {
+    id: 'owner',
+    field: 'owner',
+    label: 'Owner',
+    widget: 'terms',
+    termsOp: 'in',
+    resourceTypes: ['model', 'dataset'],
+  },
+  // {
+  //   id: 'license',
+  //   field: 'license',
+  //   label: 'License',
+  //   widget: 'terms',
+  //   termsOp: 'in',
+  //   resourceTypes: ['model', 'dataset'],
+  // },
+  {
+    id: 'created_at',
+    field: 'created_at',
+    label: 'Created',
+    widget: 'range',
+    resourceTypes: ['model', 'dataset'],
+  },
+];
+
+/** Facets visible for a given tab. */
+export function facetsForResourceType(
+  resourceType: ResourceType
+): readonly FacetConfig[] {
+  return FACETS.filter((facet) => facet.resourceTypes.includes(resourceType));
+}
+
+/** Look up a facet by id. Returns undefined if the id is unknown. */
+export function getFacetConfig(id: string): FacetConfig | undefined {
+  return FACETS.find((facet) => facet.id === id);
+}

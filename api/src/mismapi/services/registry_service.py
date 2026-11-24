@@ -1,0 +1,1670 @@
+import dataclasses
+import logging
+import shutil
+from datetime import UTC, date, datetime
+from pathlib import Path
+from typing import Any
+
+import yaml
+from mism_registry import (
+    InvalidStateTransitionError,
+    ResourceNotFoundError,
+    ResourceType,
+    RunStatus,
+    find_resources,
+    get_model_run_details,
+    prepare_run,
+    register_dataset,
+    register_model,
+    set_env_build_status,
+    set_image_review_status,
+    set_registration_status,
+    submit_container_image,
+)
+from mism_registry import (
+    ValidationError as RegistryValidationError,
+)
+from mism_registry.backends.postgres import PostgresRegistry
+from mism_registry.enums import (
+    EnvBuildStatus,
+    ExecutionType,
+    ImageReviewStatus,
+    ResourceRegistrationStatus,
+)
+from mism_registry.protocol import Registry
+from mism_registry.resource import Resource
+from mism_registry.run import Run
+from mism_registry.run_detail import ModelRunSummary
+from mism_registry.search import (
+    AGGREGATABLE_FIELDS,
+    FILTERABLE_FIELDS,
+    FieldFilter,
+    SearchQuery,
+    SearchResult,
+)
+from mism_registry.types import (
+    Author,
+    Container,
+    EntryPoint,
+    IODetail,
+    IOSpec,
+    Output,
+    Publication,
+)
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from mismapi.auth.principal import AuthenticatedPrincipal
+from mismapi.core.errors import APIError
+from mismapi.core.file_storage import resolve_location_uri, safe_join
+from mismapi.core.settings import get_settings
+from mismapi.schemas.registry import BuildResultCallback
+from mismapi.services.authorization_service import AuthorizationService
+from mismapi.services.metadata_package import (
+    EXECUTION_FILE,
+    METADATA_FILE,
+    build_resource_from_package,
+)
+from mismapi.utils import upload_dir
+
+logger = logging.getLogger(__name__)
+
+# The metadata-package YAML files, in review/display order.
+_PACKAGE_FILES = (METADATA_FILE, EXECUTION_FILE)
+
+
+class RegistryService:
+    """Orchestrates registry operations and session management."""
+
+    def __init__(
+        self,
+        registry: Registry,
+        session: Session,
+        authz: AuthorizationService | None = None,
+    ) -> None:
+        self._registry = registry
+        self._session = session
+        self._authz = authz if authz is not None else AuthorizationService(client=None)
+
+    # ── Auth delegation ──────────────────────────────────────────────
+    # These public methods keep the existing call-site signatures stable
+    # for routes and other callers while the underlying logic lives in
+    # AuthorizationService.
+
+    async def assert_can_view_model(
+        self,
+        principal: AuthenticatedPrincipal | None,
+        *,
+        resource: Resource,
+    ) -> None:
+        """Raise APIError(404) if ``principal`` cannot view ``resource``."""
+        await self._authz.assert_can_view_model(principal, resource=resource)
+
+    async def can_view_model(
+        self,
+        principal: AuthenticatedPrincipal | None,
+        *,
+        resource: Resource,
+    ) -> bool:
+        """Non-asserting ``assert_can_view_model``."""
+        try:
+            await self._authz.assert_can_view_model(principal, resource=resource)
+        except APIError as exc:
+            if exc.status_code == 404:
+                return False
+            raise
+        return True
+
+    async def assert_can_view_resource(
+        self,
+        principal: AuthenticatedPrincipal | None,
+        *,
+        resource: Resource,
+    ) -> None:
+        """``assert_can_view_model``, plus a patch to allow run owner to view output dataset."""
+        if resource.resource_type != ResourceType.MODEL and principal is not None:
+            producing_runs = self._registry.get_lineage(resource.id)
+            if any(run.triggered_by == principal.subject for run in producing_runs):
+                return
+        await self._authz.assert_can_view_model(principal, resource=resource)
+
+    async def get_platform_capabilities(self, principal: AuthenticatedPrincipal) -> dict[str, bool]:
+        """Report which platform-wide OpenFGA roles ``principal`` holds."""
+        return await self._authz.get_platform_capabilities(principal)
+
+    async def assert_can_view_run(self, principal: AuthenticatedPrincipal, *, run: Run) -> None:
+        """Gate GET /runs/{id}: principal must hold ``can_view`` on the run."""
+        await self._authz.assert_can_view_run(principal, run=run)
+
+    async def assert_can_cancel_run(self, principal: AuthenticatedPrincipal, *, run: Run) -> None:
+        """Gate DELETE /runs/{id}: principal must hold ``can_cancel`` on the run."""
+        await self._authz.assert_can_cancel_run(principal, run=run)
+
+    async def assert_model_owner(self, principal: AuthenticatedPrincipal, *, model_id: str) -> None:
+        """Gate mutation operations on per-model ownership."""
+        await self._authz.assert_model_owner(principal, model_id=model_id)
+
+    async def assert_can_review_metadata(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        resource: Resource,
+    ) -> None:
+        """Gate metadata-review on ownership OR the upload_reviewer role."""
+        await self._authz.assert_can_review_metadata(principal, resource=resource)
+
+    async def check_can_execute(
+        self,
+        principal: AuthenticatedPrincipal | None,
+        *,
+        model_id: str,
+    ) -> bool:
+        """Non-asserting can_execute check — for embedding in responses."""
+        return await self._authz.check_can_execute(principal, model_id=model_id)
+
+    async def batch_check_can_execute(
+        self,
+        principal: AuthenticatedPrincipal | None,
+        *,
+        model_ids: list[str],
+    ) -> dict[str, bool]:
+        """Batch can_execute check — one FGA round trip for a list of model IDs."""
+        return await self._authz.batch_check_can_execute(principal, model_ids=model_ids)
+
+    # ── Model operations ─────────────────────────────────────────────
+
+    async def create_model(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        name: str,
+        location_uri: str,
+        execution_type: ExecutionType | None,
+        execution_ref: str = "",
+        io_spec: IOSpec | None = None,
+        description: str = "",
+        version: str = "",
+        format_tags: list[str] | None = None,
+        digest_sha256: str = "",
+        size_bytes: int | None = None,
+        external_ids: dict[str, str] | None = None,
+        license: str = "",
+        owner: str = "",
+        metadata: dict[str, Any] | None = None,
+        authors: list[Author] | None = None,
+        organization: str = "",
+        contact_email: str = "",
+        publications: list[Publication] | None = None,
+        funding: list[str] | None = None,
+        model_scales: list[str] | None = None,
+        organisms: list[str] | None = None,
+        domains: list[str] | None = None,
+        date_published: date | None = None,
+        source_repository: str = "",
+        source_identifier: str = "",
+        source_url: str = "",
+        source_revision: str = "",
+    ) -> Resource:
+        await self._authz.assert_uploader(principal)
+        try:
+            resource = register_model(
+                self._registry,
+                name=name,
+                location_uri=location_uri,
+                execution_type=execution_type,
+                description=description,
+                version=version,
+                format_tags=format_tags or [],
+                digest_sha256=digest_sha256,
+                size_bytes=size_bytes,
+                external_ids=external_ids or {},
+                license=license,
+                owner=owner or principal.subject,
+                metadata=metadata or {},
+                execution_ref=execution_ref,
+                io_spec=io_spec,
+                authors=authors or [],
+                organization=organization,
+                contact_email=contact_email,
+                publications=publications or [],
+                funding=funding or [],
+                model_scales=model_scales or [],
+                organisms=organisms or [],
+                domains=domains or [],
+                date_published=date_published,
+                source_repository=source_repository,
+                source_identifier=source_identifier,
+                source_url=source_url,
+                source_revision=source_revision,
+            )
+            # MISM-291: grant ownership + the platform boilerplate tuple so
+            # model#can_execute's tupleToUserset (owner OR platform executor)
+            # can resolve.
+            await self._authz.grant_model_tuples(principal, model_id=resource.id)
+            self._session.commit()
+        except RegistryValidationError as exc:
+            self._session.rollback()
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+        except IntegrityError as exc:
+            # Rolling back is not optional: an aborted transaction poisons the
+            # session for the rest of the request. Not reachable via
+            # uq_resources_source — that index spans approved rows and every
+            # resource is created DRAFT — so this is a backstop that turns any
+            # remaining constraint violation into a 409 rather than a 500.
+            self._session.rollback()
+            raise APIError(
+                status_code=409,
+                code="resource_conflict",
+                detail="A conflicting resource already exists.",
+            ) from exc
+        except APIError:
+            self._session.rollback()
+            raise
+
+        logger.info("Registered model %s (%s) by %s", resource.id, resource.name, principal.subject)
+        return resource
+
+    def get_model(self, model_id: str) -> Resource:
+        """Fetch a single model resource by ID, including registration_status."""
+        try:
+            return self._registry.get_resource(model_id)
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+    def delete_model(
+        self,
+        principal: AuthenticatedPrincipal,
+        model_id: str,
+    ) -> None:
+        """Delete a model: remove the DB record and wipe its on-disk directory.
+
+        Blocked once the model reaches APPROVED status: at that point it is
+        publicly visible and may already be referenced by other users' runs or
+        datasets. Owners may delete models in any pre-approval state (DRAFT,
+        ANNOTATING, ANNOTATION_FAILED, PENDING_REVIEW, REJECTED).
+        """
+        resource = self.get_resource_and_assert_ownership(principal, resource_id=model_id)
+
+        if resource.registration_status == ResourceRegistrationStatus.APPROVED:
+            raise APIError(
+                status_code=409,
+                code="model_already_approved",
+                detail=(
+                    f"Model '{model_id}' is approved and publicly visible. "
+                    "Deletion of approved models is not permitted."
+                ),
+            )
+
+        mount = get_settings().irods_mount_path
+        try:
+            directory = resolve_location_uri(resource.location_uri, mount)
+            if directory.is_dir():
+                shutil.rmtree(directory)
+        except Exception:
+            logger.warning(
+                "Could not delete files for model %s at %s",
+                model_id,
+                resource.location_uri,
+            )
+
+        self._registry.delete_resource(model_id)
+        self._session.commit()
+
+    def find_by_source(
+        self,
+        *,
+        repository: str,
+        identifiers: list[str] | None = None,
+    ) -> list[Resource]:
+        """Look resources up by upstream provenance, across every owner and status.
+
+        Goes to the registry's own ``find_resources`` rather than the operation
+        helper of the same name, which does not forward the source filters.
+        """
+        return self._registry.find_resources(
+            source_repository=repository,
+            source_identifiers=identifiers,
+        )
+
+    def update_model(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        model_id: str,
+        name: str | None = None,
+        description: str | None = None,
+        version: str | None = None,
+        owner: str | None = None,
+        location_uri: str | None = None,
+        execution_type: ExecutionType | None = None,
+        execution_ref: str | None = None,
+        io_spec: IOSpec | None = None,
+        format_tags: list[str] | None = None,
+        digest_sha256: str | None = None,
+        size_bytes: int | None = None,
+        external_ids: dict[str, str] | None = None,
+        license: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        authors: list[Author] | None = None,
+        organization: str | None = None,
+        contact_email: str | None = None,
+        publications: list[Publication] | None = None,
+        funding: list[str] | None = None,
+        model_scales: list[str] | None = None,
+        organisms: list[str] | None = None,
+        domains: list[str] | None = None,
+        date_published: date | None = None,
+    ) -> Resource:
+        try:
+            resource = self._registry.get_resource(model_id)
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+        # Ownership check (goal 1 stopgap — string equality, not yet OpenFGA).
+        # Missing model still 404s (checked above) before this; only an
+        # existing-but-not-owned model reaches this 403. Mirrors
+        # `get_resource_and_assert_ownership`'s `issuer == "local"` bypass so
+        # local dev with auth disabled isn't blocked from updating models.
+        #
+        # FUTURE: fga.check(user=principal.subject,
+        #   relation="editor", object=f"model:{model_id}")
+        if principal.issuer != "local" and resource.owner != principal.subject:
+            raise self._not_authorized_error()
+
+        if name is not None:
+            resource.name = name
+        if description is not None:
+            resource.description = description
+        if version is not None:
+            resource.version = version
+        if owner is not None:
+            resource.owner = owner
+        if location_uri is not None:
+            resource.location_uri = location_uri
+        if execution_type is not None:
+            resource.execution_type = execution_type
+        if execution_ref is not None:
+            resource.execution_ref = execution_ref
+        if io_spec is not None:
+            resource.io_spec = io_spec
+        if format_tags is not None:
+            resource.format_tags = format_tags
+        if digest_sha256 is not None:
+            resource.digest_sha256 = digest_sha256
+        if size_bytes is not None:
+            resource.size_bytes = size_bytes
+        if external_ids is not None:
+            resource.external_ids = external_ids
+        if license is not None:
+            resource.license = license
+        if metadata is not None:
+            resource.metadata = metadata
+        if authors is not None:
+            resource.authors = authors
+        if organization is not None:
+            resource.organization = organization
+        if contact_email is not None:
+            resource.contact_email = contact_email
+        if publications is not None:
+            resource.publications = publications
+        if funding is not None:
+            resource.funding = funding
+        if model_scales is not None:
+            resource.model_scales = model_scales
+        if organisms is not None:
+            resource.organisms = organisms
+        if domains is not None:
+            resource.domains = domains
+        if date_published is not None:
+            resource.date_published = date_published
+
+        try:
+            updated = self._registry.update_resource(resource)
+            self._session.commit()
+        except RegistryValidationError as exc:
+            self._session.rollback()
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+
+        logger.info("Updated model %s by %s", model_id, principal.subject)
+        return updated
+
+    # ── Run operations ───────────────────────────────────────────────
+
+    async def create_run(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        model_id: str,
+        input_resource_ids: list[str] | None = None,
+        entrypoint_index: int | None = None,
+        arguments: dict[str, Any] | None = None,
+        parameters: dict[str, Any] | None = None,
+        triggered_by: str = "",
+        notes: str = "",
+    ) -> Run:
+        # Fetched (and its absence mapped to 404) before the OpenFGA check so a
+        # bad model_id still 404s, matching this method's pre-existing behavior,
+        # rather than surfacing as a 403 that reveals nothing was checked yet.
+        try:
+            self._registry.get_resource(model_id)
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+        await self._authz.assert_can_execute(principal, model_id=model_id)
+
+        # MISM-291 Phase 5: each input must be visible to the caller before it
+        # gets mounted into the run (goal 1's create_run gap). Fetched (and
+        # 404-mapped) the same way as model_id above — prepare_run re-fetches
+        # each one too, an accepted minor duplicate read, same tradeoff as the
+        # model_id check above.
+        for input_resource_id in input_resource_ids or []:
+            try:
+                input_resource = self._registry.get_resource(input_resource_id)
+            except ResourceNotFoundError as exc:
+                raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+            await self._authz.assert_can_view_input_resource(principal, resource=input_resource)
+
+        try:
+            run = prepare_run(
+                self._registry,
+                model_id=model_id,
+                input_resource_ids=input_resource_ids or [],
+                entrypoint_index=entrypoint_index,
+                arguments=arguments or {},
+                parameters=parameters or {},
+                triggered_by=triggered_by or principal.subject,
+                notes=notes,
+            )
+            # MISM-291 Phase 1b: grant the requesting principal ownership of
+            # the new run so OpenFGA can answer can_view / can_cancel checks.
+            # Placed before commit so a FGA failure rolls back the DB and the
+            # two stores stay in sync.
+            await self._authz.grant_run_owner(principal, run_id=run.id)
+            self._session.commit()
+        except ResourceNotFoundError as exc:
+            self._session.rollback()
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+        except RegistryValidationError as exc:
+            self._session.rollback()
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+        except APIError:
+            self._session.rollback()
+            raise
+
+        logger.info("Created run %s for model %s by %s", run.id, model_id, principal.subject)
+        return run
+
+    def get_run(self, run_id: str) -> tuple[Run, list[Resource], list[Resource]]:
+        """Fetch a run plus its input/output resources, hydrated.
+
+        Used by GET /runs/{run_id}. The endpoint is expected to call the
+        Execution service first so the lazy DAL refresh has already run by the
+        time we read the Run record here — guaranteeing fresh status.
+        """
+        try:
+            run = self._registry.get_run(run_id)
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+        # Hydrate input/output resources. Skip any that 404 — a run may
+        # legitimately reference a resource that has since been deleted; we
+        # don't want a single missing resource to blow up the whole response.
+        input_resources: list[Resource] = []
+        for rid in run.input_resource_ids:
+            try:
+                input_resources.append(self._registry.get_resource(rid))
+            except ResourceNotFoundError:
+                logger.warning("Run %s references missing input resource %s", run_id, rid)
+
+        output_resources: list[Resource] = []
+        for rid in run.output_resource_ids:
+            try:
+                output_resources.append(self._registry.get_resource(rid))
+            except ResourceNotFoundError:
+                logger.warning("Run %s references missing output resource %s", run_id, rid)
+
+        return run, input_resources, output_resources
+
+    # ── Resource file access ────────────────────────────────────────
+
+    def find_resource_directory(self, resource_id: str) -> tuple[Resource, Path | None]:
+        """Like ``get_resource_directory``, but yields ``None`` for a directory
+        that isn't on the mount yet instead of raising 404.
+
+        For *listing*, "this resource has no files on disk" is an empty result,
+        not a failure — a registered model that was never uploaded, or whose
+        upload is still pending, legitimately has nothing to list. Raising 404
+        there forces every client to treat emptiness as an error, which is what
+        stopped the detail page's Files section from server-rendering: the query
+        errored, so `dehydrate()` dropped it and the browser refetched.
+
+        Download keeps using the strict variant — there a missing directory
+        really is a 404.
+        """
+        try:
+            resource = self._registry.get_resource(resource_id)
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+        mount = get_settings().irods_mount_path
+        directory = resolve_location_uri(resource.location_uri, mount, missing_ok=True)
+        if not directory.exists():
+            return resource, None
+        if not directory.is_dir():
+            raise APIError(
+                status_code=400,
+                code="not_a_directory",
+                detail=f"Resource location is not a directory: {resource.location_uri}",
+            )
+        return resource, directory
+
+    def get_resource_directory(self, resource_id: str) -> tuple[Resource, Path]:
+        """Return the resource and its on-disk artifact directory.
+
+        Raises APIError(404) if the resource isn't registered, or if the
+        resolved directory doesn't exist on the iRODS mount. Raises
+        APIError(400) for unsupported location_uri schemes / path traversal.
+        """
+        try:
+            resource = self._registry.get_resource(resource_id)
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+        mount = get_settings().irods_mount_path
+        directory = resolve_location_uri(resource.location_uri, mount)
+        if not directory.is_dir():
+            raise APIError(
+                status_code=400,
+                code="not_a_directory",
+                detail=(
+                    f"Resource location_uri '{resource.location_uri}' resolves "
+                    "to a file, not a directory; cannot list contents."
+                ),
+            )
+        return resource, directory
+
+    def _metadata_package_dir(self, model_id: str) -> Path:
+        """Resolve ``<location_uri>/metadata-package/`` on the mount.
+
+        Derives the path from ``model.location_uri`` (the authoritative on-disk
+        path), not from ``upload_dir(model_id, model.version)``.
+        ``write_metadata_package_raw`` syncs ``model.version`` from the annotation
+        YAML, so the version field can diverge from the version segment embedded
+        in ``location_uri`` after the first save — causing ``upload_dir``-based
+        lookups to 404 while the download endpoint (which uses ``location_uri``
+        directly) continues to work.
+        Raises 404 if the model, the package dir, or either required YAML file
+        is missing; 400 for unsupported schemes / path traversal.
+
+        The annotation job writes the package from another pod, so it can
+        briefly 404 after the job is reported "succeeded"; the UI retries those
+        404s. Don't wait for it here: the async routes call this on the event
+        loop.
+        """
+        try:
+            model = self._registry.get_resource(model_id)
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+        mount = get_settings().irods_mount_path
+        # resolve_location_uri enforces the traversal check and that the dir exists.
+        model_dir = resolve_location_uri(model.location_uri, mount)
+        pkg_dir = model_dir / "metadata-package"
+
+        if not pkg_dir.is_dir():
+            raise APIError(
+                status_code=404,
+                code="metadata_package_not_found",
+                detail=f"No metadata-package directory found for model {model_id}.",
+            )
+        missing = [f for f in (METADATA_FILE, EXECUTION_FILE) if not (pkg_dir / f).is_file()]
+        if missing:
+            raise APIError(
+                status_code=404,
+                code="metadata_package_not_found",
+                detail=f"metadata-package for model {model_id} is missing {', '.join(missing)}.",
+            )
+        return pkg_dir
+
+    def parse_metadata_package(self, model_id: str) -> tuple[Resource, list[str]]:
+        """Parse the metadata-package for a model into a (transient) Resource.
+
+        Reads ``metadata.yaml`` + ``execution.yaml`` and maps them onto a
+        Resource. The result is *not* persisted — it's a preview of what the
+        annotation package contains. Returns ``(resource, warnings)``:
+        missing/empty required fields on individual entries (an author with
+        no name, etc.) are tolerated by ``build_resource_from_package`` and
+        reported here as non-blocking warnings rather than failing.
+
+        Raises 404 (model / package / file missing) and 400 only if the
+        file's basic structure is unreadable (malformed YAML, or the
+        top-level ``model``/``execution`` section itself is absent).
+        """
+        pkg_dir = self._metadata_package_dir(model_id)
+        try:
+            return build_resource_from_package(pkg_dir)
+        except (
+            KeyError,
+            TypeError,
+            ValueError,
+            AttributeError,
+            FileNotFoundError,
+            yaml.YAMLError,
+        ) as exc:
+            raise APIError(
+                status_code=400,
+                code="invalid_metadata_package",
+                detail=f"Could not parse metadata-package for model {model_id}: {exc}",
+            ) from exc
+
+    def _apply_metadata_package(self, model_id: str, resource: Resource) -> list[str]:
+        """Parse the on-disk metadata-package and apply all YAML-derived fields
+        to *resource* in place.  Returns the non-blocking parser warnings.
+
+        Raises APIError 404 if the package is missing, 400 if it cannot be
+        parsed.  Does NOT call ``update_resource`` or commit — the caller owns
+        the transaction.
+
+        Called by both ``write_metadata_package_raw`` (manual reviewer save)
+        and ``review_metadata_package`` (auto-apply on approval), ensuring
+        the DB is always populated before a model becomes publicly searchable.
+        """
+        parsed, warnings = self.parse_metadata_package(model_id)
+
+        # Apply YAML-derived fields.  Always preserve system-managed fields:
+        # id, owner, registration_status, metadata dict, location_uri,
+        # execution_ref, format_tags, digest_sha256, size_bytes, io_spec,
+        # version_status, new_version_of, superseded_by, organization,
+        # contact_email, date_published.
+        resource.name = parsed.name
+        resource.short_description = parsed.short_description
+        resource.description = parsed.description
+        resource.external_ids = parsed.external_ids
+        resource.license = parsed.license
+        resource.authors = parsed.authors
+        resource.contacts = parsed.contacts
+        resource.publications = parsed.publications
+        resource.related_resources = parsed.related_resources
+        resource.funding = parsed.funding
+        resource.model_scales = parsed.model_scales
+        resource.organisms = parsed.organisms
+        resource.domains = parsed.domains
+        resource.infectious_agents = parsed.infectious_agents
+        resource.health_conditions = parsed.health_conditions
+        resource.biological_processes = parsed.biological_processes
+        resource.molecular_entities = parsed.molecular_entities
+        resource.proteins_genes = parsed.proteins_genes
+        resource.model_class = parsed.model_class
+        resource.formalism = parsed.formalism
+        resource.determinism = parsed.determinism
+        resource.time_dynamics = parsed.time_dynamics
+        resource.spatial = parsed.spatial
+        resource.multiscale = parsed.multiscale
+        resource.execution_type = parsed.execution_type
+        resource.execution_status = parsed.execution_status
+        resource.language_name = parsed.language_name
+        resource.language_version = parsed.language_version
+        resource.execution_notes = parsed.execution_notes
+        resource.dependencies = parsed.dependencies
+        resource.containers = parsed.containers
+        resource.compute = parsed.compute
+        resource.entry_points = parsed.entry_points
+        resource.tests = parsed.tests
+        resource.io = parsed.io
+
+        return warnings
+
+    def read_metadata_package_raw(self, model_id: str) -> list[tuple[str, str]]:
+        """Return the raw text of each metadata-package YAML file, in order.
+
+        ``[(metadata.yaml, text), (execution.yaml, text)]`` — for the review view.
+        Raises 404 if the model / package / files are missing.
+        """
+        pkg_dir = self._metadata_package_dir(model_id)
+        return [(name, (pkg_dir / name).read_text(encoding="utf-8")) for name in _PACKAGE_FILES]
+
+    def write_metadata_package_raw(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        model_id: str,
+        files: list[tuple[str, str]],
+    ) -> tuple[list[tuple[str, str]], list[str]]:
+        """Write edited raw YAML back to the metadata-package, then re-read it.
+
+        Only the two known filenames are accepted (blocks path traversal), and
+        each file must parse as YAML before anything is written (all-or-nothing).
+        Returns ``(files, warnings)`` — the re-read raw files plus any
+        non-blocking issues found while parsing them into a Resource.
+
+        The metadata-package is generated by an external annotator and may
+        legitimately be missing data on individual entries the annotator
+        couldn't confidently extract (e.g. an author with no name); those are
+        tolerated by ``build_resource_from_package`` itself and reported here
+        as non-blocking warnings rather than failing.
+
+        This no longer decides approval (MISM-291) — that's
+        ``review_metadata_package``'s job. If the package fails to parse at
+        all — the top-level ``model``/``execution`` structure itself is
+        broken — that is raised as an error, not downgraded to a warning: the
+        DB is left untouched. The edited YAML text has already been written
+        to disk by this point (validated above as syntactically-valid YAML),
+        so the user's edits aren't lost; they can fix the structural issue
+        and re-submit.
+
+        On success, one re-entry gate applies:
+
+        * ``REJECTED`` → ``PENDING_REVIEW``: editing a rejected submission
+          re-queues it for review and clears ``metadata_rejection_reason``.
+          Other statuses are left untouched.
+
+        Raises 403 (not owner), 404 (missing model/resource), 409 (model
+        already approved — editing is blocked past that point), 400 (unknown
+        filename, syntactically malformed YAML, or a metadata-package that
+        can't be mapped onto a Resource at all).
+        """
+        resource_check = self.get_resource_and_assert_ownership(principal, resource_id=model_id)
+
+        if resource_check.registration_status == ResourceRegistrationStatus.APPROVED:
+            raise APIError(
+                status_code=409,
+                code="model_already_approved",
+                detail=(
+                    f"Model '{model_id}' has been approved. "
+                    "Editing metadata of an approved model is not permitted."
+                ),
+            )
+
+        pkg_dir = self._metadata_package_dir(model_id)
+
+        # Validate everything up front so a bad file never partially overwrites.
+        for name, content in files:
+            if name not in _PACKAGE_FILES:
+                raise APIError(
+                    status_code=400,
+                    code="invalid_metadata_package",
+                    detail=f"Unknown metadata-package file '{name}'. "
+                    f"Allowed: {', '.join(_PACKAGE_FILES)}.",
+                )
+            try:
+                yaml.safe_load(content)
+            except yaml.YAMLError as exc:
+                raise APIError(
+                    status_code=400,
+                    code="invalid_metadata_package",
+                    detail=f"'{name}' is not valid YAML: {exc}",
+                ) from exc
+
+        for name, content in files:
+            (pkg_dir / name).write_text(content, encoding="utf-8")
+        logger.info("Updated metadata-package for model %s by %s", model_id, principal.subject)
+
+        try:
+            resource = self._registry.get_resource(model_id)
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+        # Parse the updated package and sync every YAML-derived field into the DB.
+        # A structural parse failure means the package can't be trusted at all —
+        # raise so the caller has to fix it and re-submit; the DB is left untouched.
+        warnings = self._apply_metadata_package(model_id, resource)
+
+        # Re-entry gate: editing a REJECTED model re-queues it for review.
+        # APPROVED is blocked above; PENDING_REVIEW, DRAFT, ANNOTATING,
+        # ANNOTATION_FAILED are left untouched.
+        if resource.registration_status == ResourceRegistrationStatus.REJECTED:
+            resource.registration_status = ResourceRegistrationStatus.PENDING_REVIEW
+            resource.metadata_rejection_reason = ""
+
+        try:
+            self._registry.update_resource(resource)
+            self._session.commit()
+        except RegistryValidationError as exc:
+            self._session.rollback()
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+
+        logger.info("Synced metadata-package to database for model %s", model_id)
+
+        files_out = [
+            (name, (pkg_dir / name).read_text(encoding="utf-8")) for name in _PACKAGE_FILES
+        ]
+        return files_out, warnings
+
+    async def review_metadata_package(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        model_id: str,
+        approve: bool,
+        reason: str = "",
+    ) -> Resource:
+        """Approve/reject decision on a model's metadata review (MISM-291, workflow steps e/f).
+
+        Gated on ownership OR the platform-wide ``upload_reviewer`` role: the
+        model owner may self-approve without holding the role; non-owners must
+        hold ``upload_reviewer``. Delegates the actual
+        ``PENDING_REVIEW -> APPROVED/REJECTED`` transition to
+        ``mism_registry.set_registration_status``, which enforces the
+        registration state machine and stamps ``metadata_reviewed_by``/
+        ``metadata_reviewed_at``/``metadata_rejection_reason``.
+
+        On approval, auto-applies the on-disk metadata-package to the DB in
+        the same transaction so all YAML-derived search fields (organisms,
+        model_scales, etc.) are always populated before the model becomes
+        publicly searchable — even if the reviewer never explicitly pressed
+        "Save" on the annotation-review page.  Raises 404 if the package is
+        missing or 400 if it cannot be parsed, blocking approval until the
+        annotation is valid.
+
+        Rejection skips the auto-apply; the owner will fix and resubmit.
+
+        Raises 403 (not the owner and not a reviewer), 404 (model or package
+        missing on approval), 400 (illegal transition or unparseable package),
+        409 (another import of the same upstream model is already approved).
+        """
+        resource = self.get_model(model_id)
+        await self._authz.assert_can_review_metadata(principal, resource=resource)
+
+        target = (
+            ResourceRegistrationStatus.APPROVED if approve else ResourceRegistrationStatus.REJECTED
+        )
+        try:
+            # Auto-apply the annotation package before approving so every
+            # YAML-derived search field is written to the DB atomically.
+            # Skipped for rejection — the package may be incomplete and the
+            # owner will fix and resubmit.
+            if approve:
+                self._apply_metadata_package(model_id, resource)
+                self._registry.update_resource(resource)
+            resource = set_registration_status(
+                self._registry,
+                resource_id=model_id,
+                target=target,
+                reviewed_by=principal.subject,
+                reason=reason,
+            )
+            # MISM-291 Phase 1a: write the public viewer tuple when a model is
+            # approved so OpenFGA can answer can_view checks for any caller
+            # (including anonymous, via the user:* wildcard). Placed before
+            # commit so a FGA failure rolls back the DB and the two stores stay
+            # in sync.
+            if target == ResourceRegistrationStatus.APPROVED:
+                await self._authz.grant_model_viewer_wildcard(principal, model_id=model_id)
+            self._session.commit()
+        except ResourceNotFoundError as exc:
+            self._session.rollback()
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+        except InvalidStateTransitionError as exc:
+            self._session.rollback()
+            raise APIError(
+                status_code=400, code="invalid_state_transition", detail=str(exc)
+            ) from exc
+        except IntegrityError as exc:
+            self._session.rollback()
+            if not resource.source_identifier:
+                raise APIError(
+                    status_code=409,
+                    code="resource_conflict",
+                    detail="A conflicting resource already exists.",
+                ) from exc
+            # uq_resources_source covers approved rows only, so two imports of one
+            # upstream model collide here rather than at create. The winner is the
+            # approved row that displaced this one; naming it lets the caller link
+            # straight there instead of re-deriving it from source_identifier.
+            approved = [
+                r
+                for r in self.find_by_source(
+                    repository=resource.source_repository,
+                    identifiers=[resource.source_identifier],
+                )
+                if r.registration_status == ResourceRegistrationStatus.APPROVED
+            ]
+            raise APIError(
+                status_code=409,
+                code="source_already_approved",
+                detail=(
+                    f"Another copy of {resource.source_identifier} was approved first, "
+                    "so this one cannot also be approved."
+                ),
+                meta={
+                    "model_id": approved[0].id if approved else None,
+                    "source_repository": resource.source_repository,
+                    "source_identifier": resource.source_identifier,
+                },
+            ) from exc
+        except APIError:
+            self._session.rollback()
+            raise
+
+        logger.info(
+            "Metadata review for model %s: %s by %s",
+            model_id,
+            target.value,
+            principal.subject,
+        )
+        return resource
+
+    def submit_container_image(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        model_id: str,
+        container: Container,
+    ) -> Resource:
+        """Submit (or resubmit) a built Dockerfile/image for IMAGE_CHECK review
+        (MISM-291, workflow steps h/l).
+
+        Ownership-gated, not `image_checker`-gated — the design doc names no
+        gating role for this step (only the review action itself, steps i-k,
+        is role-gated), mirroring `write_metadata_package_raw`'s ownership
+        gate rather than `review_metadata_package`'s role gate. Delegates to
+        `mism_registry.submit_container_image`, which requires the model's
+        metadata registration to already be APPROVED and moves
+        `image_review_status` to `PENDING_IMAGE_CHECK`, replacing any
+        existing container recipe.
+
+        This same call is also the resubmission action after a rejection:
+        calling it again while `image_review_status` is `IMAGE_REJECTED`
+        auto-transitions back to `PENDING_IMAGE_CHECK` — the state machine
+        already allows that transition, and there is no separate "resubmit"
+        endpoint, matching the metadata-review flow's
+        `REJECTED -> PENDING_REVIEW` bounceback convention.
+
+        Raises 403 (not owner), 404 (model missing), 400 (registration not
+        yet APPROVED, or an illegal image-review transition, e.g.
+        resubmitting while a review is already PENDING_IMAGE_CHECK).
+        """
+        self.get_resource_and_assert_ownership(principal, resource_id=model_id)
+
+        try:
+            resource = submit_container_image(
+                self._registry,
+                resource_id=model_id,
+                container=container,
+            )
+            self._session.commit()
+        except RegistryValidationError as exc:
+            self._session.rollback()
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+        except InvalidStateTransitionError as exc:
+            self._session.rollback()
+            raise APIError(
+                status_code=400, code="invalid_state_transition", detail=str(exc)
+            ) from exc
+
+        logger.info(
+            "Submitted container image for model %s (%s) by %s",
+            model_id,
+            container.image_name or container.file,
+            principal.subject,
+        )
+        return resource
+
+    # ── Env-build workflow (execution API callbacks) ────────────────
+
+    def apply_build_result(self, result: BuildResultCallback) -> Resource:
+        """Apply an envagent build result reported by the execution API.
+
+        Service-to-service: no principal, and deliberately bypasses the
+        "approved models are read-only" guard in ``update_model`` because the
+        build agent is the one actor allowed to fill in the run recipe after
+        approval.
+
+        Success (see ``BuildResultCallback.succeeded``): containers[0] becomes
+        the digest-pinned image, the proven command becomes entry_points[0],
+        empty output destinations default to the mount's output_path, and
+        env_build_status goes RUNNABLE. Failure: only env_build_status /
+        env_build_error change.
+
+        Raises 404 (unknown model), 409 (model not in a build state),
+        400 (validation).
+        """
+        model_id = result.resource_id
+        try:
+            resource = self._registry.get_resource(model_id)
+            image_ref = result.image.ref if result.image else ""
+
+            # Replayed callback for a build already applied: no-op.
+            if (
+                resource.env_build_status == EnvBuildStatus.RUNNABLE
+                and resource.containers
+                and resource.containers[0].image_name == image_ref
+            ):
+                return resource
+
+            # BUILDING is set by the execution API when its job starts; if the
+            # result lands first, step through it so the result isn't lost.
+            if resource.env_build_status == EnvBuildStatus.READY_FOR_BUILD:
+                resource = set_env_build_status(
+                    self._registry, resource_id=model_id, target=EnvBuildStatus.BUILDING
+                )
+
+            if result.succeeded:
+                _apply_verified_build(resource, result)
+                self._registry.update_resource(resource)
+                resource = set_env_build_status(
+                    self._registry, resource_id=model_id, target=EnvBuildStatus.RUNNABLE
+                )
+            else:
+                error = f"{result.failure_class or result.outcome}: {result.reason}".strip()
+                resource = set_env_build_status(
+                    self._registry,
+                    resource_id=model_id,
+                    target=EnvBuildStatus.BUILD_FAILED,
+                    error=error,
+                )
+            self._session.commit()
+        except ResourceNotFoundError as exc:
+            self._session.rollback()
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+        except InvalidStateTransitionError as exc:
+            self._session.rollback()
+            raise APIError(
+                status_code=409, code="invalid_state_transition", detail=str(exc)
+            ) from exc
+        except RegistryValidationError as exc:
+            self._session.rollback()
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+
+        logger.info(
+            "Build result for model %s: outcome=%s ladder=%s failure_class=%s -> %s",
+            model_id,
+            result.outcome,
+            result.ladder_reached,
+            result.failure_class,
+            resource.env_build_status.value,
+        )
+        return resource
+
+    async def review_container_image(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        model_id: str,
+        approve: bool,
+        reason: str = "",
+    ) -> Resource:
+        """An IMAGE_CHECK holder's approve/reject decision on a model's
+        Dockerfile/image (MISM-291, workflow steps i-k).
+
+        Gated on the platform-wide ``image_checker`` role — global, not
+        per-submission, and self-review is explicitly allowed (an image
+        checker may act on a model they themselves uploaded, decided
+        2026-08-21 as its own per-role choice, not carried over from
+        ``upload_reviewer``'s precedent). Delegates the actual
+        ``PENDING_IMAGE_CHECK -> IMAGE_APPROVED/IMAGE_REJECTED`` transition to
+        ``mism_registry.set_image_review_status``, which enforces the
+        image-review state machine and stamps ``image_reviewed_by``/
+        ``image_reviewed_at``/``image_rejection_reason``.
+
+        Raises 403 (not an image checker), 404 (model missing), 400 (illegal
+        transition, e.g. reviewing a model that isn't PENDING_IMAGE_CHECK).
+        """
+        await self._authz.assert_image_checker(principal)
+
+        target = ImageReviewStatus.IMAGE_APPROVED if approve else ImageReviewStatus.IMAGE_REJECTED
+        try:
+            resource = set_image_review_status(
+                self._registry,
+                resource_id=model_id,
+                target=target,
+                reviewed_by=principal.subject,
+                reason=reason,
+            )
+            self._session.commit()
+        except ResourceNotFoundError as exc:
+            self._session.rollback()
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+        except InvalidStateTransitionError as exc:
+            self._session.rollback()
+            raise APIError(
+                status_code=400, code="invalid_state_transition", detail=str(exc)
+            ) from exc
+
+        logger.info(
+            "Image review for model %s: %s by %s",
+            model_id,
+            target.value,
+            principal.subject,
+        )
+        return resource
+
+    def resolve_resource_file(self, resource_id: str, rel_path: str) -> tuple[Resource, Path]:
+        """Resolve a single file inside a resource's directory.
+
+        Raises 404 (resource or file missing), 400 (bad path / traversal /
+        not-a-file), or propagates the same errors as ``get_resource_directory``.
+        """
+        resource, directory = self.get_resource_directory(resource_id)
+        return resource, safe_join(directory, rel_path)
+
+    def get_model_run_details(
+        self,
+        *,
+        model_id: str,
+        status: RunStatus | None = None,
+        triggered_by: str | None = None,
+    ) -> ModelRunSummary:
+        """Return the model plus its runs with hydrated I/O resources.
+
+        Used by the model detail page's run history. Pass ``triggered_by`` to
+        scope the result to one user's runs.
+        """
+        try:
+            return get_model_run_details(
+                self._registry,
+                model_id=model_id,
+                status=status,
+                triggered_by=triggered_by,
+            )
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+        except RegistryValidationError as exc:
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+
+    def find_user_runs(
+        self,
+        *,
+        triggered_by: str,
+        status: RunStatus | None = None,
+    ) -> list[Run]:
+        """All runs triggered by a user, across every model, optionally by status."""
+        return self._registry.find_runs(triggered_by=triggered_by, status=status)
+
+    def find_user_run_details(
+        self,
+        *,
+        triggered_by: str,
+        status: RunStatus | None = None,
+    ) -> list[tuple[Resource, Run, list[Resource], list[Resource]]]:
+        """User's runs across every model, each hydrated with its model + I/O.
+
+        Returns tuples of ``(model, run, input_resources, output_resources)``
+        sorted newest-first by ``run.created_at``. This is a cross-model list,
+        so every row carries its own model summary.
+
+        Resource lookups (models and I/O) are cached by id within the call to
+        avoid redundant ``get_resource`` round-trips when runs share inputs or
+        target the same model. Missing resources are skipped gracefully rather
+        than failing the whole list — a run may reference a resource (or model)
+        that has since been deleted. No Execution-service refresh happens here;
+        the UI refreshes active runs when a row is expanded.
+        """
+        runs = self.find_user_runs(triggered_by=triggered_by, status=status)
+        runs.sort(key=lambda run: run.created_at, reverse=True)
+
+        cache: dict[str, Resource] = {}
+
+        def _resolve(rid: str) -> Resource | None:
+            if rid in cache:
+                return cache[rid]
+            try:
+                resource = self._registry.get_resource(rid)
+            except ResourceNotFoundError:
+                logger.warning("Run references missing resource %s", rid)
+                return None
+            cache[rid] = resource
+            return resource
+
+        details: list[tuple[Resource, Run, list[Resource], list[Resource]]] = []
+        for run in runs:
+            model = _resolve(run.model_id)
+            if model is None:
+                # A run whose model no longer exists can't be rendered as a row.
+                logger.warning("Run %s references missing model %s", run.id, run.model_id)
+                continue
+            inputs = [r for rid in run.input_resource_ids if (r := _resolve(rid)) is not None]
+            outputs = [r for rid in run.output_resource_ids if (r := _resolve(rid)) is not None]
+            details.append((model, run, inputs, outputs))
+
+        return details
+
+    # ── Query operations ─────────────────────────────────────────────
+
+    def list_models(
+        self,
+        *,
+        principal: AuthenticatedPrincipal | None = None,
+        name_contains: str | None = None,
+        owner: str | None = None,
+        tags: list[str] | None = None,
+        organisms: list[str] | None = None,
+        scales: list[str] | None = None,
+        registration_status: str | None = None,
+        image_review_status: str | None = None,
+    ) -> list[Resource]:
+        """Return models visible to ``principal`` matching the given filters.
+
+        Visibility filter (string-equality, not OpenFGA): approved models are
+        public; anything still in the registration workflow is visible only to
+        its owner. Written inline — services may not import from ``api/``.
+        Filtering happens before the list is returned so callers always receive
+        a fully-gated result; pagination is left to the router.
+
+        The ``registration_status`` pre-filter (when supplied) narrows the DB
+        result before the visibility filter runs so the two compose correctly.
+        """
+        resources = find_resources(
+            self._registry,
+            resource_type=ResourceType.MODEL,
+            name_contains=name_contains,
+            owner=owner,
+            tags=tags,
+            organisms=organisms,
+            scales=scales,
+        )
+        if registration_status is not None:
+            resources = [r for r in resources if r.registration_status.value == registration_status]
+        if image_review_status is not None:
+            resources = [r for r in resources if r.image_review_status.value == image_review_status]
+        return [
+            r
+            for r in resources
+            if r.registration_status == ResourceRegistrationStatus.APPROVED
+            or (principal is not None and bool(r.owner) and r.owner == principal.subject)
+        ]
+
+    # ── Search ────────────────────────────────────────────────────────
+
+    # version_status=active is always forced — no caller can widen it.
+    _ALWAYS_GATE: dict[str, str] = {"version_status": "active"}
+    # registration_status=approved is forced by default. Authenticated callers
+    # may override it to surface their own non-approved models (an owner
+    # constraint is added automatically — see search() below).
+    _DEFAULT_REG_GATE: dict[str, str] = {"registration_status": "approved"}
+
+    def search(
+        self,
+        query: SearchQuery,
+        *,
+        principal: AuthenticatedPrincipal | None = None,
+    ) -> SearchResult:
+        """Validate and execute a full-text search with filters and aggregations.
+
+        Two gate layers apply:
+
+        * ``version_status=active`` — always forced; drafts / archived versions
+          never appear regardless of who is asking.
+        * ``registration_status=approved`` — forced by default so pending /
+          rejected models are invisible to public callers. An authenticated
+          caller (non-anonymous, non-local-dev) who explicitly supplies a
+          ``registration_status`` filter may override this gate to see their own
+          non-approved models; an ``owner == principal.subject`` constraint is
+          automatically appended so they cannot see other users' models. The
+          same owner-scoping applies when ``image_review_status`` is filtered
+          (approved models pending image review are visible only to their owner
+          unless an explicit ``owner`` filter is already present).
+        """
+        explicit_reg_status = any(f.field == "registration_status" for f in query.filters)
+        explicit_img_status = any(f.field == "image_review_status" for f in query.filters)
+        # "local" issuer = dev auth-bypass; subject is synthetic, not a real user.
+        is_real_user = principal is not None and principal.issuer != "local"
+
+        # Build the effective always-gate and conditionally add the reg-status gate.
+        effective_gate = dict(self._ALWAYS_GATE)
+        if not (explicit_reg_status and is_real_user):
+            effective_gate.update(self._DEFAULT_REG_GATE)
+
+        # Drop client filters on the gated fields, then append the forced gate.
+        kept = tuple(f for f in query.filters if f.field not in effective_gate)
+        gate_filters = tuple(
+            FieldFilter(field=k, op="eq", value=v) for k, v in effective_gate.items()
+        )
+        filters = kept + gate_filters
+
+        # When a real user overrides the registration_status gate or filters by
+        # image_review_status, add an owner constraint so they only see their
+        # own models — not those of other users.
+        if (
+            is_real_user
+            and (explicit_reg_status or explicit_img_status)
+            and not any(f.field == "owner" for f in query.filters)
+        ):
+            filters += (FieldFilter(field="owner", op="eq", value=principal.subject),)  # type: ignore[union-attr]
+
+        query = dataclasses.replace(query, filters=filters)
+
+        # Validate filter fields and operators
+        for f in query.filters:
+            meta = FILTERABLE_FIELDS.get(f.field)
+            if meta is None:
+                raise APIError(
+                    status_code=400,
+                    code="invalid_filter",
+                    detail=f"Unknown filter field: {f.field}",
+                )
+            _kind, allowed_ops = meta
+            if f.op not in allowed_ops:
+                raise APIError(
+                    status_code=400,
+                    code="invalid_filter",
+                    detail=f"Operator '{f.op}' is not valid for field '{f.field}'. "
+                    f"Allowed: {', '.join(sorted(allowed_ops))}",
+                )
+
+        # Validate aggregation fields
+        for agg in query.agg_fields:
+            if agg not in AGGREGATABLE_FIELDS:
+                raise APIError(
+                    status_code=400,
+                    code="invalid_aggregation",
+                    detail=f"Unknown aggregation field: {agg}",
+                )
+
+        if not isinstance(self._registry, PostgresRegistry):
+            raise APIError(
+                status_code=500,
+                code="unsupported_backend",
+                detail="Full-text search requires a PostgreSQL backend",
+            )
+
+        return self._registry.search_resources(query)
+
+    # ── Dataset operations ─────────────────────────────────────────
+
+    async def create_dataset(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        name: str,
+        location_uri: str,
+        description: str = "",
+        version: str = "",
+        owner: str = "",
+        format_tags: list[str] | None = None,
+        digest_sha256: str = "",
+        size_bytes: int | None = None,
+        external_ids: dict[str, str] | None = None,
+        license: str = "",
+        metadata: dict[str, Any] | None = None,
+        authors: list[Author] | None = None,
+        organization: str = "",
+        contact_email: str = "",
+        publications: list[Publication] | None = None,
+        funding: list[str] | None = None,
+        model_scales: list[str] | None = None,
+        organisms: list[str] | None = None,
+        domains: list[str] | None = None,
+        date_published: date | None = None,
+    ) -> Resource:
+        await self._authz.assert_uploader(principal)
+        try:
+            resource = register_dataset(
+                self._registry,
+                name=name,
+                location_uri=location_uri,
+                description=description,
+                version=version,
+                owner=owner or principal.subject,
+                format_tags=format_tags or [],
+                digest_sha256=digest_sha256,
+                size_bytes=size_bytes,
+                external_ids=external_ids or {},
+                license=license,
+                metadata=metadata or {},
+                authors=authors or [],
+                organization=organization,
+                contact_email=contact_email,
+                publications=publications or [],
+                funding=funding or [],
+                model_scales=model_scales or [],
+                organisms=organisms or [],
+                domains=domains or [],
+                date_published=date_published,
+            )
+            # FUTURE: fga.write_tuple(user=principal.subject,
+            #   relation="owner", object=f"dataset:{resource.id}")
+            self._session.commit()
+        except RegistryValidationError as exc:
+            self._session.rollback()
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+
+        logger.info(
+            "Registered dataset %s (%s) by %s", resource.id, resource.name, principal.subject
+        )
+        return resource
+
+    def update_dataset(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        dataset_id: str,
+        name: str | None = None,
+        description: str | None = None,
+        version: str | None = None,
+        owner: str | None = None,
+        location_uri: str | None = None,
+        format_tags: list[str] | None = None,
+        digest_sha256: str | None = None,
+        size_bytes: int | None = None,
+        external_ids: dict[str, str] | None = None,
+        license: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        authors: list[Author] | None = None,
+        organization: str | None = None,
+        contact_email: str | None = None,
+        publications: list[Publication] | None = None,
+        funding: list[str] | None = None,
+        model_scales: list[str] | None = None,
+        organisms: list[str] | None = None,
+        domains: list[str] | None = None,
+        date_published: date | None = None,
+    ) -> Resource:
+        try:
+            resource = self._registry.get_resource(dataset_id)
+        except ResourceNotFoundError as exc:
+            raise APIError(status_code=404, code="not_found", detail=str(exc)) from exc
+
+        # Ownership check (goal 1 stopgap — string equality, not yet OpenFGA).
+        # Missing dataset still 404s (checked above) before this; only an
+        # existing-but-not-owned dataset reaches this 403. Mirrors
+        # `get_resource_and_assert_ownership`'s `issuer == "local"` bypass so
+        # local dev with auth disabled isn't blocked from updating datasets.
+        #
+        # FUTURE: fga.check(user=principal.subject,
+        #   relation="editor", object=f"dataset:{dataset_id}")
+        if principal.issuer != "local" and resource.owner != principal.subject:
+            raise self._not_authorized_error()
+
+        if name is not None:
+            resource.name = name
+        if description is not None:
+            resource.description = description
+        if version is not None:
+            resource.version = version
+        if owner is not None:
+            resource.owner = owner
+        if location_uri is not None:
+            resource.location_uri = location_uri
+        if format_tags is not None:
+            resource.format_tags = format_tags
+        if digest_sha256 is not None:
+            resource.digest_sha256 = digest_sha256
+        if size_bytes is not None:
+            resource.size_bytes = size_bytes
+        if external_ids is not None:
+            resource.external_ids = external_ids
+        if license is not None:
+            resource.license = license
+        if metadata is not None:
+            resource.metadata = metadata
+        if authors is not None:
+            resource.authors = authors
+        if organization is not None:
+            resource.organization = organization
+        if contact_email is not None:
+            resource.contact_email = contact_email
+        if publications is not None:
+            resource.publications = publications
+        if funding is not None:
+            resource.funding = funding
+        if model_scales is not None:
+            resource.model_scales = model_scales
+        if organisms is not None:
+            resource.organisms = organisms
+        if domains is not None:
+            resource.domains = domains
+        if date_published is not None:
+            resource.date_published = date_published
+
+        try:
+            updated = self._registry.update_resource(resource)
+            self._session.commit()
+        except RegistryValidationError as exc:
+            self._session.rollback()
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+
+        logger.info("Updated dataset %s by %s", dataset_id, principal.subject)
+        return updated
+
+    def list_datasets(
+        self,
+        *,
+        principal: AuthenticatedPrincipal | None = None,
+        name_contains: str | None = None,
+        owner: str | None = None,
+        tags: list[str] | None = None,
+        organisms: list[str] | None = None,
+        scales: list[str] | None = None,
+    ) -> list[Resource]:
+        """Return datasets visible to ``principal`` matching the given filters.
+
+        Same visibility predicate as ``list_models`` (approved OR owner) —
+        see that method's docstring for the rationale.
+        """
+        resources = find_resources(
+            self._registry,
+            resource_type=ResourceType.DATASET,
+            name_contains=name_contains,
+            owner=owner,
+            tags=tags,
+            organisms=organisms,
+            scales=scales,
+        )
+        return [
+            r
+            for r in resources
+            if r.registration_status == ResourceRegistrationStatus.APPROVED
+            or (principal is not None and bool(r.owner) and r.owner == principal.subject)
+        ]
+
+    # ── Upload lifecycle ─────────────────────────────────────────────
+
+    def get_resource_and_assert_ownership(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        resource_id: str,
+    ) -> Resource:
+        """
+        Look up `resource_id` and verify `principal` owns it.
+
+        On any failure (resource missing OR caller is not the owner) raises a
+        single, indistinguishable 403 with code `not_authorized`.
+
+        FUTURE: replace string equality with `fga.check(user=principal.subject,
+        relation="owner", object=f"resource:{resource_id}")`.
+        """
+        try:
+            resource = self._registry.get_resource(resource_id)
+        except ResourceNotFoundError:
+            raise self._not_authorized_error() from None
+
+        if principal.issuer != "local" and resource.owner != principal.subject:
+            raise self._not_authorized_error()
+        return resource
+
+    def mark_upload_complete(
+        self,
+        principal: AuthenticatedPrincipal,
+        *,
+        resource_id: str,
+    ) -> Resource:
+        """
+        Stamp `metadata['upload_status'] = 'UPLOAD_COMPLETE'` on a resource owned by `principal`
+        and reconcile its `location_uri` to where the upload actually landed.
+
+        Why reconcile `location_uri` here? At create time the user supplies an
+        arbitrary (iRODS or path) `location_uri`, but tus always writes to a
+        deterministic path (`<resource_id>/<version>`, see `upload_dir`). If the two
+        disagree, the download endpoint (which reads `location_uri`) cannot
+        find the just-uploaded files. Stamping the canonical iRODS URI here —
+        in the same atomic update as `upload_status` — keeps the two in sync
+        without forcing the user to compute the path correctly at create time.
+
+        Idempotent. `upload_status` is kept in `metadata` because
+        `mism_registry.ResourceVersionStatus` models publication lifecycle
+        (active/superseded/archived), not content lifecycle.
+        """
+        resource = self.get_resource_and_assert_ownership(principal, resource_id=resource_id)
+
+        new_metadata = dict(resource.metadata)
+        new_metadata["upload_status"] = "UPLOAD_COMPLETE"
+        resource.metadata = new_metadata
+
+        # Reconcile location_uri with the actual storage path tusd wrote to.
+        # `upload_dir` is the single source of truth for the upload destination
+        # (<resource_id>/<version>) and is also used by the tus pre-create hook.
+        # Stored as a bare mount-relative path; resolve_location_uri joins it
+        # onto IRODS_MOUNT_PATH (it strips any irods:// scheme anyway).
+        resource.location_uri = upload_dir(resource_id, resource.version)
+
+        try:
+            updated = self._registry.update_resource(resource)
+            self._session.commit()
+        except RegistryValidationError as exc:
+            self._session.rollback()
+            raise APIError(status_code=400, code="validation_error", detail=str(exc)) from exc
+
+        return updated
+
+    @staticmethod
+    def _not_authorized_error() -> APIError:
+        """
+        TODO: Improve error messages and handling by subclassing APIError with specific errors.
+        That will help not only here but in many other places too.
+        """
+        return APIError(
+            status_code=403,
+            code="not_authorized",
+            detail="Resource does not exist or principal is not its owner.",
+        )
+
+    # ── Lifecycle ────────────────────────────────────────────────────
+
+    def close(self) -> None:
+        self._session.close()
+
+
+def _apply_verified_build(resource: Resource, result: BuildResultCallback) -> None:
+    """Write a verified build's image, entry point and output location onto
+    ``resource`` in place (caller persists)."""
+    assert result.image is not None  # guaranteed by result.succeeded
+    ref = result.image.ref
+    # "docker.io/org/img@sha256:..." -> registry "docker.io"; bare "org/img" has none.
+    head = ref.split("/", 1)[0]
+    registry = head if "/" in ref and ("." in head or ":" in head) else ""
+    resource.containers = [Container(kind="docker", image_name=ref, registry=registry)]
+    # ponytail: auto-approve L3 builds; route via set_image_review_status once
+    # the admin approval gate exists.
+    resource.image_review_status = ImageReviewStatus.IMAGE_APPROVED
+    resource.image_reviewed_by = "envbuild-agent"
+    resource.image_reviewed_at = datetime.now(UTC)
+    resource.image_rejection_reason = ""
+
+    # envagent proves exactly one command; keep the rest, proven one first.
+    cmd = result.entry_command
+    if cmd:
+        match = next((e for e in resource.entry_points if e.command == cmd), None)
+        proven = match or EntryPoint(command=cmd, purpose="verified by envbuild")
+        resource.entry_points = [proven, *(e for e in resource.entry_points if e is not match)]
+
+    # output_path is the default destination for outputs that don't name one.
+    mount = result.runtime.mount if result.runtime else None
+    if mount and mount.output_path:
+        io = resource.io or IODetail()
+        outputs = tuple(
+            o if o.destination else dataclasses.replace(o, destination=mount.output_path)
+            for o in io.outputs
+        ) or (Output(name="outputs", destination=mount.output_path),)
+        resource.io = dataclasses.replace(io, outputs=outputs)

@@ -1,0 +1,395 @@
+# ============================================================
+# MISM Discovery Platform – Default Values
+# ============================================================
+
+global:
+  imageRegistry: "" # Override to push/pull from a private registry
+  imagePullSecrets: []
+  storageClass: "" # Leave empty to use cluster default
+
+# ────────────────────────────────────────────────────────────
+# Discovery Gateway REST API  (entry-point / API gateway)
+# ────────────────────────────────────────────────────────────
+gateway:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: mismplatform/model-discovery
+    tag: "1.0.0"
+    pullPolicy: "Always"
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  env:
+    UVICORN_WORKERS: "2"
+    LOG_LEVEL: "INFO"
+    AUTH_MODE: "oidc"
+    DISABLE_AUTH: "false"
+    STUB_UPSTREAM_SERVICES: "false"
+    PRODUCTION_MODE: "false"
+    # Browser-reachable tusd base URL returned by POST /api/v1/models/{id}/upload.
+    # Override per environment, e.g. https://uploads.example.com.
+    TUSD_BASE_URL: "changeme"
+    UPLOAD_MAX_BYTES: "524288000"
+    # Subpath that hosts the API + Swagger/ReDoc/openapi.json.
+    # Docs land at {API_PATH_PREFIX}/docs. Set to "" to mount at root.
+    API_PATH_PREFIX: "/api"
+    # On-pod path where the iRODS PVC is mounted. Resource location_uris of
+    # the form "irods:///foo" or "/irods/foo" resolve under this directory.
+    # Must match irods.pvc.mountPath below.
+    IRODS_MOUNT_PATH: "/irods"
+    # "local" → write straight to the iRODS PVC (LocalFileUploadClient).
+    # "http"  → forward to a real upload service (UploadServiceClient).
+    UPLOAD_BACKEND: "local"
+    # Upload service (only consulted when UPLOAD_BACKEND=http).
+    UPLOAD_SERVICE_URL: "http://upload-service:8001"
+    UPLOAD_TIMEOUT_SECONDS: "60.0"
+    UPLOAD_CHUNK_SIZE_BYTES: "5242880"
+    UPLOAD_RETRY_MAX_ATTEMPTS: "3"
+    UPLOAD_RETRY_BACKOFF_SECONDS: "1.0"
+    UPLOAD_RETRY_TRAILING_BUFFER_BYTES: "15728640"
+    # OIDC – set via --set or values override per environment
+    OIDC_ISSUER_URL: ""
+    OIDC_DISCOVERY_URL: ""
+    OIDC_AUDIENCE: ""
+    OIDC_REQUIRED_SCOPES: ""
+    OIDC_JWKS_TTL_SECONDS: "300"
+    # Execution API
+    EXECUTION_API_URL: ""
+    EXECUTION_TIMEOUT_SECONDS: "120"
+    # OpenFGA Authorization
+    # OPENFGA_STORE_ID and OPENFGA_AUTHORIZATION_MODEL_ID are intentionally
+    # left empty here — supply them at deploy time via --set.
+    OPENFGA_API_URL: "http://openfga:8080"
+    OPENFGA_STORE_ID: ""
+    OPENFGA_AUTHORIZATION_MODEL_ID: ""
+    OPENFGA_TIMEOUT_SECONDS: "10.0"
+    # Annotation job configuration — forwarded to POST /api/v1/annotations on the execution-platform.
+    # The LLM API key is NOT set here; it is injected server-side by the execution-platform.
+    ANNOTATION_JOB_IMAGE: "helxplatform/bio-pi-agent-runner:latest"
+    ANNOTATION_JOB_CPUS: "1"
+    ANNOTATION_JOB_MEMORY: "4Gi"
+    ANNOTATION_JOB_PROMPT: ""
+    ANNOTATION_OPENAI_BASE_URL: ""
+    ANNOTATION_MODEL: "gpt-5.6-luna"
+    # CAIRNS recommendation API (currently unauthenticated), empty disables it.
+    CAIRNS_API_URL: ""
+    CAIRNS_TIMEOUT_SECONDS: "180"
+    # Public BioModels API, used to import models. Empty disables imports.
+    BIOMODELS_API_URL: "https://www.biomodels.org"
+    BIOMODELS_TIMEOUT_SECONDS: "15"
+    BIOMODELS_MAX_CONCURRENCY: "8"
+    # Note: DATABASE_URL and REDIS_URL are built in deployment templates and do not need to be set here
+
+storage:
+  irodsPvcName: irods-pvc
+  mountIrodsPvc: true
+  irodsMountPath: /irods
+  readOnly: false
+
+securityContext:
+  runAsUser: 995
+
+# ────────────────────────────────────────────────────────────
+# Search Service
+# ────────────────────────────────────────────────────────────
+searchService:
+  enabled: true
+  replicaCount: 0
+  image:
+    repository: mism/search-service
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  env:
+    LOG_LEVEL: "INFO"
+
+# ────────────────────────────────────────────────────────────
+# Upload Service
+# ────────────────────────────────────────────────────────────
+uploadService:
+  enabled: true
+  replicaCount: 0
+  image:
+    repository: mism/upload-service
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8001
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  env:
+    LOG_LEVEL: "INFO"
+    STORAGE_INTERFACE_URL: "http://storage-interface:9000"
+
+# ────────────────────────────────────────────────────────────
+# Storage Interface  (iRODS / LakeFS adapter)
+# ────────────────────────────────────────────────────────────
+storageInterface:
+  enabled: true
+  replicaCount: 0
+  image:
+    repository: mism/storage-interface
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 9000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  env:
+    LOG_LEVEL: "INFO"
+    BACKEND: "lakefs" # "irods" | "lakefs"
+    LAKEFS_ENDPOINT: "http://lakefs:8080"
+    IRODS_HOST: "irods-server"
+    IRODS_PORT: "1247"
+    BLOB_STORAGE_BUCKET: "mism-data"
+
+# ────────────────────────────────────────────────────────────
+# Metadata Store  (PostgreSQL – DAL read/write backend)
+# ────────────────────────────────────────────────────────────
+metadataStore:
+  enabled: true
+  # azure has lost+found dir that causes init to fall .
+  pgData: /var/lib/postgresql/data/pgdata
+  image:
+    repository: postgres
+    tag: "17-alpine"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 5432
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: ""
+  env:
+    POSTGRES_DB: "mism"
+    POSTGRES_USER: "mism"
+    # POSTGRES_PASSWORD stored in Secret (see secrets section)
+
+# ────────────────────────────────────────────────────────────
+# Database Migration  (Alembic – runs as a Helm hook Job)
+# ────────────────────────────────────────────────────────────
+migration:
+  enabled: true
+  backoffLimit: 3
+
+# ────────────────────────────────────────────────────────────
+# UI Service  (React Router 7 frontend)
+# ────────────────────────────────────────────────────────────
+ui:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: mismplatform/ui
+    tag: "1.0.0"
+    pullPolicy: "Always"
+  service:
+    type: ClusterIP
+    port: 3000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  env:
+    # Used by SSR where relative URL isn't available
+    API_BASE_URL: "http://discovery-gateway:8000"
+
+# ────────────────────────────────────────────────────────────
+# Ingress
+# ────────────────────────────────────────────────────────────
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations: {}
+  # Keep /api/internal off the public ingress. tusd should call the gateway's
+  # ClusterIP service directly inside the cluster for /api/internal/tusd/hooks.
+  blockInternalApi: true
+  host: "model-discovery.example.com"
+  tls:
+    enabled: false
+    secretName: "mism-tls"
+
+# ────────────────────────────────────────────────────────────
+# Secrets  (override via --set or external secret manager)
+# ────────────────────────────────────────────────────────────
+secrets:
+  databasePassword: "changeme"
+
+# ────────────────────────────────────────────────────────────
+# External Secrets Operator integration
+# Set enabled: true to render an ExternalSecret CR instead of
+# a plain Secret.  Requires ESO to be installed in the cluster.
+# https://external-secrets.io
+# ────────────────────────────────────────────────────────────
+externalSecrets:
+  enabled: false
+  secretStoreName: "vault-backend"
+  secretStoreKind: "SecretStore"
+  secretPath: "mism/discovery"
+  refreshInterval: "1h"
+
+# ────────────────────────────────────────────────────────────
+# Network Policies
+# ────────────────────────────────────────────────────────────
+networkPolicy:
+  enabled: true
+  ingressControllerNamespace: infra
+  restrictEgress: false
+  # Allow in-cluster ingress from a separately deployed tusd to the Gateway's
+  # /api/internal/tusd/hooks endpoint. tusd ships in a separate Helm chart,
+  # so adjust `podSelectorLabels` to match the labels the tusd chart applies
+  # to its pod template. The `app.kubernetes.io/name: tusd` default below is
+  # just a convention and MUST match whatever the tusd chart actually emits.
+  #
+  # tusd is assumed to be deployed in the same namespace as this release and
+  # should use the ClusterIP URL:
+  # http://discovery-gateway:8000
+  #
+  # The tusd chart MUST enable at minimum these hook events via
+  # `--hooks-enabled-events` so this Gateway can enforce upload authorization
+  # and the (resource_id, filename) lock that prevents two concurrent uploads
+  # from overwriting each other:
+  #   - pre-create   (required: ownership/size/path checks + lock acquire)
+  #   - post-finish  (required: marks upload complete + releases lock)
+  #   - pre-terminate (recommended: releases lock immediately when the client
+  #                    cancels an in-flight upload; without it, an abandoned
+  #                    upload blocks re-uploads of the same filename for the
+  #                    full TUS_UPLOAD_TTL_SECONDS window — 1h by default)
+  tusd:
+    # Note: This MUST be set to true for the expected NetworkPolicy to be applied.
+    enabled: true
+    podSelectorLabels:
+      app.kubernetes.io/name: tusd
+  # Allow Gateway → Keycloak (OIDC) when Keycloak runs in this namespace and is
+  # isolated by other policies. Labels must match the Keycloak server pod.
+  keycloak:
+    enabled: false
+    port: 8080
+    podSelectorLabels:
+      app.kubernetes.io/name: keycloak
+      app.kubernetes.io/component: keycloak
+      app.kubernetes.io/instance: keycloak
+  # Allow Gateway → CAIRNS API (CAIRNS_API_URL) when CAIRNS runs in this
+  # namespace. Labels must match the CAIRNS API pod. If nothing else selects
+  # those pods, enabling this cuts off their ingress-controller traffic.
+  cairns:
+    enabled: false
+    port: 8000
+    podSelectorLabels:
+      app.kubernetes.io/name: cairns-api
+      app.kubernetes.io/instance: cairns
+  # Allow the execution API (mism-exec, same namespace) to POST env-build
+  # results to the Gateway's /api/internal/builds callback. Labels must match
+  # the exec pod template.
+  exec:
+    enabled: true
+    podSelectorLabels:
+      app: mism-exec
+
+# ────────────────────────────────────────────────────────────
+# HorizontalPodAutoscalers
+# Requires metrics-server in the cluster.
+# ────────────────────────────────────────────────────────────
+hpa:
+  gateway:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: "" # leave empty to disable
+    scaleUpStabilizationWindowSeconds: 60
+    scaleDownStabilizationWindowSeconds: 300
+
+  searchService:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80 # search can be memory-heavy
+    scaleUpStabilizationWindowSeconds: 60
+    scaleDownStabilizationWindowSeconds: 300
+
+  uploadService:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 12
+    targetCPUUtilizationPercentage: 65 # lower threshold – uploads are I/O bound
+    targetMemoryUtilizationPercentage: ""
+    scaleUpStabilizationWindowSeconds: 30 # scale up fast for burst uploads
+    scaleDownStabilizationWindowSeconds: 600 # keep pods longer; transfers may be in-flight
+
+  ui:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: ""
+    scaleUpStabilizationWindowSeconds: 60
+    scaleDownStabilizationWindowSeconds: 300
+    # additionalMetrics: []
+
+# ────────────────────────────────────────────────────────────
+# Redis  (Bitnami subchart – gateway sessions / cache)
+# https://artifacthub.io/packages/helm/bitnami/redis
+# Schedules on linux/amd64 nodes via master.nodeSelector (image matches node arch).
+# Set redis.enabled: false and configure gateway.env.REDIS_URL for an external Redis.
+# ────────────────────────────────────────────────────────────
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+  networkPolicy:
+    # Keep as false: the parent Bitnami chart's NetworkPolicy is overly permissive
+    # in-namespace. We want to disable the parent's NetworkPolicy and use our own,
+    # which provides a specific cutout for discovery gateway -> Redis.
+    enabled: false
+  master:
+    nodeSelector:
+      kubernetes.io/arch: amd64
+    persistence:
+      enabled: true
+      size: 8Gi
+      storageClass: ""
+  global:
+    imageRegistry: ""
+    imagePullSecrets: []

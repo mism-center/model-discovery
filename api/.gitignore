@@ -1,0 +1,15 @@
+# Environment
+.env
+.venv/
+
+# Local iRODS-mount stand-in (IRODS_MOUNT_PATH) — arbitrary uploaded/imported
+# third-party content, not project source; must not be lint/type-checked.
+irods/
+
+# Python
+**/__pycache__/
+
+# cache
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/

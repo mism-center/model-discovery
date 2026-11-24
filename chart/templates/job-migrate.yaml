@@ -1,0 +1,60 @@
+{{- if .Values.migration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "model-discovery.fullname" . }}-migrate
+  labels:
+    {{- include "model-discovery.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    # Run after install/upgrade but before the gateway becomes ready
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: {{ .Values.migration.backoffLimit | default 3 }}
+  template:
+    metadata:
+      labels:
+        {{- include "model-discovery.selectorLabels" (dict "component" "migrate" "context" $) | nindent 8 }}
+    spec:
+      {{- include "model-discovery.imagePullSecrets" . | nindent 6 }}
+      restartPolicy: Never
+      initContainers:
+        # Wait for PostgreSQL to accept connections before running migrations
+        - name: wait-for-db
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.metadataStore.image.repository }}:{{ .Values.metadataStore.image.tag }}"
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h metadata-store -p {{ .Values.metadataStore.service.port }} -U {{ .Values.metadataStore.env.POSTGRES_USER }}; do
+                echo "Waiting for metadata-store..."
+                sleep 2
+              done
+      containers:
+        - name: migrate
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag }}"
+          env:
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: model-discovery-secrets
+                  key: databasePassword
+            - name: MISM_DAL_DATABASE_URL
+              value: "postgresql+psycopg://{{ .Values.metadataStore.env.POSTGRES_USER }}:$(DATABASE_PASSWORD)@metadata-store:{{ .Values.metadataStore.service.port }}/{{ .Values.metadataStore.env.POSTGRES_DB }}"
+          command:
+            - python
+            - -c
+            - |
+              from alembic.config import Config
+              from alembic import command
+              import mism_registry.backends.migrations as m
+              import os
+
+              cfg = Config()
+              cfg.set_main_option("script_location", os.path.dirname(m.__file__))
+              cfg.set_main_option("sqlalchemy.url", os.environ["MISM_DAL_DATABASE_URL"])
+              command.upgrade(cfg, "head")
+              print("Migrations complete")
+{{- end }}

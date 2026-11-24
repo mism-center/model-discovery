@@ -1,0 +1,67 @@
+# CI for the Gateway API service: tests, formatting (ruff), linting (ruff), type checking (mypy), and Docker image build.
+name: CI (API)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-lint:
+    name: Test, lint, and build API image
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: make install
+
+      - name: Run unit tests
+        run: make test-unit
+
+      - name: Run integration tests
+        run: make test-integration
+
+      - name: Start services
+        run: make functional-up
+
+      - name: Run functional tests
+        run: make test-functional
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose -f ../docker-compose.test.yaml logs
+
+      - name: Tear down
+        if: always()
+        run: make functional-down
+
+      - name: Check formatting
+        run: make format-check
+
+      - name: Run Ruff lint checks
+        run: make lint
+
+      - name: Run mypy
+        run: make typecheck
+
+      - name: Build Docker image
+        run: make image-build TAG=ci-${GITHUB_SHA:0:7}

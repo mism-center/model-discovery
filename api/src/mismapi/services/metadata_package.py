@@ -1,0 +1,372 @@
+"""Parse a biomodel-annotator ``metadata-package`` into a ``Resource``.
+
+A metadata-package directory holds two YAML files (see metadata-schema
+``schema.md`` and ``scripts/align_annotation.py``):
+
+  * ``metadata.yaml``  — Section A: model identity, biology, attribution.
+  * ``execution.yaml`` — Section B/C: how to run it + rich I/O detail.
+
+Both wrap leaf values in ``{value, source, confidence}`` / ontology sub-blocks;
+this module unwraps those down to the plain value strings that ``Resource``
+stores (it keeps values only — IRIs/source/confidence are dropped, per the
+library contract). This is the "real ingestion" the library docs defer to the
+discovery API. Ported from the non-packaged ``align_annotation.py`` probe.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import yaml
+from mism_registry.enums import ExecutionType, ResourceType
+from mism_registry.resource import Resource
+from mism_registry.types import (
+    Argument,
+    Author,
+    Compute,
+    Contact,
+    Container,
+    DataInput,
+    Dependency,
+    EntryPoint,
+    ExperimentProtocol,
+    InitialCondition,
+    IODetail,
+    Output,
+    Parameter,
+    Publication,
+    RelatedResource,
+    TestSpec,
+)
+
+# The two files that make up a metadata-package.
+METADATA_FILE = "metadata.yaml"
+EXECUTION_FILE = "execution.yaml"
+
+
+def _val(x: Any) -> Any:
+    """Unwrap a ``{value, ...}`` leaf to its value; pass scalars through."""
+    if isinstance(x, dict) and "value" in x:
+        return x["value"]
+    return x
+
+
+def _s(x: Any) -> str:
+    """Coerce None/missing to empty string."""
+    return "" if x is None else str(x)
+
+
+def _is_missing(value: Any) -> bool:
+    """True if a required field's value is null or a blank/whitespace string."""
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def _num(raw: Any, path: str, warnings: list[str], cast: type) -> Any:
+    """Coerce an already-_val()-unwrapped leaf to cast (int/float).
+
+    None passes through. On failure, append a localized warning naming the
+    exact file+field and the offending value, and return None instead of the
+    bad value — mirrors the _is_missing skip pattern already used elsewhere
+    in this file. ``cast=int`` goes through float() first so a numeric-ish
+    string like "4.0" still coerces cleanly; it only rejects values that
+    aren't numeric at all (ranges, prose).
+    """
+    if raw is None:
+        return None
+    try:
+        return cast(float(raw)) if cast is int else cast(raw)
+    except (TypeError, ValueError):
+        warnings.append(
+            f"{EXECUTION_FILE}: '{path}' is not a single {cast.__name__} value "
+            f"(got {raw!r}); stored as null"
+        )
+        return None
+
+
+def _terms(items: Any) -> list[str]:
+    """Ontology-mapped list ``[{value, iri, ...}]`` -> ``[value]`` (IRIs dropped)."""
+    return [it["value"] for it in items or []]
+
+
+def _load(path: Path) -> dict[str, Any]:
+    with path.open(encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    return data if isinstance(data, dict) else {}
+
+
+def build_resource_from_package(pkg_dir: Path) -> tuple[Resource, list[str]]:
+    """Map a metadata-package directory onto a ``Resource``.
+
+    Reads ``metadata.yaml`` + ``execution.yaml`` from ``pkg_dir``. The
+    annotator that produces these files may leave required identifying
+    fields (e.g. an author's ``name``, a publication's ``title``) null or
+    empty; such entries are skipped rather than raised on, since the
+    downstream ``mism_registry`` dataclasses reject empty required strings.
+    Returns ``(resource, warnings)`` where ``warnings`` names the exact file
+    and field path of every skipped entry, so callers can surface them as
+    non-blocking, actionable messages instead of failing the request.
+
+    Still raises ``FileNotFoundError`` if either file is missing,
+    ``yaml.YAMLError`` on malformed YAML, and ``KeyError``/``TypeError`` if
+    the file's basic top-level structure (e.g. ``model``/``execution``) is
+    absent or malformed — callers translate these into HTTP errors.
+    """
+    meta = _load(pkg_dir / METADATA_FILE)
+    execu = _load(pkg_dir / EXECUTION_FILE)
+    m = meta["model"]
+    ext = m.get("external_identifier", {}) or {}
+    warnings: list[str] = []
+
+    # -- Section A: model -------------------------------------------------
+    bio = m.get("biology", {}) or {}
+    authors: list[Author] = []
+    for i, a in enumerate(m.get("authors", []) or []):
+        name = a.get("name")
+        if _is_missing(name):
+            warnings.append(
+                f"{METADATA_FILE}: 'model.authors[{i}].name' is missing or empty; entry skipped"
+            )
+            continue
+        authors.append(
+            Author(
+                name=str(name),
+                affiliation=_s(a.get("affiliation")),
+                orcid=_s(a.get("orcid")),
+                role=_s(a.get("role")),
+            )
+        )
+    contacts: list[Contact] = []
+    for i, c in enumerate(m.get("contacts", []) or []):
+        name = c.get("name")
+        if _is_missing(name):
+            warnings.append(
+                f"{METADATA_FILE}: 'model.contacts[{i}].name' is missing or empty; entry skipped"
+            )
+            continue
+        contacts.append(
+            Contact(
+                name=str(name),
+                role=_s(c.get("role")),
+                email=_s(c.get("email")),
+                affiliation=_s(c.get("affiliation")),
+            )
+        )
+    publications: list[Publication] = []
+    for i, p in enumerate(m.get("publications", []) or []):
+        title = p.get("title")
+        if _is_missing(title):
+            warnings.append(
+                f"{METADATA_FILE}: 'model.publications[{i}].title' is missing or empty; "
+                "entry skipped"
+            )
+            continue
+        publications.append(
+            Publication(
+                title=str(title),
+                doi=_s(p.get("doi")),
+                pmid=_s(p.get("pmid")),
+                url=_s(p.get("url")),
+            )
+        )
+    related = [
+        RelatedResource(
+            qualifier=r["qualifier"],
+            scheme=_s((r.get("identifier") or {}).get("scheme")),
+            value=_s((r.get("identifier") or {}).get("value")),
+        )
+        for r in m.get("related_resources", []) or []
+    ]
+
+    # -- Section B: execution ---------------------------------------------
+    lang = execu["execution"].get("language", {}) or {}
+    exec_type = _to_execution_type(_val(execu["execution"].get("environment_kind")))
+
+    deps: list[Dependency] = []
+    for kind, lst in (execu["execution"].get("dependencies", {}) or {}).items():
+        for i, d in enumerate(lst or []):
+            name = d.get("name")
+            if _is_missing(name):
+                warnings.append(
+                    f"{EXECUTION_FILE}: 'execution.dependencies.{kind}[{i}].name' is missing "
+                    "or empty; entry skipped"
+                )
+                continue
+            deps.append(
+                Dependency(
+                    name=str(name),
+                    version_constraint=_s(d.get("version_constraint")),
+                    kind=kind,
+                    group=_s(d.get("group")),
+                )
+            )
+    containers = [
+        Container(kind=c["kind"], file=_s(c.get("file")), image_name=_s(c.get("image_name")))
+        for c in execu["execution"].get("containers", []) or []
+    ]
+    compute = _build_compute(execu["execution"].get("compute"), warnings)
+    entry_points: list[EntryPoint] = []
+    for i, e in enumerate(execu["execution"].get("entry_points", []) or []):
+        command = e.get("command")
+        if _is_missing(command):
+            warnings.append(
+                f"{EXECUTION_FILE}: 'execution.entry_points[{i}].command' is missing or "
+                "empty; entry skipped"
+            )
+            continue
+        entry_points.append(
+            EntryPoint(
+                command=str(command),
+                purpose=_s(e.get("purpose")),
+                arguments=tuple(
+                    Argument(
+                        name=a["name"],
+                        description=_s(a.get("description")),
+                        default=a.get("default"),
+                        # New in entry-point-schema: these drive run-argument
+                        # validation (enums/position) and to_cli rendering.
+                        enums=tuple(a["enums"]) if a.get("enums") is not None else None,
+                        data_type=a.get("data_type") or "",
+                        position=a.get("position", 0),
+                        user_can_override=a.get("user_can_override"),
+                    )
+                    for a in e.get("arguments", []) or []
+                ),
+            )
+        )
+    tests_d = execu["execution"].get("tests")
+    tests = (
+        TestSpec(framework=_s(tests_d.get("framework")), invocation=_s(tests_d.get("invocation")))
+        if tests_d
+        else None
+    )
+
+    # -- Section C: io ----------------------------------------------------
+    io = _build_io(execu.get("io"), warnings)
+
+    resource = Resource(
+        name=m["name"]["value"],
+        resource_type=ResourceType.MODEL,
+        location_uri=ext.get("value", ""),
+        short_description=_s(_val(m.get("short_description"))),
+        description=_s(_val(m.get("long_description"))),
+        version=_s(_val(m.get("version"))),
+        external_ids={ext["scheme"]: ext["value"]} if ext.get("scheme") else {},
+        license=(m.get("license", {}) or {}).get("spdx_id", ""),
+        authors=authors,
+        contacts=contacts,
+        publications=publications,
+        related_resources=related,
+        funding=[str(x) for x in m.get("funding", []) or []],
+        model_scales=[_val(s) for s in m.get("model_scales", []) or []],
+        organisms=_terms(bio.get("species")),
+        domains=_terms(bio.get("topic_category")),
+        infectious_agents=_terms(bio.get("infectious_agent")),
+        health_conditions=_terms(bio.get("health_condition")),
+        biological_processes=_terms(bio.get("biological_processes")),
+        molecular_entities=_terms(bio.get("molecular_entities")),
+        proteins_genes=[p["value"] for p in bio.get("proteins_genes", []) or []],
+        model_class=_terms(m.get("model_class")),
+        formalism=_terms(m.get("formalism")),
+        determinism=_s(m.get("determinism")) or "unknown",
+        time_dynamics=_s(m.get("time_dynamics")) or "unknown",
+        spatial=_s(m.get("spatial")) or "unknown",
+        multiscale=m.get("multiscale"),
+        execution_type=exec_type,
+        execution_status=_s(execu["execution"].get("status")),
+        language_name=_s(lang.get("name")),
+        language_version=_s(lang.get("version_constraint")),
+        execution_notes=_s(execu["execution"].get("notes")),
+        dependencies=deps,
+        containers=containers,
+        compute=compute,
+        entry_points=entry_points,
+        tests=tests,
+        io=io,
+    )
+    return resource, warnings
+
+
+def _to_execution_type(kind: Any) -> ExecutionType | None:
+    """Map ``environment_kind`` onto the ExecutionType enum, else OTHER/None."""
+    if not kind:
+        return None
+    try:
+        return ExecutionType(kind)
+    except ValueError:
+        return ExecutionType.OTHER
+
+
+def _build_compute(c: Any, warnings: list[str]) -> Compute | None:
+    if not c:
+        return None
+    tr = c.get("typical_runtime", {}) or {}
+    return Compute(
+        cpu_cores=_num(_val(c.get("cpu_cores")), "execution.compute.cpu_cores", warnings, int),
+        memory_gb=_num(_val(c.get("memory_gb")), "execution.compute.memory_gb", warnings, float),
+        gpu_required=_val(c.get("gpu_required")),
+        parallelism=_s(c.get("parallelism")),
+        typical_runtime=_num(
+            _val(tr) if tr else None, "execution.compute.typical_runtime", warnings, float
+        ),
+        typical_runtime_unit=_s(tr.get("unit") if isinstance(tr, dict) else None),
+    )
+
+
+def _build_io(io: Any, warnings: list[str]) -> IODetail | None:
+    if not io:
+        return None
+    inp = io.get("inputs", {}) or {}
+    ep = io.get("experiment_protocol")
+    protocol = None
+    if ep:
+        ts, du = ep.get("timestep", {}) or {}, ep.get("duration", {}) or {}
+        protocol = ExperimentProtocol(
+            description=_s(ep.get("description")),
+            timestep=_num(
+                _val(ts) if ts else None, "io.experiment_protocol.timestep", warnings, float
+            ),
+            timestep_unit=_s(ts.get("unit") if isinstance(ts, dict) else None),
+            duration=_num(
+                _val(du) if du else None, "io.experiment_protocol.duration", warnings, float
+            ),
+            duration_unit=_s(du.get("unit") if isinstance(du, dict) else None),
+            observables=tuple(ep.get("observables", []) or []),
+        )
+    return IODetail(
+        parameters=tuple(
+            Parameter(
+                name=p["name"],
+                description=_s(p.get("description")),
+                default_value=p.get("default_value"),
+                unit=_s(_val(p.get("unit"))),
+                biological_meaning=_s(_val(p.get("biological_meaning"))),
+            )
+            for p in inp.get("parameters", []) or []
+        ),
+        initial_conditions=tuple(
+            InitialCondition(name=i["name"], value=i.get("value"), unit=_s(_val(i.get("unit"))))
+            for i in inp.get("initial_conditions", []) or []
+        ),
+        data_inputs=tuple(
+            DataInput(
+                name=d["name"],
+                purpose=_s(d.get("purpose")),
+                format=_s(_val(d.get("format"))),
+                required=bool(d.get("required", True)),
+            )
+            for d in inp.get("data_inputs", []) or []
+        ),
+        outputs=tuple(
+            Output(
+                name=o["name"],
+                description=_s(o.get("description")),
+                quantity_kind=_s(_val(o.get("quantity_kind"))),
+                unit=_s(_val(o.get("unit"))),
+                format=_s(_val(o.get("format"))),
+                destination=_s(o.get("destination")),
+            )
+            for o in io.get("outputs", []) or []
+        ),
+        experiment_protocol=protocol,
+    )
